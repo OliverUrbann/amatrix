@@ -16,7 +16,8 @@ Status:
 | libolm builds for m68k-amigaos | yes, `libolm.a` about 190 KB |
 | libolm unit tests (15 programs) in FS-UAE (A1200, 68030/68882, KS 3.1) | all pass |
 | `olmbench` in FS-UAE | runs, results correct |
-| unit tests and `olmbench` on a real Vampire V4SA | to do |
+| unit tests on a real Vampire V4SA (Kickstart 45.64) | all pass |
+| `olmbench` on the V4SA | runs, results correct (see below) |
 
 ### Build
 
@@ -62,6 +63,36 @@ Requirements: 68020+ with FPU (the test framework and the benchmark use
   The shareware HSMathLibs replacements pop up a "please register" requester
   that blocks the test run; the original Workbench 3.1 libraries work.
 - Big-endian: no issues, all test vectors match.
+
+### olmbench on the Vampire V4SA
+
+Full output: `libolm-amiga/results/v4sa-2026-11-01.txt`. Times per operation,
+plain C build (`-m68020 -m68881 -O2`), no assembler, no tuning:
+
+| Operation | V4SA | FS-UAE (68030, max speed) |
+|---|---:|---:|
+| create account (2 keypairs) | 50 ms | 90 ms |
+| one-time key (Curve25519) | 36 ms | 65 ms |
+| Ed25519 sign | 14 ms | 20 ms |
+| Ed25519 verify (device keys) | 39 ms | 62 ms |
+| create outbound Olm session | 181 ms | 340 ms |
+| create inbound Olm session | 110 ms | 190 ms |
+| Olm encrypt+decrypt | 156 ms | 263 ms |
+| Megolm encrypt (send a message) | 16 ms | 28 ms |
+| Megolm decrypt (receive a message) | 50 ms | 71 ms |
+| Megolm ratchet jump (old history) | 109 ms | 161 ms |
+| SAS key agreement (x2) | 71 ms | 122 ms |
+
+What it means for a client:
+
+- Live chat is no problem: receiving a message costs about 50 ms, sending 16 ms.
+- Room keys arrive once per sender session (Olm, 100-200 ms), not per message.
+- Costs add up in bulk: decrypting 1000 messages of history is about 50 s,
+  checking 500 device signatures in a big room about 20 s. A client should
+  decrypt only what is on screen and cache verified device keys.
+- Room for speed-up: most of the time is Curve25519/Ed25519 field arithmetic
+  in portable C with 64-bit products. 68k assembler for that inner loop (the
+  68080 has a fast 32x32->64 multiply) is the obvious next optimisation.
 
 ## Next steps
 

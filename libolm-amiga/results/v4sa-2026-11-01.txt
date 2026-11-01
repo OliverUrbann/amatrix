@@ -1,0 +1,145 @@
+== libolm on AmigaOS
+Kickstart 45.64, Workbench 45.5
+Sonntag 01-Nov-26  10:33:19
+--- test_base64
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  5 |  5 passed | 0 failed | 0 skipped
+[doctest] assertions: 12 | 12 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_crypto
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  6 |  6 passed | 0 failed | 0 skipped
+[doctest] assertions: 16 | 16 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_group_session
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  5 |  5 passed | 0 failed | 0 skipped
+[doctest] assertions: 48 | 48 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_list
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  3 |  3 passed | 0 failed | 0 skipped
+[doctest] assertions: 21 | 21 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_megolm
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+[doctest] assertions: 17 | 17 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_message
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+[doctest] assertions: 17 | 17 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_olm
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  7 |  7 passed | 0 failed | 0 skipped
+[doctest] assertions: 96 | 96 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_olm_decrypt
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  1 |  1 passed | 0 failed | 0 skipped
+[doctest] assertions: 12 | 12 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_olm_sha256
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 1 | 1 passed | 0 failed | 0 skipped
+[doctest] assertions: 2 | 2 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_olm_signature
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 1 | 1 passed | 0 failed | 0 skipped
+[doctest] assertions: 3 | 3 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_olm_using_malloc
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  1 |  1 passed | 0 failed | 0 skipped
+[doctest] assertions: 37 | 37 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_pk
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  3 |  3 passed | 0 failed | 0 skipped
+[doctest] assertions: 11 | 11 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_ratchet
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  3 |  3 passed | 0 failed | 0 skipped
+[doctest] assertions: 33 | 33 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_sas
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 2 | 2 passed | 0 failed | 0 skipped
+[doctest] assertions: 6 | 6 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- test_session
+[doctest] doctest version is "2.4.7"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  2 |  2 passed | 0 failed | 0 skipped
+[doctest] assertions: 26 | 26 passed | 0 failed |
+[doctest] Status: SUCCESS!
+rc=0
+--- olmbench
+olmbench: libolm 3.2.16, scale 1, CLOCKS_PER_SEC 1000
+Account / keys
+  create account (2 keypairs)             5 x     49.60 ms each
+  one-time key (Curve25519)              20 x     36.40 ms each
+  Ed25519 sign                           20 x     13.80 ms each
+  Ed25519 verify (device keys)           20 x     39.05 ms each
+  SHA-256 of 4 KB                        50 x      3.72 ms each
+Olm (to-device, room key delivery)
+  create outbound session (3xDH)          1 x    181.00 ms each
+  create inbound session (3xDH)           1 x    110.00 ms each
+  Olm encrypt+decrypt (ratchet)          10 x    155.60 ms each
+Megolm (room messages)
+  Megolm encrypt (sign + AES)            50 x     16.20 ms each
+  Megolm decrypt (verify + AES)          50 x     50.20 ms each
+  Megolm ratchet advance ~1000-40000      5 x    109.40 ms each
+SAS (emoji verification)
+  create SAS keypair                      1 x     37.00 ms each
+  SAS key agreement (x2)                  1 x     71.00 ms each
+RESULT: OK
+rc=0
+Sonntag 01-Nov-26  10:33:46
