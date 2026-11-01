@@ -96,7 +96,7 @@ What it means for a client:
 
 ## Next steps
 
-1. Run the tests and `olmbench` on the Vampire V4SA.
+1. ~~Run the tests and `olmbench` on the Vampire V4SA.~~ Done, all pass.
 2. Receive path on a Linux PC first (C + libolm + libcurl): upload device and
    one-time keys, receive an `m.room_key` via Olm, decrypt a Megolm room
    message from Element. Against our own homeserver.
