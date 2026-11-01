@@ -1,0 +1,58 @@
+; libolm unit tests + benchmark on AmigaOS (68020+FPU, libnix).
+; Put this script next to the programs and run it there:  Execute run-tests
+; Results are written to RAM:olm-results.txt
+FailAt 1000
+Stack 262144
+Echo "== libolm on AmigaOS" >RAM:olm-results.txt
+Version >>RAM:olm-results.txt
+Date >>RAM:olm-results.txt
+Echo "--- test_base64" >>RAM:olm-results.txt
+test_base64 >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_crypto" >>RAM:olm-results.txt
+test_crypto >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_group_session" >>RAM:olm-results.txt
+test_group_session >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_list" >>RAM:olm-results.txt
+test_list >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_megolm" >>RAM:olm-results.txt
+test_megolm >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_message" >>RAM:olm-results.txt
+test_message >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_olm" >>RAM:olm-results.txt
+test_olm >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_olm_decrypt" >>RAM:olm-results.txt
+test_olm_decrypt >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_olm_sha256" >>RAM:olm-results.txt
+test_olm_sha256 >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_olm_signature" >>RAM:olm-results.txt
+test_olm_signature >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_olm_using_malloc" >>RAM:olm-results.txt
+test_olm_using_malloc >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_pk" >>RAM:olm-results.txt
+test_pk >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_ratchet" >>RAM:olm-results.txt
+test_ratchet >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_sas" >>RAM:olm-results.txt
+test_sas >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- test_session" >>RAM:olm-results.txt
+test_session >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Echo "--- olmbench" >>RAM:olm-results.txt
+olmbench >>RAM:olm-results.txt
+Echo "rc=$RC" >>RAM:olm-results.txt
+Date >>RAM:olm-results.txt
+Type RAM:olm-results.txt

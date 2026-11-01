@@ -12,7 +12,7 @@ mkdir -p "$out/obj" "$out/bin"
 case $target in
   amiga)
     CC="m68k-amigaos-gcc"; CXX="m68k-amigaos-g++"
-    ARCH="-mcrt=nix20 -m68020 -O2 -fomit-frame-pointer"
+    ARCH="-mcrt=nix20 -m68020 -m68881 -O2 -fomit-frame-pointer"
     STRIP="m68k-amigaos-strip"
     TESTFLAGS="-DDOCTEST_CONFIG_NO_POSIX_SIGNALS -include $here/compat/doctest_amiga.h"
     TESTLIBS="$out/obj/compat_atomic.o"
@@ -45,10 +45,18 @@ ${CC%gcc}ar rcs "$out/libolm.a" $objs 2>/dev/null || ar rcs "$out/libolm.a" $obj
 echo "libolm.a: $(stat -c %s "$out/libolm.a") bytes"
 
 # unit tests (one binary per file, each has its own doctest main)
-for t in $OLM/tests/test_*.cpp $here/src/*.cpp; do
+for t in $OLM/tests/test_*.cpp; do
   [ -f "$t" ] || continue
   n=$(basename "${t%.*}")
   $CXX $CPPFLAGS $CXXFLAGS $TESTFLAGS -I$here/src "$t" "$out/libolm.a" $TESTLIBS -o "$out/bin/$n"
+  $STRIP "$out/bin/$n" 2>/dev/null || true
+done
+# our own programs (C, public olm.h API only)
+for t in $here/src/*.c; do
+  [ -f "$t" ] || continue
+  n=$(basename "${t%.*}")
+  $CC $CPPFLAGS $CFLAGS -c "$t" -o "$out/obj/$n.o"
+  $CXX $ARCH "$out/obj/$n.o" "$out/libolm.a" -o "$out/bin/$n"
   $STRIP "$out/bin/$n" 2>/dev/null || true
 done
 ls -la "$out/bin"
