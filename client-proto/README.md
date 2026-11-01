@@ -42,6 +42,25 @@ is the Rust crypto that current Element versions also use.
 | Megolm decrypt, UTF-8 (umlauts, emoji) | works |
 | restart with persisted store | works, same device |
 
+### On AmigaOS (FS-UAE, Kickstart 3.1, 68030/68882)
+
+`./build-amiga.sh` builds `build-amiga/amatrix-recv` (220 KB): the same
+`recv.c`, with `http_sock.c` + `net.c` on bsdsocket.library and AmiSSL 5.27
+for https and for the random source (`RAND_bytes`).
+
+| What | Result |
+|---|---|
+| plain HTTP against local Synapse (bsdsocket from UAE) | 2/2 messages decrypted |
+| https://localhost:8448 (TLS proxy, private test CA in AmiSSL:Certs) | 2/2 decrypted, umlauts converted to Latin-1 for the console |
+| same without the test CA (negative test) | refused: "certificate of localhost not accepted: unable to get local issuer certificate" |
+| packaged start script `amatrix-test` | 3/3 decrypted |
+
+Logs in `results/`. On the Amiga, errors go to stdout because the
+AmigaDOS 3.x shell cannot redirect stderr.
+
+`amiga-package/make-package.sh` builds `amatrix-step2.lha` for a real Amiga
+(binary, `amatrix-test` script, `LiesMich.txt`).
+
 Not done yet: replay protection (event ID per Megolm message index),
 `m.forwarded_room_key`, key requests, device verification and cross-signing
 (step 3), sending (step 4+). The pickle key is a fixed string for now.

@@ -3,6 +3,17 @@
 #ifndef AMX_NET_H
 #define AMX_NET_H
 #include <stddef.h>
+#include <stdio.h>
+
+/* Error output: on AmigaOS 3 the shell cannot redirect stderr, so errors go
+ * to stdout there and end up in the same log file as everything else. */
+#ifndef AMX_ERR
+#ifdef __amigaos__
+#define AMX_ERR stdout
+#else
+#define AMX_ERR stderr
+#endif
+#endif
 
 typedef struct net_conn net_conn;
 

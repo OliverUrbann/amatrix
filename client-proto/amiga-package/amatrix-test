@@ -1,0 +1,16 @@
+.key USER/A,PASS/A,SERVER/K,SECS/K
+.def SERVER "https://matrix.org"
+.def SECS "600"
+; Amatrix Schritt 2: verschluesselte Matrix-Nachrichten empfangen.
+; Aufruf:  Execute amatrix-test <benutzer> <passwort>
+Stack 262144
+Echo ""
+Echo "Amatrix-Test: Anmeldung als <USER> auf <SERVER>"
+Echo "Jetzt in Element einen NEUEN verschluesselten Raum anlegen,"
+Echo "@<USER> einladen und 2-3 Nachrichten schreiben."
+Echo "Ende nach 3 entschluesselten Nachrichten oder <SECS> Sekunden."
+Echo "Protokoll: RAM:amatrix-log.txt"
+Echo ""
+amatrix-recv -v -s amatrix-store -n 3 -t <SECS> <SERVER> <USER> <PASS> >RAM:amatrix-log.txt
+Echo "rc=$RC" >>RAM:amatrix-log.txt
+Type RAM:amatrix-log.txt

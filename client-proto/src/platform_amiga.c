@@ -14,11 +14,16 @@
 
 #include "olm/olm.h"
 
-/* TEST ONLY.  A plain AmigaOS 3 machine has no entropy source.  This hashes
- * clock readings, the date stamp, free memory and a counter with SHA-256.
- * Good enough to get a working device for tests, NOT for real keys: the
- * AmiSSL build will use RAND_bytes() instead. */
-int plat_random(void *buf, size_t n)
+#ifdef AMX_AMISSL
+int  net_random(void *buf, size_t n);              /* net.c, AmiSSL RAND_bytes */
+void net_random_seed(const void *buf, size_t n);
+#endif
+
+/* Weak fallback mixer: hashes clock readings, the date stamp, free memory and
+ * a counter with SHA-256.  In the AmiSSL build this only adds to AmiSSL's
+ * pool and the bytes come from RAND_bytes(); without AmiSSL (plain HTTP test
+ * build) it is the only source and NOT fit for real keys. */
+static void weak_random(void *buf, size_t n)
 {
     static unsigned long counter;
     static OlmUtility *u;
@@ -47,7 +52,23 @@ int plat_random(void *buf, size_t n)
         for (k = 0; k < 16 && n; k++, n--)
             *o++ = (unsigned char)((hash[2 * k] << 4) ^ hash[2 * k + 1] ^ hash[k + 32]);
     }
+}
+
+int plat_random(void *buf, size_t n)
+{
+#ifdef AMX_AMISSL
+    unsigned char extra[32];
+    weak_random(extra, sizeof extra);
+    net_random_seed(extra, sizeof extra);
+    if (net_random(buf, n) == 0) return 0;
+    fprintf(AMX_ERR, "AmiSSL random source not available\n");
+    return -1;
+#else
+    static int warned;
+    if (!warned) { fprintf(AMX_ERR, "WARNING: test build without AmiSSL, keys use a weak random source\n"); warned = 1; }
+    weak_random(buf, n);
     return 0;
+#endif
 }
 
 char *plat_read_file(const char *path)
@@ -96,3 +117,28 @@ int plat_mkdir(const char *path)
 }
 
 void plat_sleep(int seconds) { Delay(seconds * 50); }
+
+char *plat_display(const char *utf8)
+{
+    const unsigned char *s = (const unsigned char *)utf8;
+    char *r = malloc(strlen(utf8) + 1), *o = r;
+    if (!r) return NULL;
+    while (*s) {
+        unsigned long cp;
+        int extra;
+        if (*s < 0x80) { *o++ = *s++; continue; }
+        if ((*s & 0xE0) == 0xC0) { cp = *s & 0x1F; extra = 1; }
+        else if ((*s & 0xF0) == 0xE0) { cp = *s & 0x0F; extra = 2; }
+        else if ((*s & 0xF8) == 0xF0) { cp = *s & 0x07; extra = 3; }
+        else { *o++ = '?'; s++; continue; }
+        s++;
+        while (extra-- && (*s & 0xC0) == 0x80) cp = (cp << 6) | (*s++ & 0x3F);
+        if (cp == 0x2013 || cp == 0x2014) *o++ = '-';          /* dashes */
+        else if (cp == 0x2018 || cp == 0x2019) *o++ = '\'';    /* quotes */
+        else if (cp == 0x201C || cp == 0x201D) *o++ = '"';
+        else if (cp == 0x2026) { *o++ = '.'; }                  /* ellipsis */
+        else *o++ = cp < 0x100 ? (char)cp : '?';
+    }
+    *o = 0;
+    return r;
+}

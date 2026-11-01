@@ -58,3 +58,10 @@ int plat_mkdir(const char *path)
 }
 
 void plat_sleep(int seconds) { sleep(seconds); }
+
+char *plat_display(const char *utf8)
+{
+    char *r = malloc(strlen(utf8) + 1);
+    if (r) strcpy(r, utf8);
+    return r;
+}

@@ -1,0 +1,66 @@
+Amatrix - Schritt 2: Ende-zu-Ende-verschlüsselte Matrix-Nachrichten empfangen
+=============================================================================
+
+Was das Programm tut
+--------------------
+amatrix-recv meldet sich als ein Matrix-Benutzer an, legt ein neues Gerät
+an, lädt dessen Schlüssel auf den Server, nimmt Einladungen in Räume an,
+empfängt die Raumschlüssel (Olm) und entschlüsselt die Nachrichten (Megolm).
+Es sendet selbst noch nichts.
+
+Getestet im Emulator (FS-UAE, Kickstart 3.1, 68030/68882) gegen einen
+lokalen Synapse 1.164.1 über HTTPS mit AmiSSL.
+
+Voraussetzungen
+---------------
+- 68020 oder besser MIT FPU
+- TCP/IP-Stack (bsdsocket.library, z.B. Miami Deluxe, Roadshow, AmiTCP)
+- AmiSSL 5.x installiert (AmiSSL: Assign, amisslmaster.library),
+  https://github.com/jens-maus/amissl/releases oder Aminet
+- ca. 2 MB freier Speicher
+- Die Schublade muss beschreibbar sein (Unterverzeichnis amatrix-store)
+
+Ein Testkonto
+-------------
+Bitte ein eigenes Testkonto auf matrix.org verwenden, nicht das
+Hauptkonto. Das Programm legt bei jedem Start mit leerem amatrix-store
+ein neues Gerät an, das sieht man dann in Element in der Geräteliste.
+
+Test
+----
+1. In einer Shell in diese Schublade wechseln:
+       CD <diese Schublade>
+2. Starten:
+       Execute amatrix-test <benutzer> <passwort>
+   (anderer Server:  Execute amatrix-test <benutzer> <passwort> SERVER=https://...)
+3. Sobald das Programm läuft (ein paar Sekunden), in Element:
+   - einen NEUEN Raum anlegen, Verschlüsselung an (Standard),
+   - @<benutzer>:matrix.org einladen,
+   - 2-3 Nachrichten schreiben, gerne mit Umlauten.
+4. Das Programm endet nach 3 entschlüsselten Nachrichten oder nach
+   10 Minuten und zeigt dann RAM:amatrix-log.txt an.
+   Diese Datei bitte zurückschicken.
+
+Woran man das Ergebnis erkennt
+------------------------------
+Erfolg:
+   got room key for !... 
+   [!raum] @du:matrix.org: <deine Nachricht>
+   done, 3 message(s) decrypted
+
+Element schickt keine Schlüssel an das (unverifizierte) Gerät:
+   keine "got room key"-Zeile, stattdessen am Ende
+   "N message(s) could not be decrypted (no key)".
+   Das wäre die wichtige Erkenntnis für Schritt 3 (Cross-Signing).
+
+TLS-Problem:
+   "TLS: certificate of matrix.org not accepted: ..."
+   Dann fehlt das Root-Zertifikat in AmiSSL:Certs (AmiSSL aktualisieren).
+
+Hinweise
+--------
+- Emoji und andere Zeichen außerhalb von Latin-1 erscheinen als "?".
+- Ein zweiter Start mit demselben amatrix-store ist dasselbe Gerät.
+  Für einen ganz frischen Test die Schublade amatrix-store löschen.
+- Der Pickle-Schlüssel für den Gerätezustand ist noch fest eingebaut:
+  amatrix-store enthält die Geräteschlüssel, also nur zum Testen.

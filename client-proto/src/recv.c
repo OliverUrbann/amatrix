@@ -37,7 +37,7 @@ static const char *OLM_ALG = "m.olm.v1.curve25519-aes-sha2";
 static const char *MEGOLM_ALG = "m.megolm.v1.aes-sha2";
 
 static int verbose;
-#define LOG(...) do { if (verbose) { fprintf(stderr, __VA_ARGS__); fputc('\n', stderr); } } while (0)
+#define LOG(...) do { if (verbose) { fprintf(AMX_ERR, __VA_ARGS__); fputc('\n', AMX_ERR); } } while (0)
 
 /* ------------------------------------------------------------------ state */
 
@@ -65,7 +65,7 @@ static struct {
 
 /* ---------------------------------------------------------------- helpers */
 
-static void die(const char *msg) { fprintf(stderr, "error: %s\n", msg); exit(1); }
+static void die(const char *msg) { fprintf(AMX_ERR, "error: %s\n", msg); exit(1); }
 
 static void *xmalloc(size_t n) { void *p = malloc(n ? n : 1); if (!p) die("out of memory"); return p; }
 
@@ -90,7 +90,7 @@ static char *read_store(const char *name)
 static void write_store(const char *name, const char *data)
 {
     char *p = path_in_store(name);
-    if (plat_write_file(p, data) != 0) { fprintf(stderr, "cannot write %s\n", p); exit(1); }
+    if (plat_write_file(p, data) != 0) { fprintf(AMX_ERR, "cannot write %s\n", p); exit(1); }
     free(p);
 }
 
@@ -123,13 +123,13 @@ static cJSON *api(const char *method, const char *path, const cJSON *body,
     sprintf(url, "%s/_matrix/client/v3%s", G.hs, path);
     LOG("> %s %s", method, path);
     if (http_request(method, url, G.token, b, timeout_s, &r) != 0) {
-        fprintf(stderr, "network error on %s %s\n", method, path);
+        fprintf(AMX_ERR, "network error on %s %s\n", method, path);
         *status = 0;
     } else {
         *status = r.status;
         if (r.body) res = cJSON_Parse(r.body);
         if (r.status != 200)
-            fprintf(stderr, "%s %s -> HTTP %ld: %s\n", method, path, r.status,
+            fprintf(AMX_ERR, "%s %s -> HTTP %ld: %s\n", method, path, r.status,
                     r.body ? r.body : "");
         http_response_free(&r);
     }
@@ -530,7 +530,7 @@ static char *olm_decrypt_from(const char *sender_key, int type, const char *body
         return plain;
     }
     if (type != 0) {
-        fprintf(stderr, "Olm: no session for message from %s\n", sender_key);
+        fprintf(AMX_ERR, "Olm: no session for message from %s\n", sender_key);
         return NULL;
     }
     /* pre-key message: new inbound session using one of our one-time keys */
@@ -539,7 +539,7 @@ static char *olm_decrypt_from(const char *sender_key, int type, const char *body
     n = olm_create_inbound_session_from(s, G.acct, sender_key, strlen(sender_key), tmp, blen);
     free(tmp);
     if (n == olm_error()) {
-        fprintf(stderr, "Olm: cannot create inbound session: %s\n", olm_session_last_error(s));
+        fprintf(AMX_ERR, "Olm: cannot create inbound session: %s\n", olm_session_last_error(s));
         free(s);
         return NULL;
     }
@@ -552,7 +552,7 @@ static char *olm_decrypt_from(const char *sender_key, int type, const char *body
     n = olm_decrypt(s, 0, tmp, blen, plain, max);
     free(tmp);
     if (n == olm_error()) {
-        fprintf(stderr, "Olm: decrypt failed: %s\n", olm_session_last_error(s));
+        fprintf(AMX_ERR, "Olm: decrypt failed: %s\n", olm_session_last_error(s));
         free(plain);
         free(s);
         return NULL;
@@ -575,14 +575,14 @@ static void handle_room_key(const cJSON *payload, const char *sender_key, const 
     size_t n;
 
     if (!alg || strcmp(alg, MEGOLM_ALG) || !room || !sid || !key) {
-        fprintf(stderr, "m.room_key: unsupported or incomplete\n");
+        fprintf(AMX_ERR, "m.room_key: unsupported or incomplete\n");
         return;
     }
     if (find_group(room, sid)) { LOG("m.room_key: already known"); return; }
     s = new_group_session();
     k = xstrdup(key);
     if (olm_init_inbound_group_session(s, (uint8_t *)k, strlen(k)) == olm_error()) {
-        fprintf(stderr, "m.room_key: %s\n", olm_inbound_group_session_last_error(s));
+        fprintf(AMX_ERR, "m.room_key: %s\n", olm_inbound_group_session_last_error(s));
         free(k); free(s);
         return;
     }
@@ -590,7 +590,7 @@ static void handle_room_key(const cJSON *payload, const char *sender_key, const 
     n = olm_inbound_group_session_id(s, (uint8_t *)idbuf, sizeof idbuf - 1);
     idbuf[n == olm_error() ? 0 : n] = 0;
     if (strcmp(idbuf, sid)) {
-        fprintf(stderr, "m.room_key: session id mismatch\n");
+        fprintf(AMX_ERR, "m.room_key: session id mismatch\n");
         free(s);
         return;
     }
@@ -620,14 +620,14 @@ static void handle_to_device(const cJSON *ev)
     if (!plain) return;
     payload = cJSON_Parse(plain);
     free(plain);
-    if (!payload) { fprintf(stderr, "Olm payload is not JSON\n"); return; }
+    if (!payload) { fprintf(AMX_ERR, "Olm payload is not JSON\n"); return; }
 
     /* the checks the spec requires before trusting an Olm payload */
     if (!jstr(payload, "sender") || strcmp(jstr(payload, "sender"), sender) ||
         !jstr(payload, "recipient") || strcmp(jstr(payload, "recipient"), G.user_id) ||
         !jstr(cJSON_GetObjectItemCaseSensitive(payload, "recipient_keys"), "ed25519") ||
         strcmp(jstr(cJSON_GetObjectItemCaseSensitive(payload, "recipient_keys"), "ed25519"), G.ed)) {
-        fprintf(stderr, "Olm payload failed sender/recipient checks, dropped\n");
+        fprintf(AMX_ERR, "Olm payload failed sender/recipient checks, dropped\n");
         cJSON_Delete(payload);
         return;
     }
@@ -669,7 +669,7 @@ static int try_room_event(const char *room_id, const cJSON *ev)
     max = olm_group_decrypt_max_plaintext_length(g->s, tmp, len);
     free(tmp);
     if (max == olm_error()) {
-        fprintf(stderr, "Megolm: %s\n", olm_inbound_group_session_last_error(g->s));
+        fprintf(AMX_ERR, "Megolm: %s\n", olm_inbound_group_session_last_error(g->s));
         return 1;
     }
     plain = xmalloc(max + 1);
@@ -677,7 +677,7 @@ static int try_room_event(const char *room_id, const cJSON *ev)
     n = olm_group_decrypt(g->s, tmp, len, plain, max, &idx);
     free(tmp);
     if (n == olm_error()) {
-        fprintf(stderr, "Megolm: %s\n", olm_inbound_group_session_last_error(g->s));
+        fprintf(AMX_ERR, "Megolm: %s\n", olm_inbound_group_session_last_error(g->s));
         free(plain);
         return 1;
     }
@@ -686,7 +686,7 @@ static int try_room_event(const char *room_id, const cJSON *ev)
     p = cJSON_Parse((char *)plain);
     free(plain);
     if (!p || !jstr(p, "room_id") || strcmp(jstr(p, "room_id"), room_id)) {
-        fprintf(stderr, "Megolm: payload room_id mismatch, dropped\n");
+        fprintf(AMX_ERR, "Megolm: payload room_id mismatch, dropped\n");
         cJSON_Delete(p);
         return 1;
     }
@@ -694,7 +694,11 @@ static int try_room_event(const char *room_id, const cJSON *ev)
         const cJSON *pc = cJSON_GetObjectItemCaseSensitive(p, "content");
         const char *ptype = jstr(p, "type");
         if (ptype && !strcmp(ptype, "m.room.message"))
-            printf("[%s] %s: %s\n", room_id, sender, jstr(pc, "body") ? jstr(pc, "body") : "");
+            {
+                char *shown = plat_display(jstr(pc, "body") ? jstr(pc, "body") : "");
+                printf("[%s] %s: %s\n", room_id, sender, shown ? shown : "");
+                free(shown);
+            }
         else
             printf("[%s] %s: (%s)\n", room_id, sender, ptype ? ptype : "?");
         fflush(stdout);
@@ -809,7 +813,7 @@ int main(int argc, char **argv)
         else break;
     }
     if (argc - i != 3) {
-        fprintf(stderr, "usage: %s [-s storedir] [-n count] [-t seconds] [-v] HOMESERVER_URL USER PASSWORD\n", argv[0]);
+        fprintf(AMX_ERR, "usage: %s [-s storedir] [-n count] [-t seconds] [-v] HOMESERVER_URL USER PASSWORD\n", argv[0]);
         return 2;
     }
     G.hs = xstrdup(argv[i]);

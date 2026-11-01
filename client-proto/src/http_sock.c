@@ -100,7 +100,7 @@ int http_request(const char *method, const char *url, const char *bearer,
     memset(out, 0, sizeof *out);
     if (!strncmp(url, "https://", 8)) { tls = 1; port = 443; p = url + 8; }
     else if (!strncmp(url, "http://", 7)) { tls = 0; port = 80; p = url + 7; }
-    else { fprintf(stderr, "http: bad URL %s\n", url); return -1; }
+    else { fprintf(AMX_ERR, "http: bad URL %s\n", url); return -1; }
     n = strcspn(p, ":/");
     if (n == 0 || n >= sizeof host) return -1;
     memcpy(host, p, n);
@@ -110,7 +110,7 @@ int http_request(const char *method, const char *url, const char *bearer,
     if (!path) path = "/";
 
     c = net_connect(host, port, tls, err, sizeof err);
-    if (!c) { fprintf(stderr, "http: %s\n", err); return -1; }
+    if (!c) { fprintf(AMX_ERR, "http: %s\n", err); return -1; }
 
     hdr = malloc(strlen(path) + strlen(host) + (bearer ? strlen(bearer) : 0) + 400);
     if (!hdr) { net_close(c); return -1; }
@@ -122,18 +122,18 @@ int http_request(const char *method, const char *url, const char *bearer,
     else if (strcmp(method, "GET")) n += sprintf(hdr + n, "Content-Length: 0\r\n");
     n += sprintf(hdr + n, "\r\n");
     if (net_write(c, hdr, n) || (blen && net_write(c, body, blen))) {
-        fprintf(stderr, "http: send failed\n");
+        fprintf(AMX_ERR, "http: send failed\n");
         free(hdr);
         net_close(c);
         return -1;
     }
     free(hdr);
     while ((r = net_read(c, tmp, sizeof tmp)) > 0)
-        if (buf_add(&b, tmp, r)) { fprintf(stderr, "http: out of memory\n"); r = -1; break; }
+        if (buf_add(&b, tmp, r)) { fprintf(AMX_ERR, "http: out of memory\n"); r = -1; break; }
     net_close(c);
 
     if (!b.d || !(sep = strstr(b.d, "\r\n\r\n"))) {
-        fprintf(stderr, "http: no response (%s)\n", r < 0 ? "read error" : "connection closed");
+        fprintf(AMX_ERR, "http: no response (%s)\n", r < 0 ? "read error" : "connection closed");
         free(b.d);
         return -1;
     }
@@ -145,7 +145,7 @@ int http_request(const char *method, const char *url, const char *bearer,
         size_t bl = b.len - (bp - b.d);
         if (header_value(b.d, "Transfer-Encoding", val, sizeof val) && strstr(val, "chunked")) {
             long dl = dechunk(bp, bl);
-            if (dl < 0) { fprintf(stderr, "http: bad chunked body\n"); free(b.d); return -1; }
+            if (dl < 0) { fprintf(AMX_ERR, "http: bad chunked body\n"); free(b.d); return -1; }
             bl = dl;
         }
         out->body = malloc(bl + 1);
