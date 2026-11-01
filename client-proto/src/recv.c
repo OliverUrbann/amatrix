@@ -710,7 +710,7 @@ static void handle_room_event(const char *room_id, const cJSON *ev)
         cJSON *e = cJSON_Duplicate(ev, 1);
         cJSON_AddStringToObject(e, "_room_id", room_id);
         cJSON_AddItemToArray(G.pending, e);
-        LOG("Megolm: key not (yet) known, event queued");
+        LOG("Megolm: no key yet for a message in %s, will retry", room_id);
     }
 }
 
@@ -749,6 +749,7 @@ static int sync_once(long timeout_ms)
     cJSON *r, *x, *room;
     int otk = 0, need_fb = 1;
 
+    if (!G.since) printf("first sync, old messages from before this device existed cannot be decrypted\n");
     if (G.since)
         snprintf(path, sizeof path, "/sync?timeout=%ld&filter=%s&since=%s", timeout_ms, filter, G.since);
     else
@@ -796,6 +797,9 @@ int main(int argc, char **argv)
     time_t start = time(NULL);
     const char *user, *pass;
 
+    /* line-buffer stdout so output piped into tee/a log file is not lost
+     * when the program is stopped with Ctrl+C */
+    setvbuf(stdout, NULL, _IOLBF, 0);
     G.store = "amatrix-store";
     for (i = 1; i < argc && argv[i][0] == '-'; i++) {
         if (!strcmp(argv[i], "-s") && i + 1 < argc) G.store = argv[++i];
