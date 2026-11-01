@@ -1,0 +1,15 @@
+== amatrix-recv in FS-UAE
+Kickstart 40.68, Workbench 40.42
+logged in as @amiga:amatrix.test, new device OZTQWIJBJP
+device keys: curve25519 bedJRt5Fyr/5nSyMWVX/94Jl28wrgtdkrKA3csfOC1I
+             ed25519    eb/X7xI32BLVq8FiJp4I4wXatAnMGHyabjOwMoS1ti8
+first sync, old messages from before this device existed cannot be decrypted
+uploaded keys: 50 one-time, 1 fallback
+joined !Kra3TW8ZUSCXu7YA6bA_BwF7qkAet7DOKA0T3rrsGqo
+got room key for !Kra3TW8ZUSCXu7YA6bA_BwF7qkAet7DOKA0T3rrsGqo (session EMLpgcHWfWlO...)
+uploaded keys: 1 one-time, 0 fallback
+[!Kra3TW8ZUSCXu7YA6bA_BwF7qkAet7DOKA0T3rrsGqo] @alice:amatrix.test: Hallo Vampire-Vorstufe! Gruss aus Linux.
+[!Kra3TW8ZUSCXu7YA6bA_BwF7qkAet7DOKA0T3rrsGqo] @alice:amatrix.test: Zweite Nachricht – äöü ß
+7 message(s) could not be decrypted (no key)
+done, 2 message(s) decrypted
+rc=0

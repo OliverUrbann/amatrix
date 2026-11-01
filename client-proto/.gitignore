@@ -1,2 +1,4 @@
 build/
 *.new
+build-sock/
+build-amiga/

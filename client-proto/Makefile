@@ -1,12 +1,25 @@
 # Host build (Linux/macOS) of the Amatrix client prototype.
 # Needs libcurl development files and a C++ compiler for libolm.
 #
-#   make            -> build/amatrix-recv
+#   make            -> build/amatrix-recv            (libcurl)
+#   make HTTP=sock  -> build-sock/amatrix-recv       (own HTTP on sockets +
+#                      OpenSSL: the code path the Amiga build uses)
 #   make clean
+#
+# Amiga build: ./build-amiga.sh
 
 OLM   = ../third_party/libolm
 CJSON = ../third_party/cjson
+HTTP ?= curl
+ifeq ($(HTTP),sock)
+B     = build-sock
+HTTP_SRC = src/http_sock.c src/net.c
+HTTP_LIBS = -lssl -lcrypto
+else
 B     = build
+HTTP_SRC = src/http_curl.c
+HTTP_LIBS = $$(pkg-config --libs libcurl 2>/dev/null || echo -lcurl)
+endif
 
 CC  ?= cc
 CXX ?= c++
@@ -19,13 +32,13 @@ OLM_C   = $(wildcard $(OLM)/src/*.c) $(OLM)/lib/crypto-algorithms/aes.c \
           $(OLM)/lib/crypto-algorithms/sha256.c $(OLM)/lib/curve25519-donna/curve25519-donna.c
 OLM_OBJ = $(patsubst $(OLM)/%,$(B)/olm/%.o,$(OLM_CXX) $(OLM_C))
 
-APP_SRC = src/recv.c src/canonjson.c src/http_curl.c src/platform_posix.c $(CJSON)/cJSON.c
+APP_SRC = src/recv.c src/canonjson.c $(HTTP_SRC) src/platform_posix.c $(CJSON)/cJSON.c
 APP_OBJ = $(patsubst %,$(B)/app/%.o,$(notdir $(APP_SRC)))
 
 all: $(B)/amatrix-recv
 
 $(B)/amatrix-recv: $(APP_OBJ) $(B)/libolm.a
-	$(CXX) -o $@ $(APP_OBJ) $(B)/libolm.a $$(pkg-config --libs libcurl 2>/dev/null || echo -lcurl)
+	$(CXX) -o $@ $(APP_OBJ) $(B)/libolm.a $(HTTP_LIBS)
 
 $(B)/libolm.a: $(OLM_OBJ)
 	ar rcs $@ $^
@@ -47,6 +60,6 @@ $(B)/app/cJSON.c.o: $(CJSON)/cJSON.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(B)
+	rm -rf build build-sock build-amiga
 
 .PHONY: all clean
