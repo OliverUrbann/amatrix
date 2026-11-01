@@ -3,6 +3,9 @@
 Feasibility work for a native Matrix client on classic AmigaOS (68k), with
 end-to-end encryption and without a proxy.
 
+Steps so far: [libolm on AmigaOS](#step-1-libolm-on-amigaos-libolm-amiga)
+(done) and the [receive path in C](client-proto/README.md) (works locally).
+
 ## Step 1: libolm on AmigaOS (`libolm-amiga/`)
 
 libolm 3.2.16 (Olm/Megolm, the crypto behind Matrix E2EE) built for
@@ -99,6 +102,8 @@ What it means for a client:
 1. ~~Run the tests and `olmbench` on the Vampire V4SA.~~ Done, all pass.
 2. Receive path on a Linux PC first (C + libolm + libcurl): upload device and
    one-time keys, receive an `m.room_key` via Olm, decrypt a Megolm room
-   message from Element. Against our own homeserver.
+   message. Done against a local Synapse with a vodozemac sender, see
+   [`client-proto/`](client-proto/README.md). Still open: the same test on
+   matrix.org with Element.
 3. Cross-signing if Element does not send keys to an unverified device.
 4. Move that code to the Amiga (bsdsocket + AmiSSL).
