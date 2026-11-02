@@ -26,6 +26,9 @@ int  http_request(const char *method, const char *url, const char *bearer,
                   const char *body, long timeout_s, HttpResponse *out);
 void http_response_free(HttpResponse *r);
 
+/* Why the last http_request() returned -1 (connect, TLS, ...). */
+const char *http_last_error(void);
+
 /* Percent-encode a path segment (room IDs, txn IDs). Caller frees. */
 char *http_escape(const char *s);
 

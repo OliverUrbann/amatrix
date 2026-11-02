@@ -23,5 +23,7 @@ void  plat_sleep(int seconds);
 /* Text for the console: UTF-8 as is on the host; on the Amiga converted to
  * ISO-8859-1 (characters outside Latin-1 become '?').  Caller frees. */
 char *plat_display(const char *utf8);
+/* Local text (ISO-8859-1 on the Amiga) to UTF-8.  Caller frees. */
+char *plat_from_local(const char *local);
 
 #endif

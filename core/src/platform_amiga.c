@@ -142,3 +142,16 @@ char *plat_display(const char *utf8)
     *o = 0;
     return r;
 }
+
+char *plat_from_local(const char *local)
+{
+    const unsigned char *s = (const unsigned char *)local;
+    char *r = malloc(strlen(local) * 2 + 1), *o = r;
+    if (!r) return NULL;
+    for (; *s; s++) {
+        if (*s < 0x80) *o++ = *s;
+        else { *o++ = (char)(0xC0 | (*s >> 6)); *o++ = (char)(0x80 | (*s & 0x3F)); }
+    }
+    *o = 0;
+    return r;
+}

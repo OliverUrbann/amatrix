@@ -88,3 +88,5 @@ char *http_escape(const char *s)
     curl_free(e);
     return r;
 }
+
+const char *http_last_error(void) { return "libcurl error"; }

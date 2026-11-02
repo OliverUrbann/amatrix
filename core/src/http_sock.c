@@ -8,6 +8,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
+
+static char last_err[200];
+const char *http_last_error(void) { return last_err; }
+static void seterr(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(last_err, sizeof last_err, fmt, ap);
+    va_end(ap);
+}
 
 typedef struct { char *d; size_t len, cap; } Buf;
 
@@ -98,9 +109,10 @@ int http_request(const char *method, const char *url, const char *bearer,
 
     (void)timeout_s;   /* the server bounds /sync with its own timeout */
     memset(out, 0, sizeof *out);
+    last_err[0] = 0;
     if (!strncmp(url, "https://", 8)) { tls = 1; port = 443; p = url + 8; }
     else if (!strncmp(url, "http://", 7)) { tls = 0; port = 80; p = url + 7; }
-    else { fprintf(AMX_ERR, "http: bad URL %s\n", url); return -1; }
+    else { seterr("bad URL %s", url); return -1; }
     n = strcspn(p, ":/");
     if (n == 0 || n >= sizeof host) return -1;
     memcpy(host, p, n);
@@ -110,7 +122,7 @@ int http_request(const char *method, const char *url, const char *bearer,
     if (!path) path = "/";
 
     c = net_connect(host, port, tls, err, sizeof err);
-    if (!c) { fprintf(AMX_ERR, "http: %s\n", err); return -1; }
+    if (!c) { seterr("%s", err); return -1; }
 
     hdr = malloc(strlen(path) + strlen(host) + (bearer ? strlen(bearer) : 0) + 400);
     if (!hdr) { net_close(c); return -1; }
@@ -122,18 +134,18 @@ int http_request(const char *method, const char *url, const char *bearer,
     else if (strcmp(method, "GET")) n += sprintf(hdr + n, "Content-Length: 0\r\n");
     n += sprintf(hdr + n, "\r\n");
     if (net_write(c, hdr, n) || (blen && net_write(c, body, blen))) {
-        fprintf(AMX_ERR, "http: send failed\n");
+        seterr("send failed");
         free(hdr);
         net_close(c);
         return -1;
     }
     free(hdr);
     while ((r = net_read(c, tmp, sizeof tmp)) > 0)
-        if (buf_add(&b, tmp, r)) { fprintf(AMX_ERR, "http: out of memory\n"); r = -1; break; }
+        if (buf_add(&b, tmp, r)) { seterr("out of memory"); r = -1; break; }
     net_close(c);
 
     if (!b.d || !(sep = strstr(b.d, "\r\n\r\n"))) {
-        fprintf(AMX_ERR, "http: no response (%s)\n", r < 0 ? "read error" : "connection closed");
+        seterr("no response (%s)", r < 0 ? "read error" : "connection closed");
         free(b.d);
         return -1;
     }
@@ -145,7 +157,7 @@ int http_request(const char *method, const char *url, const char *bearer,
         size_t bl = b.len - (bp - b.d);
         if (header_value(b.d, "Transfer-Encoding", val, sizeof val) && strstr(val, "chunked")) {
             long dl = dechunk(bp, bl);
-            if (dl < 0) { fprintf(AMX_ERR, "http: bad chunked body\n"); free(b.d); return -1; }
+            if (dl < 0) { seterr("bad chunked body"); free(b.d); return -1; }
             bl = dl;
         }
         out->body = malloc(bl + 1);

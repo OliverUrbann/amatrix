@@ -65,3 +65,10 @@ char *plat_display(const char *utf8)
     if (r) strcpy(r, utf8);
     return r;
 }
+
+char *plat_from_local(const char *local)
+{
+    char *r = malloc(strlen(local) + 1);
+    if (r) strcpy(r, local);
+    return r;
+}
