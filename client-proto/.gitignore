@@ -2,3 +2,4 @@ build/
 *.new
 build-sock/
 build-amiga/
+build-asan/
