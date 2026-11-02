@@ -16,6 +16,13 @@
  *   -n COUNT   exit after COUNT decrypted messages (default: run forever)
  *   -t SECS    exit after SECS seconds (default: run forever)
  *   -v         verbose
+ *   -e         echo bot: answer every message from someone else, encrypted
+ *   -g TEXT    greeting: send TEXT (encrypted) to each room once after joining
+ *
+ * Sending: queries the room members' devices (verifying their self-signatures),
+ * claims one-time keys, opens Olm sessions, shares an outbound Megolm session
+ * over to-device messages and encrypts the message with it.  The outbound
+ * session is rotated after 100 messages or when a device left the room.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +30,7 @@
 #include <time.h>
 
 #include "olm/olm.h"
+#include "olm/outbound_group_session.h"
 #include "cJSON.h"
 #include "canonjson.h"
 #include "http.h"
@@ -61,6 +69,12 @@ static struct {
     GroupSess *grp; int n_grp;
     cJSON *pending;              /* undecryptable room events, retried later */
     int decrypted;
+    int echo;                    /* -e */
+    const char *greeting;        /* -g, UTF-8 */
+    cJSON *devices;              /* user_id -> [ {device_id, curve, ed}, ... ] (verified) */
+    cJSON *outbound;             /* room_id -> {pickle, shared: {curve: 1}, count} */
+    cJSON *greeted;              /* room_id -> true */
+    int sent;
 } G;
 
 /* ---------------------------------------------------------------- helpers */
@@ -638,6 +652,460 @@ static void handle_to_device(const cJSON *ev)
     cJSON_Delete(payload);
 }
 
+/* ---------------------------------------------------------------- sending */
+
+static OlmUtility *utility(void)
+{
+    static OlmUtility *u;
+    if (!u) u = olm_utility(xmalloc(olm_utility_size()));
+    return u;
+}
+
+/* Checks signatures.<user>.<keyid> on obj against the ed25519 key ed. */
+static int verify_signed(const cJSON *obj, const char *user, const char *keyid, const char *ed)
+{
+    const cJSON *sig = cJSON_GetObjectItemCaseSensitive(
+        cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(obj, "signatures"), user), keyid);
+    char *canon, *sc;
+    size_t r;
+    if (!cJSON_IsString(sig)) return 0;
+    canon = canonical_json_for_signing(obj);
+    if (!canon) return 0;
+    sc = xstrdup(sig->valuestring);               /* libolm may scribble on it */
+    r = olm_ed25519_verify(utility(), ed, strlen(ed), canon, strlen(canon), sc, strlen(sc));
+    free(canon);
+    free(sc);
+    return r != olm_error();
+}
+
+static char *txn_id(void)
+{
+    static unsigned long n;
+    char buf[48];
+    sprintf(buf, "amx%lu.%lu", (unsigned long)time(NULL), ++n);
+    return xstrdup(buf);
+}
+
+#ifdef __amigaos__
+/* the Amiga shell gives us ISO-8859-1, Matrix wants UTF-8 */
+static char *to_utf8(const char *latin1)
+{
+    const unsigned char *s = (const unsigned char *)latin1;
+    char *r = xmalloc(strlen(latin1) * 2 + 1), *o = r;
+    for (; *s; s++) {
+        if (*s < 0x80) *o++ = *s;
+        else { *o++ = (char)(0xC0 | (*s >> 6)); *o++ = (char)(0x80 | (*s & 0x3F)); }
+    }
+    *o = 0;
+    return r;
+}
+#else
+static char *to_utf8(const char *s) { return xstrdup(s); }
+#endif
+
+static void load_send_state(void)
+{
+    char *t = read_store("megolm_out.json");
+    G.outbound = t ? cJSON_Parse(t) : NULL;
+    free(t);
+    if (!G.outbound) G.outbound = cJSON_CreateObject();
+    t = read_store("greeted.json");
+    G.greeted = t ? cJSON_Parse(t) : NULL;
+    free(t);
+    if (!G.greeted) G.greeted = cJSON_CreateObject();
+    G.devices = cJSON_CreateObject();
+}
+
+static void save_json(const char *name, const cJSON *j)
+{
+    char *t = cJSON_PrintUnformatted(j);
+    write_store(name, t);
+    free(t);
+}
+
+/* Fetches (verified) device lists for users not cached yet. */
+static void query_devices(const cJSON *users)
+{
+    cJSON *req = cJSON_CreateObject(), *dk = cJSON_AddObjectToObject(req, "device_keys"), *res, *ud;
+    const cJSON *u;
+    int n = 0;
+    cJSON_ArrayForEach(u, users) {
+        if (cJSON_GetObjectItemCaseSensitive(G.devices, u->valuestring)) continue;
+        cJSON_AddItemToObject(dk, u->valuestring, cJSON_CreateArray());
+        n++;
+    }
+    if (!n) { cJSON_Delete(req); return; }
+    res = api_ok("POST", "/keys/query", req);
+    cJSON_Delete(req);
+    if (!res) return;
+    cJSON_ArrayForEach(ud, cJSON_GetObjectItemCaseSensitive(res, "device_keys")) {
+        cJSON *list = cJSON_CreateArray(), *d;
+        cJSON_ArrayForEach(d, ud) {
+            const char *uid = jstr(d, "user_id"), *did = jstr(d, "device_id"), *curve, *ed;
+            const cJSON *keys = cJSON_GetObjectItemCaseSensitive(d, "keys");
+            char kid[200];
+            cJSON *e;
+            if (!uid || !did || strcmp(uid, ud->string) || strcmp(did, d->string)) {
+                fprintf(AMX_ERR, "keys/query: inconsistent entry for %s, ignored\n", ud->string);
+                continue;
+            }
+            snprintf(kid, sizeof kid, "curve25519:%s", did);
+            curve = jstr(keys, kid);
+            snprintf(kid, sizeof kid, "ed25519:%s", did);
+            ed = jstr(keys, kid);
+            if (!curve || !ed) continue;
+            if (!verify_signed(d, uid, kid, ed)) {
+                fprintf(AMX_ERR, "device %s of %s: bad self-signature, ignored\n", did, uid);
+                continue;
+            }
+            if (!strcmp(uid, G.user_id) && !strcmp(did, G.device_id)) continue;   /* us */
+            e = cJSON_CreateObject();
+            cJSON_AddStringToObject(e, "user", uid);
+            cJSON_AddStringToObject(e, "device_id", did);
+            cJSON_AddStringToObject(e, "curve", curve);
+            cJSON_AddStringToObject(e, "ed", ed);
+            cJSON_AddItemToArray(list, e);
+        }
+        LOG("devices of %s: %d", ud->string, cJSON_GetArraySize(list));
+        cJSON_DeleteItemFromObjectCaseSensitive(G.devices, ud->string);
+        cJSON_AddItemToObject(G.devices, ud->string, list);
+    }
+    cJSON_Delete(res);
+}
+
+static OlmSession *session_for(const char *curve)
+{
+    int i;
+    for (i = G.n_olm - 1; i >= 0; i--)          /* newest first */
+        if (!strcmp(G.olm[i].sender_key, curve)) return G.olm[i].s;
+    return NULL;
+}
+
+/* devices the server had no one-time key for (this run): not asked again */
+static cJSON *nokey;
+
+/* Opens Olm sessions to all devices in targets that have none yet. */
+static void ensure_olm_sessions(const cJSON *targets)
+{
+    cJSON *req = cJSON_CreateObject(), *otk = cJSON_AddObjectToObject(req, "one_time_keys"), *res, *uo;
+    const cJSON *t;
+    int n = 0, made = 0;
+    cJSON_ArrayForEach(t, targets) {
+        cJSON *uobj;
+        if (session_for(jstr(t, "curve"))) continue;
+        if (nokey && cJSON_GetObjectItemCaseSensitive(nokey, jstr(t, "curve"))) continue;
+        uobj = cJSON_GetObjectItemCaseSensitive(otk, jstr(t, "user"));
+        if (!uobj) uobj = cJSON_AddObjectToObject(otk, jstr(t, "user"));
+        cJSON_AddStringToObject(uobj, jstr(t, "device_id"), "signed_curve25519");
+        n++;
+    }
+    if (!n) { cJSON_Delete(req); return; }
+    res = api_ok("POST", "/keys/claim", req);
+    cJSON_Delete(req);
+    if (!res) return;
+    uo = cJSON_GetObjectItemCaseSensitive(res, "one_time_keys");
+    cJSON_ArrayForEach(t, targets) {
+        const cJSON *keys = cJSON_GetObjectItemCaseSensitive(
+            cJSON_GetObjectItemCaseSensitive(uo, jstr(t, "user")), jstr(t, "device_id")), *k;
+        char kid[200];
+        if (session_for(jstr(t, "curve"))) continue;
+        if (!keys || !keys->child) {
+            /* remember for this run, so we do not ask again for every message */
+            if (!nokey) nokey = cJSON_CreateObject();
+            if (!cJSON_GetObjectItemCaseSensitive(nokey, jstr(t, "curve"))) {
+                fprintf(AMX_ERR, "no one-time key for %s %s, skipped\n", jstr(t, "user"), jstr(t, "device_id"));
+                cJSON_AddTrueToObject(nokey, jstr(t, "curve"));
+            }
+            continue;
+        }
+        k = keys->child;
+        snprintf(kid, sizeof kid, "ed25519:%s", jstr(t, "device_id"));
+        if (!jstr(k, "key") || !verify_signed(k, jstr(t, "user"), kid, jstr(t, "ed"))) {
+            fprintf(AMX_ERR, "one-time key of %s %s: bad signature, skipped\n", jstr(t, "user"), jstr(t, "device_id"));
+            continue;
+        }
+        {
+            OlmSession *s = new_olm_session();
+            size_t rn = olm_create_outbound_session_random_length(s);
+            void *r = random_bytes(rn);
+            const char *ck = jstr(t, "curve"), *ok = jstr(k, "key");
+            if (olm_create_outbound_session(s, G.acct, ck, strlen(ck), ok, strlen(ok), r, rn) == olm_error()) {
+                fprintf(AMX_ERR, "Olm: outbound session failed: %s\n", olm_session_last_error(s));
+                free(r); free(s);
+                continue;
+            }
+            free(r);
+            add_olm_session(ck, s);
+            made++;
+            LOG("Olm: new outbound session to %s %s", jstr(t, "user"), jstr(t, "device_id"));
+        }
+    }
+    cJSON_Delete(res);
+    if (made) save_olm_sessions();
+}
+
+static char *olm_encrypt_str(OlmSession *s, const char *plain, int *type)
+{
+    size_t rn = olm_encrypt_random_length(s), cl = olm_encrypt_message_length(s, strlen(plain));
+    void *r = random_bytes(rn);
+    char *c = xmalloc(cl + 1);
+    *type = (int)olm_encrypt_message_type(s);
+    if (olm_encrypt(s, plain, strlen(plain), r, rn, c, cl) == olm_error()) {
+        fprintf(AMX_ERR, "Olm: encrypt failed: %s\n", olm_session_last_error(s));
+        free(r); free(c);
+        return NULL;
+    }
+    free(r);
+    c[cl] = 0;
+    return c;
+}
+
+static OlmOutboundGroupSession *unpickle_out(const cJSON *entry)
+{
+    OlmOutboundGroupSession *o = olm_outbound_group_session(xmalloc(olm_outbound_group_session_size()));
+    char *p = xstrdup(jstr(entry, "pickle"));
+    if (olm_unpickle_outbound_group_session(o, PK, p, strlen(p)) == olm_error())
+        die(olm_outbound_group_session_last_error(o));
+    free(p);
+    return o;
+}
+
+static void repickle_out(cJSON *entry, OlmOutboundGroupSession *o)
+{
+    size_t n = olm_pickle_outbound_group_session_length(o);
+    char *p = xmalloc(n + 1);
+    olm_pickle_outbound_group_session(o, PK, p, n);
+    p[n] = 0;
+    cJSON_DeleteItemFromObjectCaseSensitive(entry, "pickle");
+    cJSON_AddStringToObject(entry, "pickle", p);
+    free(p);
+}
+
+/* New outbound Megolm session for room; our own inbound copy is added so we
+ * can read our own messages when they come back in /sync. */
+static cJSON *new_outbound(const char *room_id)
+{
+    OlmOutboundGroupSession *o = olm_outbound_group_session(xmalloc(olm_outbound_group_session_size()));
+    OlmInboundGroupSession *in;
+    size_t rn = olm_init_outbound_group_session_random_length(o), n;
+    void *r = random_bytes(rn);
+    uint8_t *key;
+    char sid[128];
+    cJSON *entry = cJSON_CreateObject();
+    if (olm_init_outbound_group_session(o, r, rn) == olm_error())
+        die(olm_outbound_group_session_last_error(o));
+    free(r);
+    n = olm_outbound_group_session_id(o, (uint8_t *)sid, sizeof sid - 1);
+    sid[n] = 0;
+    n = olm_outbound_group_session_key_length(o);
+    key = xmalloc(n + 1);
+    olm_outbound_group_session_key(o, key, n);
+    in = new_group_session();
+    if (olm_init_inbound_group_session(in, key, n) == olm_error())
+        die(olm_inbound_group_session_last_error(in));
+    free(key);
+    add_group_session(room_id, sid, G.curve, G.ed, in);
+    save_group_sessions();
+    repickle_out(entry, o);
+    cJSON_AddObjectToObject(entry, "shared");
+    cJSON_AddNumberToObject(entry, "count", 0);
+    free(o);
+    cJSON_DeleteItemFromObjectCaseSensitive(G.outbound, room_id);
+    cJSON_AddItemToObject(G.outbound, room_id, entry);
+    LOG("Megolm: new outbound session %.12s... for %s", sid, room_id);
+    return entry;
+}
+
+/* Sends an encrypted m.text message. Returns 0 on success. */
+static int send_text(const char *room_id, const char *body)
+{
+    char *esc = http_escape(room_id), *path, *txn, *plain;
+    cJSON *members, *users, *targets, *entry, *x, *msgs, *req, *res, *content;
+    const cJSON *u, *d;
+    OlmOutboundGroupSession *o;
+    int rotate = 0, n_share = 0, ok = -1;
+    size_t n;
+
+    /* 1. who is in the room, and their devices */
+    path = xmalloc(strlen(esc) + 40);
+    sprintf(path, "/rooms/%s/joined_members", esc);
+    members = api_ok("GET", path, NULL);
+    free(path);
+    if (!members) { free(esc); return -1; }
+    users = cJSON_CreateArray();
+    cJSON_ArrayForEach(u, cJSON_GetObjectItemCaseSensitive(members, "joined"))
+        cJSON_AddItemToArray(users, cJSON_CreateString(u->string));
+    cJSON_Delete(members);
+    query_devices(users);
+    targets = cJSON_CreateArray();
+    cJSON_ArrayForEach(u, users)
+        cJSON_ArrayForEach(d, cJSON_GetObjectItemCaseSensitive(G.devices, u->valuestring))
+            cJSON_AddItemToArray(targets, cJSON_Duplicate(d, 1));
+    cJSON_Delete(users);
+
+    /* 2. outbound session: rotate after 100 messages or if a device left */
+    entry = cJSON_GetObjectItemCaseSensitive(G.outbound, room_id);
+    if (entry) {
+        const cJSON *sh;
+        if (cJSON_GetObjectItemCaseSensitive(entry, "count")->valueint >= 100) rotate = 1;
+        cJSON_ArrayForEach(sh, cJSON_GetObjectItemCaseSensitive(entry, "shared")) {
+            int found = 0;
+            cJSON_ArrayForEach(d, targets) if (!strcmp(jstr(d, "curve"), sh->string)) found = 1;
+            if (!found) { rotate = 1; LOG("Megolm: a device left %s, rotating", room_id); break; }
+        }
+    }
+    if (!entry || rotate) entry = new_outbound(room_id);
+    o = unpickle_out(entry);
+
+    /* 3. share the session key with every device that does not have it */
+    msgs = cJSON_CreateObject();
+    {
+        cJSON *need = cJSON_CreateArray(), *shared = cJSON_GetObjectItemCaseSensitive(entry, "shared");
+        char sid[128];
+        uint8_t *key;
+        cJSON_ArrayForEach(d, targets)
+            if (!cJSON_GetObjectItemCaseSensitive(shared, jstr(d, "curve")))
+                cJSON_AddItemToArray(need, cJSON_Duplicate(d, 1));
+        if (cJSON_GetArraySize(need)) {
+            ensure_olm_sessions(need);
+            n = olm_outbound_group_session_id(o, (uint8_t *)sid, sizeof sid - 1);
+            sid[n] = 0;
+            n = olm_outbound_group_session_key_length(o);
+            key = xmalloc(n + 1);
+            olm_outbound_group_session_key(o, key, n);
+            key[n] = 0;
+            cJSON_ArrayForEach(d, need) {
+                OlmSession *s = session_for(jstr(d, "curve"));
+                cJSON *pl, *c, *ct, *one, *uo;
+                char *pt, *body;
+                int type;
+                if (!s) continue;
+                pl = cJSON_CreateObject();
+                cJSON_AddStringToObject(pl, "type", "m.room_key");
+                c = cJSON_AddObjectToObject(pl, "content");
+                cJSON_AddStringToObject(c, "algorithm", MEGOLM_ALG);
+                cJSON_AddStringToObject(c, "room_id", room_id);
+                cJSON_AddStringToObject(c, "session_id", sid);
+                cJSON_AddStringToObject(c, "session_key", (char *)key);
+                cJSON_AddStringToObject(pl, "sender", G.user_id);
+                cJSON_AddStringToObject(pl, "sender_device", G.device_id);
+                cJSON_AddStringToObject(cJSON_AddObjectToObject(pl, "keys"), "ed25519", G.ed);
+                cJSON_AddStringToObject(pl, "recipient", jstr(d, "user"));
+                cJSON_AddStringToObject(cJSON_AddObjectToObject(pl, "recipient_keys"), "ed25519", jstr(d, "ed"));
+                pt = cJSON_PrintUnformatted(pl);
+                cJSON_Delete(pl);
+                body = olm_encrypt_str(s, pt, &type);
+                free(pt);
+                if (!body) continue;
+                c = cJSON_CreateObject();
+                cJSON_AddStringToObject(c, "algorithm", OLM_ALG);
+                cJSON_AddStringToObject(c, "sender_key", G.curve);
+                ct = cJSON_AddObjectToObject(c, "ciphertext");
+                one = cJSON_AddObjectToObject(ct, jstr(d, "curve"));
+                cJSON_AddNumberToObject(one, "type", type);
+                cJSON_AddStringToObject(one, "body", body);
+                free(body);
+                uo = cJSON_GetObjectItemCaseSensitive(msgs, jstr(d, "user"));
+                if (!uo) uo = cJSON_AddObjectToObject(msgs, jstr(d, "user"));
+                cJSON_AddItemToObject(uo, jstr(d, "device_id"), c);
+                cJSON_AddTrueToObject(shared, jstr(d, "curve"));
+                n_share++;
+            }
+            free(key);
+            save_olm_sessions();
+        }
+        cJSON_Delete(need);
+    }
+    if (n_share) {
+        txn = txn_id();
+        path = xmalloc(strlen(txn) + 48);
+        sprintf(path, "/sendToDevice/m.room.encrypted/%s", txn);
+        req = cJSON_CreateObject();
+        cJSON_AddItemToObject(req, "messages", msgs);
+        res = api_ok("PUT", path, req);
+        cJSON_Delete(req);
+        free(path); free(txn);
+        if (!res) { fprintf(AMX_ERR, "sending room key failed\n"); free(o); cJSON_Delete(targets); free(esc); return -1; }
+        cJSON_Delete(res);
+        LOG("room key shared with %d device(s)", n_share);
+    } else {
+        cJSON_Delete(msgs);
+    }
+
+    /* 4. encrypt and send the message */
+    x = cJSON_CreateObject();
+    cJSON_AddStringToObject(x, "type", "m.room.message");
+    content = cJSON_AddObjectToObject(x, "content");
+    cJSON_AddStringToObject(content, "msgtype", "m.text");
+    cJSON_AddStringToObject(content, "body", body);
+    cJSON_AddStringToObject(x, "room_id", room_id);
+    plain = cJSON_PrintUnformatted(x);
+    cJSON_Delete(x);
+    {
+        size_t cl = olm_group_encrypt_message_length(o, strlen(plain));
+        uint8_t *c = xmalloc(cl + 1);
+        char sid[128];
+        if (olm_group_encrypt(o, (uint8_t *)plain, strlen(plain), c, cl) == olm_error())
+            die(olm_outbound_group_session_last_error(o));
+        c[cl] = 0;
+        n = olm_outbound_group_session_id(o, (uint8_t *)sid, sizeof sid - 1);
+        sid[n] = 0;
+        x = cJSON_CreateObject();
+        cJSON_AddStringToObject(x, "algorithm", MEGOLM_ALG);
+        cJSON_AddStringToObject(x, "sender_key", G.curve);
+        cJSON_AddStringToObject(x, "ciphertext", (char *)c);
+        cJSON_AddStringToObject(x, "session_id", sid);
+        cJSON_AddStringToObject(x, "device_id", G.device_id);
+        free(c);
+    }
+    free(plain);
+    /* the ratchet has advanced: store it before the request goes out */
+    repickle_out(entry, o);
+    cJSON_ReplaceItemInObjectCaseSensitive(entry, "count",
+        cJSON_CreateNumber(cJSON_GetObjectItemCaseSensitive(entry, "count")->valueint + 1));
+    save_json("megolm_out.json", G.outbound);
+    free(o);
+    txn = txn_id();
+    path = xmalloc(strlen(esc) + strlen(txn) + 48);
+    sprintf(path, "/rooms/%s/send/m.room.encrypted/%s", esc, txn);
+    res = api_ok("PUT", path, x);
+    if (res) {
+        char *shown = plat_display(body);
+        printf("sent to %s: %s\n", room_id, shown ? shown : "");
+        free(shown);
+        G.sent++;
+        ok = 0;
+    }
+    cJSON_Delete(res);
+    cJSON_Delete(x);
+    free(path); free(txn); free(esc);
+    cJSON_Delete(targets);
+    return ok;
+}
+
+/* Replies and greetings are queued while a /sync batch is processed and sent
+ * afterwards. */
+static cJSON *outq;
+static void queue_send(const char *room_id, const char *body)
+{
+    cJSON *e = cJSON_CreateObject();
+    if (!outq) outq = cJSON_CreateArray();
+    cJSON_AddStringToObject(e, "room", room_id);
+    cJSON_AddStringToObject(e, "body", body);
+    cJSON_AddItemToArray(outq, e);
+}
+
+static void flush_sends(void)
+{
+    cJSON *e;
+    if (!outq) return;
+    cJSON_ArrayForEach(e, outq)
+        if (send_text(jstr(e, "room"), jstr(e, "body")) != 0)
+            fprintf(AMX_ERR, "could not send to %s\n", jstr(e, "room"));
+    cJSON_Delete(outq);
+    outq = NULL;
+}
+
 /* Returns 1 if decrypted (or not decryptable ever), 0 if the key is missing. */
 static int try_room_event(const char *room_id, const cJSON *ev)
 {
@@ -696,18 +1164,24 @@ static int try_room_event(const char *room_id, const cJSON *ev)
     {
         const cJSON *pc = cJSON_GetObjectItemCaseSensitive(p, "content");
         const char *ptype = jstr(p, "type");
-        if (ptype && !strcmp(ptype, "m.room.message"))
-            {
-                char *shown = plat_display(jstr(pc, "body") ? jstr(pc, "body") : "");
-                printf("[%s] %s: %s\n", room_id, sender, shown ? shown : "");
-                free(shown);
+        int own = sender && !strcmp(sender, G.user_id);
+        if (ptype && !strcmp(ptype, "m.room.message")) {
+            const char *b = jstr(pc, "body") ? jstr(pc, "body") : "";
+            char *shown = plat_display(b);
+            printf("[%s] %s: %s%s\n", room_id, sender, shown ? shown : "", own ? "   (own)" : "");
+            free(shown);
+            if (G.echo && !own) {
+                char *reply = xmalloc(strlen(b) + 64);
+                sprintf(reply, "Amiga hat empfangen: %s", b);
+                queue_send(room_id, reply);
+                free(reply);
             }
-        else
+        } else
             printf("[%s] %s: (%s)\n", room_id, sender, ptype ? ptype : "?");
         fflush(stdout);
+        if (!own) G.decrypted++;
     }
     cJSON_Delete(p);
-    G.decrypted++;
     return 1;
 }
 
@@ -742,7 +1216,14 @@ static void join_room(const char *room_id)
     cJSON *body = cJSON_CreateObject(), *r;
     sprintf(path, "/join/%s", esc);
     r = api_ok("POST", path, body);
-    if (r) printf("joined %s\n", room_id);
+    if (r) {
+        printf("joined %s\n", room_id);
+        if (G.greeting && !cJSON_GetObjectItemCaseSensitive(G.greeted, room_id)) {
+            queue_send(room_id, G.greeting);
+            cJSON_AddTrueToObject(G.greeted, room_id);
+            save_json("greeted.json", G.greeted);
+        }
+    }
     cJSON_Delete(r);
     cJSON_Delete(body);
     free(path);
@@ -782,6 +1263,12 @@ static int sync_once(long timeout_ms)
                                   cJSON_GetObjectItemCaseSensitive(room, "timeline"), "events"))
             handle_room_event(room->string, x);
 
+    /* devices changed: forget the cached list, it is fetched again on send */
+    cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(
+                              cJSON_GetObjectItemCaseSensitive(r, "device_lists"), "changed"))
+        if (cJSON_IsString(x)) cJSON_DeleteItemFromObjectCaseSensitive(G.devices, x->valuestring);
+    flush_sends();
+
     x = cJSON_GetObjectItemCaseSensitive(
             cJSON_GetObjectItemCaseSensitive(r, "device_one_time_keys_count"), "signed_curve25519");
     if (cJSON_IsNumber(x)) otk = x->valueint;
@@ -815,10 +1302,12 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-n") && i + 1 < argc) max_msgs = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-t") && i + 1 < argc) secs = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-v")) verbose = 1;
+        else if (!strcmp(argv[i], "-e")) G.echo = 1;
+        else if (!strcmp(argv[i], "-g") && i + 1 < argc) G.greeting = to_utf8(argv[++i]);
         else break;
     }
     if (argc - i != 3) {
-        fprintf(AMX_ERR, "usage: %s [-s storedir] [-n count] [-t seconds] [-v] HOMESERVER_URL USER PASSWORD\n", argv[0]);
+        fprintf(AMX_ERR, "usage: %s [-s storedir] [-n count] [-t seconds] [-v] [-e] [-g greeting] HOMESERVER_URL USER PASSWORD\n", argv[0]);
         return 2;
     }
     G.hs = xstrdup(argv[i]);
@@ -833,6 +1322,7 @@ int main(int argc, char **argv)
     login(user, pass);
     load_or_create_account();
     load_sessions();
+    load_send_state();
 
     for (;;) {
         long left = 30000;
@@ -846,7 +1336,7 @@ int main(int argc, char **argv)
     }
     if (cJSON_GetArraySize(G.pending))
         printf("%d message(s) could not be decrypted (no key)\n", cJSON_GetArraySize(G.pending));
-    printf("done, %d message(s) decrypted\n", G.decrypted);
+    printf("done, %d message(s) decrypted, %d sent\n", G.decrypted, G.sent);
     fflush(stdout);
     LOG("cleanup: closing network");
     http_cleanup();

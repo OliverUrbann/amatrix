@@ -1,0 +1,6 @@
+Assign AmiSSL: SYS:AmiSSL
+Assign LIBS: AmiSSL:Libs ADD
+CD Extra:
+Execute amxdiag-run amiga amiga-pw SERVER=https://localhost:8448
+Copy RAM:amxdiag-log.txt SYS:out.txt
+Echo "done" >SYS:amiga-done

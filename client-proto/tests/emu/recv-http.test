@@ -1,0 +1,6 @@
+Stack 262144
+Echo "== amatrix-recv in FS-UAE" >SYS:out.txt
+Version >>SYS:out.txt
+Extra:amatrix-recv -s RAM:store -n 2 -t 150 http://127.0.0.1:8008 amiga amiga-pw >>SYS:out.txt
+Echo "rc=$RC" >>SYS:out.txt
+Echo "done" >SYS:amiga-done

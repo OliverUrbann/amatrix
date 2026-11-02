@@ -1,0 +1,9 @@
+Stack 262144
+Assign AmiSSL: SYS:AmiSSL
+Assign LIBS: AmiSSL:Libs ADD
+Echo "== amatrix-recv (AmiSSL) in FS-UAE" >SYS:out.txt
+Version >>SYS:out.txt
+Version LIBS:amisslmaster.library >>SYS:out.txt
+Extra:amatrix-recv -s RAM:store -n 2 -t 200 https://localhost:8448 amiga amiga-pw >>SYS:out.txt
+Echo "rc=$RC" >>SYS:out.txt
+Echo "done" >SYS:amiga-done
