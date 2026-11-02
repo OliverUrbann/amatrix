@@ -3,8 +3,10 @@
 Feasibility work for a native Matrix client on classic AmigaOS (68k), with
 end-to-end encryption and without a proxy.
 
-Steps so far: [libolm on AmigaOS](#step-1-libolm-on-amigaos-libolm-amiga)
-(done) and the [receive path in C](client-proto/README.md) (works locally).
+**Status 2026-11-02: a Vampire V4SA chats end-to-end encrypted with Element
+on matrix.org, natively, without a proxy** (receive and send, see
+[`client-proto/`](client-proto/README.md) and
+`client-proto/results/v4sa-dfence-element-chat-2026-11-02.*`).
 
 ## Step 1: libolm on AmigaOS (`libolm-amiga/`)
 
@@ -103,7 +105,10 @@ What it means for a client:
 2. Receive path on a Linux PC first (C + libolm + libcurl): upload device and
    one-time keys, receive an `m.room_key` via Olm, decrypt a Megolm room
    message. Done against a local Synapse with a vodozemac sender, see
-   [`client-proto/`](client-proto/README.md). Still open: the same test on
-   matrix.org with Element.
-3. Cross-signing if Element does not send keys to an unverified device.
-4. Move that code to the Amiga (bsdsocket + AmiSSL).
+   [`client-proto/`](client-proto/README.md). Done on the V4SA against
+   matrix.org with Element: Element sends its room key to the
+   unverified Amiga device.
+3. Sending: done (echo bot test, V4SA + Element, 2026-11-02).
+4. On the Amiga with bsdsocket + AmiSSL: done.
+5. Next: cross-signing / verification (Element shows the Amiga's messages as
+   from an unverified device), interactive chat on the Amiga, then a GUI.

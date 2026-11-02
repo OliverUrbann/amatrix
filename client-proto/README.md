@@ -73,11 +73,17 @@ AmigaDOS 3.x shell cannot redirect stderr.
 | FS-UAE, AmiSSL, https | PASS |
 | FS-UAE, the package script `amatrix-test` | PASS |
 
+Real test on the V4SA against matrix.org with Element, two-way
+(2026-11-02, `results/v4sa-dfence-element-chat-2026-11-02.*`): greeting and
+3 echoes readable in Element (marked as unverified device), 3 messages from
+Element decrypted on the Amiga, amxdiag clean, no crash on exit.
+
 First real test on the V4SA against matrix.org with Element
 (receive only): Element sent its room key to the unverified Amiga device,
 all messages after the join decrypted (`results/v4sa-dfence-element-2026-11-02.txt`).
-Open: "Memory header not located" on program exit on the V4SA (ApolloOS);
-`amxdiag` checks the parts one by one.
+"Memory header not located" on program exit seen once on the V4SA
+(ApolloOS) in the first test, not reproduced since (amxdiag and the chat
+test exit cleanly).
 
 Not done yet: replay protection (event ID per Megolm message index),
 `m.forwarded_room_key`, key requests, device verification and cross-signing
