@@ -1,0 +1,96 @@
+== amxdiag
+Kickstart 40.68, Workbench 40.42
+amisslmaster.library 5.27
+bsdsocket.library 4.1
+Type  Available    In-Use   Maximum   Largest
+chip    2074240     21888   2096128   2073408
+fast   66689752    419112  67108864  66658904
+total  68763992    441000  69204992  66658904
+[socket] opening network (bsdsocket)
+[socket] network open
+[socket] closing network
+[socket] network closed, exiting
+  rc=0
+[amissl] opening network (bsdsocket + AmiSSL)
+[amissl] network open
+[amissl] closing network
+[amissl] network closed, exiting
+  rc=0
+[random] opening network (bsdsocket + AmiSSL)
+[random] network open
+[random] RAND_bytes(1024) -> ok
+[random] closing network
+[random] network closed, exiting
+  rc=0
+[https] opening network (bsdsocket + AmiSSL)
+[https] network open
+[https] GET https://localhost:8448/_matrix/client/versions (1/1)
+[https] HTTP 200, 1522 bytes
+[https] closing network
+[https] network closed, exiting
+  rc=0
+[https5] opening network (bsdsocket + AmiSSL)
+[https5] network open
+[https5] GET https://localhost:8448/_matrix/client/versions (1/5)
+[https5] HTTP 200, 1522 bytes
+[https5] GET https://localhost:8448/_matrix/client/versions (2/5)
+[https5] HTTP 200, 1522 bytes
+[https5] GET https://localhost:8448/_matrix/client/versions (3/5)
+[https5] HTTP 200, 1522 bytes
+[https5] GET https://localhost:8448/_matrix/client/versions (4/5)
+[https5] HTTP 200, 1522 bytes
+[https5] GET https://localhost:8448/_matrix/client/versions (5/5)
+[https5] HTTP 200, 1522 bytes
+[https5] closing network
+[https5] network closed, exiting
+  rc=0
+[file] write amxdiag.tmp
+[file] replace amxdiag.tmp
+[file] read back: ok
+[file] exiting
+  rc=0
+== amatrix-recv -t 20
+> POST /login
+logged in as @amiga:amatrix.test, new device BWTKLFKCWX
+device keys: curve25519 R3m/Dv6UdNFpmfzhno6pNyj/PxkOUAIaobJuz4PC6Vg
+             ed25519    g+4n/2X4lMQVhbIfq0FGZj5mfRM0fsHaXAasyMlM+zY
+loaded 0 Olm and 0 Megolm sessions
+first sync, old messages from before this device existed cannot be decrypted
+> GET /sync?timeout=0&filter=%7B%22room%22%3A%7B%22timeline%22%3A%7B%22limit%22%3A20%7D%7D%7D
+Megolm: no key yet for $r7AqpVdsCMHQyEzBLCC_0ho5p9FvOtzjjIMGUaKAJXg from @alice:amatrix.test in !8aSM42x-oAJBTb6Jw31uDFKtkfqD1Z79xoXTqO2oChQ, will retry
+Megolm: no key yet for $g03Jei9OXSHEYy28RQD-unVGNa9v6ubl5VFsBXu3Ny0 from @alice:amatrix.test in !8aSM42x-oAJBTb6Jw31uDFKtkfqD1Z79xoXTqO2oChQ, will retry
+Megolm: no key yet for $gVoUJbg_QWTCSePJqbFOggEwal45jBvKuEXM8btK3s0 from @alice:amatrix.test in !8aSM42x-oAJBTb6Jw31uDFKtkfqD1Z79xoXTqO2oChQ, will retry
+Megolm: no key yet for $tkvynISI_oDdWTvl1EKfIxVYL-ETZnFcGFlW5I71BKs from @alice:amatrix.test in !8jZP4jjOnLc7sRGEoPfxXVIrNS-faE2OpGIDBYYqwZU, will retry
+Megolm: no key yet for $_0y4aJbUXVEfmOK5nUzzNrEJd9eObsITEef-ahCGtkE from @alice:amatrix.test in !8jZP4jjOnLc7sRGEoPfxXVIrNS-faE2OpGIDBYYqwZU, will retry
+Megolm: no key yet for $ASK9GlCGIUdEJ-GojhzBoDlvIbtLizctKmarKAqf8kc from @alice:amatrix.test in !8jZP4jjOnLc7sRGEoPfxXVIrNS-faE2OpGIDBYYqwZU, will retry
+Megolm: no key yet for $q67eRzSkdSmhRlLd_L7_jJtDTzkGnQPcSpSeCt4rIjQ from @alice:amatrix.test in !Foq-BpFD_UZ0m9aBJm7cfDTc7Ur30bX26P_fK2Z5oxg, will retry
+Megolm: no key yet for $SHkGtJtIsLlvCG4UtJtuPTtve1f_XrgtMZOovCalxwg from @alice:amatrix.test in !Foq-BpFD_UZ0m9aBJm7cfDTc7Ur30bX26P_fK2Z5oxg, will retry
+Megolm: no key yet for $rT90neytofJrMxHzipuebPJYx65dOlf4kzl7mUZ9hmw from @alice:amatrix.test in !Kra3TW8ZUSCXu7YA6bA_BwF7qkAet7DOKA0T3rrsGqo, will retry
+Megolm: no key yet for $KoFLCu3eq9Ar66Nj4we9wOMRrxhpuXl9wcszMgsqbMM from @alice:amatrix.test in !Kra3TW8ZUSCXu7YA6bA_BwF7qkAet7DOKA0T3rrsGqo, will retry
+Megolm: no key yet for $bRAgkPPz_fO9JaVbqbNMMzpMdT2ZrsHQ3jfiO274Xxs from @alice:amatrix.test in !QKWWDus16KhEtLzrn6iUyTKXRUfGi2n6ccddgQIohI8, will retry
+Megolm: no key yet for $hGQNkYbKo8FcWHesKtxVGIvZ4OeVTQk65rsmyNoommg from @alice:amatrix.test in !QKWWDus16KhEtLzrn6iUyTKXRUfGi2n6ccddgQIohI8, will retry
+Megolm: no key yet for $UILT_x2Ba_UYppRaaNY5_IXpPaHcaDWDdWYDut6PrAI from @alice:amatrix.test in !XhLsfAfMNxNL-RLj6ZR4c2NT-RyWOBrbfXhB81O8Jk8, will retry
+Megolm: no key yet for $OfC4sxK1zGR9IigKM2dimpAkvCb2sPtI-ynb7u-m9SY from @alice:amatrix.test in !XhLsfAfMNxNL-RLj6ZR4c2NT-RyWOBrbfXhB81O8Jk8, will retry
+Megolm: no key yet for $KoQ31rc-y07mDmxnSiiw0mc0AuCxhY6CiRc-K2q6xIA from @alice:amatrix.test in !h1li43Tawv7CpYQP1gdJRL3-ryz7qZa0pLcKpCn7AoA, will retry
+Megolm: no key yet for $YAKaOIgsKRCcDwMLWiAA-BUgTuLh-ut5eH5BGCQuMV8 from @alice:amatrix.test in !h1li43Tawv7CpYQP1gdJRL3-ryz7qZa0pLcKpCn7AoA, will retry
+Megolm: no key yet for $3JhArFIgkH7miGh6_kH18uDq9Z14IaWky8V3MRl09e0 from @alice:amatrix.test in !lXANtajuFKouvXEjLgqHKZqvC3AQ_Uzcy235J4TiRZ8, will retry
+Megolm: no key yet for $8jZvUVMMd0EgadswBy1rNlKwuwIDfwRtG1ZiGYCd7U4 from @alice:amatrix.test in !lXANtajuFKouvXEjLgqHKZqvC3AQ_Uzcy235J4TiRZ8, will retry
+Megolm: no key yet for $OZYPR4GPNzRmoOgimdPzMoO8GA2dEVHR7nlFT8Q3ubA from @alice:amatrix.test in !lXANtajuFKouvXEjLgqHKZqvC3AQ_Uzcy235J4TiRZ8, will retry
+Megolm: no key yet for $Qfd2b9t_7oIq4PlWa4xNEj7g1YB_u28SvsJrC3I6kzA from @alice:amatrix.test in !lXANtajuFKouvXEjLgqHKZqvC3AQ_Uzcy235J4TiRZ8, will retry
+Megolm: no key yet for $FvJ-kE62hSPNtAD-9YGAOBkq-MKIURzf1aTSD_g9j7g from @alice:amatrix.test in !lXANtajuFKouvXEjLgqHKZqvC3AQ_Uzcy235J4TiRZ8, will retry
+Megolm: no key yet for $E4pfYpgUseUDcs-NmyR1w5X9PnGqQ0Ds7MMlqDArQFI from @alice:amatrix.test in !rI8tEHsH9Ors0YxMSmFp4rVBUrMGI750sBM4gbbUs_w, will retry
+Megolm: no key yet for $nXussa31i4B_0iW9RnD_Ll-VNgLVY-1blmYKsnFvvAI from @alice:amatrix.test in !rI8tEHsH9Ors0YxMSmFp4rVBUrMGI750sBM4gbbUs_w, will retry
+Megolm: no key yet for $ybYRw306LSWWDZWu824DDfZfKhmSucTaH-44TmOE89M from @alice:amatrix.test in !rI8tEHsH9Ors0YxMSmFp4rVBUrMGI750sBM4gbbUs_w, will retry
+> POST /keys/upload
+uploaded keys: 50 one-time, 1 fallback
+> GET /sync?timeout=9000&filter=%7B%22room%22%3A%7B%22timeline%22%3A%7B%22limit%22%3A20%7D%7D%7D&since=s127_51_0_1_1_1_14_32_0_1_1_1_1_1
+> GET /sync?timeout=8000&filter=%7B%22room%22%3A%7B%22timeline%22%3A%7B%22limit%22%3A20%7D%7D%7D&since=s127_51_0_1_1_1_14_33_0_1_1_1_1_1
+24 message(s) could not be decrypted (no key)
+done, 0 message(s) decrypted
+cleanup: closing network
+cleanup: network closed, exiting
+  rc=0
+Type  Available    In-Use   Maximum   Largest
+chip    2027824     68304   2096128   2027680
+fast   63173568   3935296  67108864  62564896
+total  65201392   4003600  69204992  62564896

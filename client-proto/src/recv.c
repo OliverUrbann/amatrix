@@ -677,7 +677,10 @@ static int try_room_event(const char *room_id, const cJSON *ev)
     n = olm_group_decrypt(g->s, tmp, len, plain, max, &idx);
     free(tmp);
     if (n == olm_error()) {
-        fprintf(AMX_ERR, "Megolm: %s\n", olm_inbound_group_session_last_error(g->s));
+        /* UNKNOWN_MESSAGE_INDEX: sent before we were given the key (normal for
+         * messages from before this device joined) */
+        fprintf(AMX_ERR, "Megolm: %s for %s from %s\n", olm_inbound_group_session_last_error(g->s),
+                jstr(ev, "event_id") ? jstr(ev, "event_id") : "?", sender ? sender : "?");
         free(plain);
         return 1;
     }
@@ -714,7 +717,9 @@ static void handle_room_event(const char *room_id, const cJSON *ev)
         cJSON *e = cJSON_Duplicate(ev, 1);
         cJSON_AddStringToObject(e, "_room_id", room_id);
         cJSON_AddItemToArray(G.pending, e);
-        LOG("Megolm: no key yet for a message in %s, will retry", room_id);
+        LOG("Megolm: no key yet for %s from %s in %s, will retry",
+            jstr(ev, "event_id") ? jstr(ev, "event_id") : "?",
+            jstr(ev, "sender") ? jstr(ev, "sender") : "?", room_id);
     }
 }
 
@@ -842,6 +847,10 @@ int main(int argc, char **argv)
     if (cJSON_GetArraySize(G.pending))
         printf("%d message(s) could not be decrypted (no key)\n", cJSON_GetArraySize(G.pending));
     printf("done, %d message(s) decrypted\n", G.decrypted);
+    fflush(stdout);
+    LOG("cleanup: closing network");
     http_cleanup();
+    LOG("cleanup: network closed, exiting");
+    fflush(stdout);
     return 0;
 }

@@ -1,0 +1,36 @@
+.key USER/A,PASS/A,SERVER/K
+.def SERVER "https://matrix.org"
+; Diagnose fuer den Absturz beim Programmende.
+; Aufruf:  Execute amxdiag-run <benutzer> <passwort>
+; Falls ein "Software Failure"-Fenster kommt: Continue klicken, weiter geht's.
+; Protokoll: RAM:amxdiag-log.txt  (bitte zurueckschicken)
+Stack 262144
+Echo "== amxdiag" >RAM:amxdiag-log.txt
+Version >>RAM:amxdiag-log.txt
+Version LIBS:amisslmaster.library >>RAM:amxdiag-log.txt
+Version LIBS:bsdsocket.library >>RAM:amxdiag-log.txt
+Avail >>RAM:amxdiag-log.txt
+Echo "Schritt 1/7: nur bsdsocket"
+amxdiag socket >>RAM:amxdiag-log.txt
+Echo "  rc=$RC" >>RAM:amxdiag-log.txt
+Echo "Schritt 2/7: AmiSSL oeffnen und schliessen"
+amxdiag amissl >>RAM:amxdiag-log.txt
+Echo "  rc=$RC" >>RAM:amxdiag-log.txt
+Echo "Schritt 3/7: AmiSSL-Zufallszahlen"
+amxdiag random >>RAM:amxdiag-log.txt
+Echo "  rc=$RC" >>RAM:amxdiag-log.txt
+Echo "Schritt 4/7: eine HTTPS-Anfrage"
+amxdiag https <SERVER> >>RAM:amxdiag-log.txt
+Echo "  rc=$RC" >>RAM:amxdiag-log.txt
+Echo "Schritt 5/7: fuenf HTTPS-Anfragen"
+amxdiag https5 <SERVER> >>RAM:amxdiag-log.txt
+Echo "  rc=$RC" >>RAM:amxdiag-log.txt
+Echo "Schritt 6/7: Datei schreiben/ersetzen/lesen"
+amxdiag file >>RAM:amxdiag-log.txt
+Echo "  rc=$RC" >>RAM:amxdiag-log.txt
+Echo "Schritt 7/7: amatrix-recv 20 Sekunden (kein Element noetig)"
+Echo "== amatrix-recv -t 20" >>RAM:amxdiag-log.txt
+amatrix-recv -v -s amatrix-store -t 20 <SERVER> <USER> <PASS> >>RAM:amxdiag-log.txt
+Echo "  rc=$RC" >>RAM:amxdiag-log.txt
+Avail >>RAM:amxdiag-log.txt
+Echo "Fertig. Protokoll: RAM:amxdiag-log.txt"

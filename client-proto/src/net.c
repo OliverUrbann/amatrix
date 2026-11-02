@@ -81,6 +81,13 @@ void net_cleanup(void)
 }
 
 #ifdef AMX_AMISSL
+/* amxdiag: bsdsocket only, no AmiSSL */
+int net_init_socket_only(void)
+{
+    SocketBase = OpenLibrary((STRPTR)"bsdsocket.library", 4);
+    return SocketBase ? 0 : -1;
+}
+
 /* used by platform_amiga.c for key material */
 int net_random(void *buf, size_t n)
 {

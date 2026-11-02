@@ -16,4 +16,12 @@ m68k-amigaos-gcc -mcrt=nix20 -m68020 -m68881 -O2 -Wall -std=gnu99 \
   "$here/src/platform_amiga.c" "$top/third_party/cjson/cJSON.c" \
   "$top/libolm-amiga/out/amiga/libolm.a" -L"$top/third_party/amissl-sdk/lib/AmigaOS3" -lamisslstubs -lstdc++ -lm -o "$here/build-amiga/amatrix-recv"
 m68k-amigaos-strip "$here/build-amiga/amatrix-recv"
-ls -la "$here/build-amiga/amatrix-recv"
+# amxdiag: step-by-step check of bsdsocket, AmiSSL, TLS and file handling
+m68k-amigaos-gcc -mcrt=nix20 -m68020 -m68881 -O2 -Wall -std=gnu99 \
+  -I"$top/third_party/libolm/include" -DOLM_STATIC_DEFINE \
+  -DAMX_AMISSL -I"$top/third_party/amissl-sdk/include" \
+  "$here/src/amxdiag.c" "$here/src/http_sock.c" "$here/src/net.c" "$here/src/platform_amiga.c" \
+  "$top/libolm-amiga/out/amiga/libolm.a" \
+  -L"$top/third_party/amissl-sdk/lib/AmigaOS3" -lamisslstubs -lstdc++ -lm -o "$here/build-amiga/amxdiag"
+m68k-amigaos-strip "$here/build-amiga/amxdiag"
+ls -la "$here/build-amiga/amatrix-recv" "$here/build-amiga/amxdiag"

@@ -64,3 +64,18 @@ Hinweise
   Für einen ganz frischen Test die Schublade amatrix-store löschen.
 - Der Pickle-Schlüssel für den Gerätezustand ist noch fest eingebaut:
   amatrix-store enthält die Geräteschlüssel, also nur zum Testen.
+
+Diagnose (Absturz beim Programmende)
+------------------------------------
+Beim ersten Test auf der Vampire kam nach "done" ein "Software Failure"
+(Memory header not located). Im Emulator (Kickstart 3.1) tritt das nicht auf.
+amxdiag prüft die Bestandteile einzeln: bsdsocket, AmiSSL, Zufallszahlen,
+HTTPS, Dateien und zum Schluss amatrix-recv selbst 20 Sekunden lang
+(kein Element nötig, das gespeicherte Gerät in amatrix-store wird benutzt).
+
+       Execute amxdiag-run <benutzer> <passwort>
+
+Kommt ein Fehlerfenster: "Continue" klicken, es geht weiter. In der Shell
+steht, bei welchem Schritt es passiert ist. Danach bitte
+RAM:amxdiag-log.txt zurückschicken (und sagen, bei welchem Schritt das
+Fenster kam).
