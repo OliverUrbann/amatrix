@@ -110,5 +110,7 @@ What it means for a client:
    unverified Amiga device.
 3. Sending: done (echo bot test, V4SA + Element, 2026-11-02).
 4. On the Amiga with bsdsocket + AmiSSL: done.
-5. Next: cross-signing / verification (Element shows the Amiga's messages as
+5. Goal: a classic Amiga shared library `matrix.library` for clients and
+   bots. Feature list with priorities: [docs/matrix-library-features.md](docs/matrix-library-features.md).
+6. Next: cross-signing / verification (Element shows the Amiga's messages as
    from an unverified device), interactive chat on the Amiga, then a GUI.
