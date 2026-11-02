@@ -14,6 +14,17 @@ the emulated system (`SYS:AmiSSL`, see `setup-emu-amissl.sh`).
 | `chat.test` | echo bot: greeting + echoes, two-way | `tools/peer-chat.py` |
 | `package.test` | the `amatrix-test` script from the package | `tools/peer.py` |
 | `diag.test` | `amxdiag-run`, no peer needed | - |
+| `package-chat.test` | the package's `amatrix-test` (diag + echo bot) | `tools/peer-chat.py`, started ~45 s later |
+
+Example (two-way test as in the package):
+
+    MAX=420 tests/emu/run-emu-test.sh tests/emu/package-chat.test bash -c \
+      'sleep 45; tools/peer-chat.py http://127.0.0.1:8008 @alice:amatrix.test alice-pw \
+       @amiga:amatrix.test "Hallo vom Amiga! (Amatrix-Test, verschlüsselt gesendet)"'
+
+Note: nio caches device lists.  The emulated 68030 needs several seconds to
+create its keys, so peer-chat.py re-queries the target's devices before it
+sends; otherwise nio does not share its room key with the new device.
 
 `run-emu-test.sh <script> [peer...]` copies the binaries to an Extra: drawer,
 starts the emulator, runs the peer and prints the Amiga's output.

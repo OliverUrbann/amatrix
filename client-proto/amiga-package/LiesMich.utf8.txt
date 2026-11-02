@@ -1,81 +1,56 @@
-Amatrix - Schritt 2: Ende-zu-Ende-verschlüsselte Matrix-Nachrichten empfangen
-=============================================================================
+Amatrix - Test 3: verschlüsselt empfangen UND senden
+====================================================
 
-Was das Programm tut
---------------------
-amatrix-recv meldet sich als ein Matrix-Benutzer an, legt ein neues Gerät
-an, lädt dessen Schlüssel auf den Server, nimmt Einladungen in Räume an,
-empfängt die Raumschlüssel (Olm) und entschlüsselt die Nachrichten (Megolm).
-Es sendet selbst noch nichts.
+Was neu ist
+-----------
+amatrix-recv kann jetzt auch verschlüsselt senden. Für den Test arbeitet es
+als Echo-Bot: Es tritt einem Raum bei, auf den es eingeladen wird, schickt
+eine Begrüßung und beantwortet jede Nachricht mit
+"Amiga hat empfangen: <deine Nachricht>". Alles Ende-zu-Ende-verschlüsselt.
+
+Dazu die Diagnose für den Absturz beim Programmende vom letzten Test:
+amxdiag öffnet und schließt bsdsocket, AmiSSL, Zufallszahlen, HTTPS und
+Dateien einzeln.
 
 Getestet im Emulator (FS-UAE, Kickstart 3.1, 68030/68882) gegen einen
-lokalen Synapse 1.164.1 über HTTPS mit AmiSSL.
+lokalen Synapse 1.164.1 über HTTPS mit AmiSSL 5.27: Begrüßung und alle drei
+Antworten wurden von der Gegenseite entschlüsselt, Umlaute und Emoji
+kommen unverändert zurück.
 
 Voraussetzungen
 ---------------
-- 68020 oder besser MIT FPU
-- TCP/IP-Stack (bsdsocket.library, z.B. Miami Deluxe, Roadshow, AmiTCP)
-- AmiSSL 5.x installiert (AmiSSL: Assign, amisslmaster.library),
-  https://github.com/jens-maus/amissl/releases oder Aminet
-- ca. 2 MB freier Speicher
+- 68020 oder besser MIT FPU, TCP/IP-Stack, AmiSSL 5.x
 - Die Schublade muss beschreibbar sein (Unterverzeichnis amatrix-store)
+- Am besten in dieselbe Schublade wie beim letzten Mal auspacken, dann
+  wird das gespeicherte Testgerät weiterbenutzt.
 
-Ein Testkonto
--------------
-Bitte ein eigenes Testkonto auf matrix.org verwenden, nicht das
-Hauptkonto. Das Programm legt bei jedem Start mit leerem amatrix-store
-ein neues Gerät an, das sieht man dann in Element in der Geräteliste.
-
-Test
-----
+Test (ein Durchgang)
+--------------------
 1. In einer Shell in diese Schublade wechseln:
        CD <diese Schublade>
 2. Starten:
        Execute amatrix-test <benutzer> <passwort>
-   (anderer Server:  Execute amatrix-test <benutzer> <passwort> SERVER=https://...)
-3. Sobald das Programm läuft (ein paar Sekunden), in Element:
-   - einen NEUEN Raum anlegen, Verschlüsselung an (Standard),
+3. Teil 1 (Diagnose) läuft allein, ca. 1 Minute. Kommt ein Fehlerfenster:
+   "Continue" klicken und merken, bei welchem Schritt (steht in der Shell).
+4. Wenn "Teil 2" erscheint, in Element:
+   - einen NEUEN Raum anlegen (Verschlüsselung an, Standard),
    - @<benutzer>:matrix.org einladen,
-   - 2-3 Nachrichten schreiben, gerne mit Umlauten.
-4. Das Programm endet nach 3 entschlüsselten Nachrichten oder nach
-   10 Minuten und zeigt dann RAM:amatrix-log.txt an.
-   Diese Datei bitte zurückschicken.
+   - auf die Begrüßung des Amiga warten (dauert ein paar Sekunden),
+   - 3 Nachrichten schreiben, gern mit Umlauten.
+5. Das Programm endet nach 3 Nachrichten (oder nach 10 Minuten).
+   Bitte RAM:amatrix-log.txt zurückschicken und sagen:
+   - Waren Begrüßung und Antworten in Element lesbar?
+   - Kam irgendwo ein Fehlerfenster, und bei welchem Schritt?
 
-Woran man das Ergebnis erkennt
-------------------------------
-Erfolg:
-   got room key for !... 
-   [!raum] @du:matrix.org: <deine Nachricht>
-   done, 3 message(s) decrypted
-
-Element schickt keine Schlüssel an das (unverifizierte) Gerät:
-   keine "got room key"-Zeile, stattdessen am Ende
-   "N message(s) could not be decrypted (no key)".
-   Das wäre die wichtige Erkenntnis für Schritt 3 (Cross-Signing).
-
-TLS-Problem:
-   "TLS: certificate of matrix.org not accepted: ..."
-   Dann fehlt das Root-Zertifikat in AmiSSL:Certs (AmiSSL aktualisieren).
+Was man in Element sieht
+------------------------
+- Die Nachrichten des Amiga tragen einen Hinweis "unverifiziertes Gerät".
+  Das ist richtig so, das Gerät ist (noch) nicht per Cross-Signing bestätigt.
+- "Unable to decrypt" / "Nachricht kann nicht entschlüsselt werden" beim
+  Amiga wäre ein Fehler, dann bitte das Log schicken.
 
 Hinweise
 --------
-- Emoji und andere Zeichen außerhalb von Latin-1 erscheinen als "?".
-- Ein zweiter Start mit demselben amatrix-store ist dasselbe Gerät.
-  Für einen ganz frischen Test die Schublade amatrix-store löschen.
-- Der Pickle-Schlüssel für den Gerätezustand ist noch fest eingebaut:
-  amatrix-store enthält die Geräteschlüssel, also nur zum Testen.
-
-Diagnose (Absturz beim Programmende)
-------------------------------------
-Beim ersten Test auf der Vampire kam nach "done" ein "Software Failure"
-(Memory header not located). Im Emulator (Kickstart 3.1) tritt das nicht auf.
-amxdiag prüft die Bestandteile einzeln: bsdsocket, AmiSSL, Zufallszahlen,
-HTTPS, Dateien und zum Schluss amatrix-recv selbst 20 Sekunden lang
-(kein Element nötig, das gespeicherte Gerät in amatrix-store wird benutzt).
-
-       Execute amxdiag-run <benutzer> <passwort>
-
-Kommt ein Fehlerfenster: "Continue" klicken, es geht weiter. In der Shell
-steht, bei welchem Schritt es passiert ist. Danach bitte
-RAM:amxdiag-log.txt zurückschicken (und sagen, bei welchem Schritt das
-Fenster kam).
+- Emoji erscheinen auf dem Amiga als "?", werden aber im Original
+  zurückgeschickt.
+- amatrix-store enthält die Geräteschlüssel, nur zum Testen.

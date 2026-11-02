@@ -1,16 +1,41 @@
 .key USER/A,PASS/A,SERVER/K,SECS/K
 .def SERVER "https://matrix.org"
 .def SECS "600"
-; Amatrix Schritt 2: verschluesselte Matrix-Nachrichten empfangen.
+; Amatrix-Test: Diagnose + verschluesselt empfangen UND senden.
 ; Aufruf:  Execute amatrix-test <benutzer> <passwort>
+; Protokoll: RAM:amatrix-log.txt (bitte zurueckschicken)
 Stack 262144
+Echo "== Amatrix-Test" >RAM:amatrix-log.txt
+Version >>RAM:amatrix-log.txt
+Version LIBS:amisslmaster.library >>RAM:amatrix-log.txt
+Version LIBS:bsdsocket.library >>RAM:amatrix-log.txt
 Echo ""
-Echo "Amatrix-Test: Anmeldung als <USER> auf <SERVER>"
-Echo "Jetzt in Element einen NEUEN verschluesselten Raum anlegen,"
-Echo "@<USER> einladen und 2-3 Nachrichten schreiben."
-Echo "Ende nach 3 entschluesselten Nachrichten oder <SECS> Sekunden."
-Echo "Protokoll: RAM:amatrix-log.txt"
+Echo "Teil 1: Diagnose (ca. 1 Minute, Element noch nicht noetig)."
+Echo "Falls ein Fehlerfenster kommt: Continue klicken und merken, bei welchem Schritt."
+Echo "  1/6 bsdsocket"
+Echo "== diag" >>RAM:amatrix-log.txt
+amxdiag socket >>RAM:amatrix-log.txt
+Echo "  2/6 AmiSSL"
+amxdiag amissl >>RAM:amatrix-log.txt
+Echo "  3/6 Zufallszahlen"
+amxdiag random >>RAM:amatrix-log.txt
+Echo "  4/6 eine HTTPS-Anfrage"
+amxdiag https <SERVER> >>RAM:amatrix-log.txt
+Echo "  5/6 fuenf HTTPS-Anfragen"
+amxdiag https5 <SERVER> >>RAM:amatrix-log.txt
+Echo "  6/6 Dateien"
+amxdiag file >>RAM:amatrix-log.txt
 Echo ""
-amatrix-recv -v -s amatrix-store -n 3 -t <SECS> <SERVER> <USER> <PASS> >RAM:amatrix-log.txt
+Echo "Teil 2: Chat-Test als <USER> auf <SERVER>"
+Echo "Jetzt in Element einen NEUEN verschluesselten Raum anlegen und @<USER> einladen."
+Echo "Der Amiga tritt bei und schreibt eine Begruessung."
+Echo "Dann 3 Nachrichten schreiben, der Amiga antwortet auf jede."
+Echo "Ende nach 3 Nachrichten oder <SECS> Sekunden."
+Echo ""
+Echo "== chat" >>RAM:amatrix-log.txt
+amatrix-recv -v -e -g "Hallo vom Amiga! (Amatrix-Test, verschlüsselt gesendet)" -s amatrix-store -n 3 -t <SECS> <SERVER> <USER> <PASS> >>RAM:amatrix-log.txt
 Echo "rc=$RC" >>RAM:amatrix-log.txt
-Type RAM:amatrix-log.txt
+Echo ""
+Echo "Fertig. Bitte RAM:amatrix-log.txt zurueckschicken"
+Echo "und sagen, ob die Antworten in Element lesbar waren."
+

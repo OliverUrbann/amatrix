@@ -622,8 +622,10 @@ static void handle_to_device(const cJSON *ev)
     char *plain;
     const cJSON *t;
 
+    LOG("to-device %s from %s (%s)", type ? type : "?", sender ? sender : "?",
+        jstr(c, "algorithm") ? jstr(c, "algorithm") : "-");
     if (!type || strcmp(type, "m.room.encrypted")) { LOG("to-device %s ignored", type ? type : "?"); return; }
-    if (!jstr(c, "algorithm") || strcmp(jstr(c, "algorithm"), OLM_ALG)) return;
+    if (!jstr(c, "algorithm") || strcmp(jstr(c, "algorithm"), OLM_ALG)) { LOG("to-device: not Olm, ignored"); return; }
     sk = jstr(c, "sender_key");
     mine = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(c, "ciphertext"), G.curve);
     body = jstr(mine, "body");
@@ -1247,6 +1249,8 @@ static int sync_once(long timeout_ms)
     r = api("GET", path, NULL, timeout_ms / 1000 + 30, &st);
     if (st != 200 || !r) { cJSON_Delete(r); return -1; }
 
+    LOG("sync: %d to-device event(s)", cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(
+            cJSON_GetObjectItemCaseSensitive(r, "to_device"), "events")));
     /* to-device first: the room keys for this batch's messages are here */
     cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(
                               cJSON_GetObjectItemCaseSensitive(r, "to_device"), "events"))

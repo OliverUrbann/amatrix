@@ -72,10 +72,15 @@ async def main():
     if not await wait_for(lambda: greeting in got, 120):
         print(f"FAIL: greeting not received (got {got}, undecryptable {undecryptable})"); return 1
     print("greeting decrypted", flush=True)
+    # nio caches device lists and may have queried TARGET before its (slow,
+    # emulated) device had uploaded its keys; ask again so the new device gets
+    # our room key.  Element refreshes on its own (seen in the real test).
+    c.olm.users_for_key_query.add(target)
+    await c.keys_query()
     for m in msgs:
-        await c.room_send(room_id, "m.room.message", {"msgtype": "m.text", "body": m},
-                          ignore_unverified_devices=True)
-        print(f"  -> {m}", flush=True)
+        r = await c.room_send(room_id, "m.room.message", {"msgtype": "m.text", "body": m},
+                              ignore_unverified_devices=True)
+        print(f"  -> {m}   [{type(r).__name__} {getattr(r, 'event_id', getattr(r, 'message', ''))}]", flush=True)
     want = [f"Amiga hat empfangen: {m}" for m in msgs]
     ok = await wait_for(lambda: all(w in got for w in want), 180)
     await c.close()

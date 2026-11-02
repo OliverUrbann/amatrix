@@ -61,6 +61,24 @@ AmigaDOS 3.x shell cannot redirect stderr.
 `amiga-package/make-package.sh` builds `amatrix-step2.lha` for a real Amiga
 (binary, `amatrix-test` script, `LiesMich.txt`).
 
+### Sending (echo bot) - 2026-11-02
+
+`-e` answers every message from someone else with "Amiga hat empfangen: ...",
+`-g TEXT` greets each room once after joining.  Two-way test
+`tools/peer-chat.py` (greeting + 3 echoes must decrypt on the peer):
+
+| Where | Result |
+|---|---|
+| Linux, socket HTTP | PASS, also under AddressSanitizer |
+| FS-UAE, AmiSSL, https | PASS |
+| FS-UAE, the package script `amatrix-test` | PASS |
+
+First real test on the V4SA against matrix.org with Element
+(receive only): Element sent its room key to the unverified Amiga device,
+all messages after the join decrypted (`results/v4sa-dfence-element-2026-11-02.txt`).
+Open: "Memory header not located" on program exit on the V4SA (ApolloOS);
+`amxdiag` checks the parts one by one.
+
 Not done yet: replay protection (event ID per Megolm message index),
 `m.forwarded_room_key`, key requests, device verification and cross-signing
 (step 3), sending (step 4+). The pickle key is a fixed string for now.

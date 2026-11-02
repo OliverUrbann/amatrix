@@ -11,7 +11,7 @@ script=$1; shift
 "$top/../testserver/ensure-up.sh" >/dev/null
 extra=$(mktemp -d)
 cp "$top/build-amiga/amatrix-recv" "$top/build-amiga/amxdiag" "$extra/" 2>/dev/null
-cp "$top/amiga-package/amatrix-test" "$top/amiga-package/amxdiag-run" "$extra/" 2>/dev/null
+for f in amatrix-test amxdiag-run; do iconv -f utf-8 -t latin1 "$top/amiga-package/$f" > "$extra/$f"; done
 iconv -f utf-8 -t latin1 "$script" > "$extra/.test"
 rm -f "$TESTENV/system/out.txt"
 "$TESTENV/run-amiga.sh" "$extra/.test" "$MAX" "$extra" > "$extra/.run.log" 2>&1 &
