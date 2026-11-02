@@ -90,8 +90,13 @@ class Peer:
         await self.c.sync(timeout=0)
         return room
 
+    def joined(self, room, user):
+        """Really joined: nio's room.users also contains invited users."""
+        r = self.c.rooms.get(room)
+        return bool(r) and user in r.users and user not in r.invited_users
+
     async def wait_member(self, room, user, secs=120):
-        return await self.wait(lambda: room in self.c.rooms and user in self.c.rooms[room].users, secs)
+        return await self.wait(lambda: self.joined(room, user), secs)
 
     async def wait_left(self, room, user, secs=120):
         return await self.wait(lambda: room in self.c.rooms and user not in self.c.rooms[room].users, secs)

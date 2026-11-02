@@ -1,116 +1,63 @@
 # Amatrix
 
-Feasibility work for a native Matrix client on classic AmigaOS (68k), with
-end-to-end encryption and without a proxy.
+A native Matrix client core for classic AmigaOS (68020+, AmigaOS 3.x /
+ApolloOS), with end-to-end encryption and without a proxy.  Goal: a GUI
+client on top of it; the core may later also become a `matrix.library`.
 
-**Status 2026-11-02: a Vampire V4SA chats end-to-end encrypted with Element
-on matrix.org, natively, without a proxy** (receive and send, see
-[`client-proto/`](client-proto/README.md) and
-`client-proto/results/v4sa-dfence-element-chat-2026-11-02.*`).
+**Status 2026-11-02:** a Vampire V4SA chats end-to-end encrypted with Element
+on matrix.org (receive and send).  The core has been split out into a
+library with an API and is covered by feature tests that run on Linux,
+under AddressSanitizer and on the Amiga build inside FS-UAE, each against a
+private Synapse started by the tests.
 
-## Step 1: libolm on AmigaOS (`libolm-amiga/`)
+| Feature test | Linux | ASan | Amiga (FS-UAE) |
+|---|---|---|---|
+| login | ✔ | ✔ | ✔ |
+| rooms | ✔ | ✔ | ✔ |
+| e2ee_receive | ✔ | ✔ | ✔ |
+| e2ee_send | ✔ | ✔ | ✔ |
+| tls_verify | ✔ | ✔ | ✔ |
 
-libolm 3.2.16 (Olm/Megolm, the crypto behind Matrix E2EE) built for
-AmigaOS 3.x with libnix, 68020 + FPU. No ixemul, no AmiSSL: libolm brings its
-own Curve25519, Ed25519, AES and SHA-256.
+## Layout
 
-Status:
-
-| What | Result |
+| Path | What |
 |---|---|
-| libolm builds for m68k-amigaos | yes, `libolm.a` about 190 KB |
-| libolm unit tests (15 programs) in FS-UAE (A1200, 68030/68882, KS 3.1) | all pass |
-| `olmbench` in FS-UAE | runs, results correct |
-| unit tests on a real Vampire V4SA (Kickstart 45.64) | all pass |
-| `olmbench` on the V4SA | runs, results correct (see below) |
+| `core/` | the client core, `libamatrix.a`; API in `core/include/amatrix.h` |
+| `tools/` | `amx-cli` (command-line test client), `amxdiag` (network/AmiSSL diagnosis), `amiga-package/` (test package for a real Amiga) |
+| `tests/` | feature tests and their runner, see [tests/README.md](tests/README.md) |
+| `libolm-amiga/` | libolm on AmigaOS: patches, unit tests, `olmbench`, see [its README](libolm-amiga/README.md) |
+| `third_party/` | libolm 3.2.16 (patched), cJSON, AmiSSL 5.27 SDK |
+| `docs/` | [feature list](docs/matrix-library-features.md), [proof of concept](docs/proof-of-concept.md) |
+| `results/` | logs of the tests on the real Vampire and earlier emulator runs |
 
-### Build
+## Build
 
 Needs the m68k-amigaos toolchain (gcc 16.2 + libnix, from
-<https://github.com/AmigaPorts/amiga-gcc>) under `/opt/amiga`.
+<https://github.com/AmigaPorts/amiga-gcc>) in `/opt/amiga` for the Amiga
+build, and OpenSSL headers for the Linux build.
 
 ```sh
-export PATH=/opt/amiga/bin:$PATH
-libolm-amiga/build.sh amiga     # -> libolm-amiga/out/amiga/{libolm.a,bin/}
-libolm-amiga/build.sh native    # same tests on the Linux host, for reference
+make                    # Linux: build/native/{libamatrix.a,tests/*,tools/*}
+make TARGET=asan        # Linux with sanitizers
+make TARGET=amiga       # Amiga: build/amiga/...
+tools/amiga-package/make-package.sh    # build/amiga/amatrix-test.lha
 ```
 
-`third_party/libolm` is libolm 3.2.16 with our patches already applied
-(`libolm-amiga/patches/`). `libolm-amiga/fetch-libolm.sh` recreates it from
-the `python-olm` sdist on PyPI, which carries the same source tree as the
-upstream repository on gitlab.matrix.org.
+On the Amiga the programs need a TCP/IP stack (bsdsocket.library), AmiSSL 5.x
+and a 68020 or better with FPU.
 
-### Running on the Amiga
+## Tests
 
-Copy `out/amiga/bin/` to the Amiga, then in a Shell in that drawer:
-
-```
-Execute run-tests
+```sh
+tests/run.py [--target native|asan|amiga] [feature ...]
 ```
 
-Results are written to `RAM:olm-results.txt`. `olmbench [scale]` alone times
-the operations a client needs (key generation, Ed25519 sign/verify, Olm
-sessions, Megolm encrypt/decrypt, SAS).
-
-Requirements: 68020+ with FPU (the test framework and the benchmark use
-`double`; libolm itself does not), about 256 KB stack (the script sets it).
-
-### Porting notes
-
-- `uint32_t` is `unsigned long` on m68k-amigaos. The bundled
-  crypto-algorithms define `WORD` as `unsigned int`, which C++ rejects when
-  libolm passes `uint32_t*`. Patch 0001 makes `WORD` a `uint32_t`.
-- The test framework (doctest 2.4.7) needs a no-op `std::mutex`
-  (`compat/doctest_amiga.h`), `DOCTEST_CONFIG_NO_POSIX_SIGNALS` and a
-  single-threaded `__atomic_fetch_add_4` (`compat/atomic.c`). libolm itself
-  needs none of this.
-- libstdc++ in the tests opens `mathieeedoubbas`/`mathieeedoubtrans.library`.
-  The shareware HSMathLibs replacements pop up a "please register" requester
-  that blocks the test run; the original Workbench 3.1 libraries work.
-- Big-endian: no issues, all test vectors match.
-
-### olmbench on the Vampire V4SA
-
-Full output: `libolm-amiga/results/v4sa-2026-11-01.txt`. Times per operation,
-plain C build (`-m68020 -m68881 -O2`), no assembler, no tuning:
-
-| Operation | V4SA | FS-UAE (68030, max speed) |
-|---|---:|---:|
-| create account (2 keypairs) | 50 ms | 90 ms |
-| one-time key (Curve25519) | 36 ms | 65 ms |
-| Ed25519 sign | 14 ms | 20 ms |
-| Ed25519 verify (device keys) | 39 ms | 62 ms |
-| create outbound Olm session | 181 ms | 340 ms |
-| create inbound Olm session | 110 ms | 190 ms |
-| Olm encrypt+decrypt | 156 ms | 263 ms |
-| Megolm encrypt (send a message) | 16 ms | 28 ms |
-| Megolm decrypt (receive a message) | 50 ms | 71 ms |
-| Megolm ratchet jump (old history) | 109 ms | 161 ms |
-| SAS key agreement (x2) | 71 ms | 122 ms |
-
-What it means for a client:
-
-- Live chat is no problem: receiving a message costs about 50 ms, sending 16 ms.
-- Room keys arrive once per sender session (Olm, 100-200 ms), not per message.
-- Costs add up in bulk: decrypting 1000 messages of history is about 50 s,
-  checking 500 device signatures in a big room about 20 s. A client should
-  decrypt only what is on screen and cache verified device keys.
-- Room for speed-up: most of the time is Curve25519/Ed25519 field arithmetic
-  in portable C with 64-bit products. 68k assembler for that inner loop (the
-  68080 has a fast 32x32->64 multiply) is the obvious next optimisation.
+Starts its own Synapse, registers fresh users, runs each feature's C test
+against an independent E2EE peer.  Details in [tests/README.md](tests/README.md).
 
 ## Next steps
 
-1. ~~Run the tests and `olmbench` on the Vampire V4SA.~~ Done, all pass.
-2. Receive path on a Linux PC first (C + libolm + libcurl): upload device and
-   one-time keys, receive an `m.room_key` via Olm, decrypt a Megolm room
-   message. Done against a local Synapse with a vodozemac sender, see
-   [`client-proto/`](client-proto/README.md). Done on the V4SA against
-   matrix.org with Element: Element sends its room key to the
-   unverified Amiga device.
-3. Sending: done (echo bot test, V4SA + Element, 2026-11-02).
-4. On the Amiga with bsdsocket + AmiSSL: done.
-5. Goal: a classic Amiga shared library `matrix.library` for clients and
-   bots. Feature list with priorities: [docs/matrix-library-features.md](docs/matrix-library-features.md).
-6. Next: cross-signing / verification (Element shows the Amiga's messages as
-   from an unverified device), interactive chat on the Amiga, then a GUI.
+See the [feature list](docs/matrix-library-features.md) (priorities P1-P3,
+"Test" column).  Next: the remaining P1 features (message formats, media,
+cross-signing and verification, sync details) with a feature test each, and
+the asynchronous layer (sync in its own process) for the GUI.

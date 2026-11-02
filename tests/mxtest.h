@@ -21,7 +21,15 @@
 #include "amatrix.h"
 
 #ifdef __amigaos__
+#include <proto/dos.h>
 unsigned long __stack = 256 * 1024;
+static const char *mxt_getenv(const char *name)
+{
+    static char buf[64];
+    return GetVar((STRPTR)name, (STRPTR)buf, sizeof buf, 0) > 0 ? buf : NULL;
+}
+#else
+#define mxt_getenv getenv
 #endif
 
 /* ------------------------------------------------------------- TAP output */
@@ -166,7 +174,7 @@ static AmxClient *mxt_client(const MxtArgs *a)
     }
     c = amx_client_new(a->server, a->store);
     if (!c) { mxt_ok(0, "client for store %s", a->store); exit(mxt_done()); }
-    if (getenv("AMX_VERBOSE")) amx_set_verbose(c, atoi(getenv("AMX_VERBOSE")));
+    if (mxt_getenv("AMX_VERBOSE")) amx_set_verbose(c, atoi(mxt_getenv("AMX_VERBOSE")));
     amx_set_event_handler(c, mxt_record, NULL);
     if (amx_login(c, a->user, a->password)) {
         mxt_ok(0, "login as %s: %s", a->user, amx_error(c));

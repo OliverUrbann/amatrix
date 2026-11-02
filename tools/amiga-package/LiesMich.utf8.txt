@@ -3,7 +3,7 @@ Amatrix - Test 3: verschlüsselt empfangen UND senden
 
 Was neu ist
 -----------
-amatrix-recv kann jetzt auch verschlüsselt senden. Für den Test arbeitet es
+amx-cli (früher amatrix-recv) kann verschlüsselt empfangen und senden. Für den Test arbeitet es
 als Echo-Bot: Es tritt einem Raum bei, auf den es eingeladen wird, schickt
 eine Begrüßung und beantwortet jede Nachricht mit
 "Amiga hat empfangen: <deine Nachricht>". Alles Ende-zu-Ende-verschlüsselt.

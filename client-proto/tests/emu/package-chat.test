@@ -1,7 +1,0 @@
-; The package's amatrix-test script, as the user runs it (diag + echo bot).
-Assign AmiSSL: SYS:AmiSSL
-Assign LIBS: AmiSSL:Libs ADD
-CD Extra:
-Execute amatrix-test amiga amiga-pw SERVER=https://localhost:8448 SECS=300
-Copy RAM:amatrix-log.txt SYS:out.txt
-Echo "done" >SYS:amiga-done

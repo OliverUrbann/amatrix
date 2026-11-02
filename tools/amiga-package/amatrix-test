@@ -33,7 +33,7 @@ Echo "Dann 3 Nachrichten schreiben, der Amiga antwortet auf jede."
 Echo "Ende nach 3 Nachrichten oder <SECS> Sekunden."
 Echo ""
 Echo "== chat" >>RAM:amatrix-log.txt
-amatrix-recv -v -e -g "Hallo vom Amiga! (Amatrix-Test, verschlüsselt gesendet)" -s amatrix-store -n 3 -t <SECS> <SERVER> <USER> <PASS> >>RAM:amatrix-log.txt
+amx-cli -v -e -g "Hallo vom Amiga! (Amatrix-Test, verschlüsselt gesendet)" -s amatrix-store -n 3 -t <SECS> <SERVER> <USER> <PASS> >>RAM:amatrix-log.txt
 Echo "rc=$RC" >>RAM:amatrix-log.txt
 Echo ""
 Echo "Fertig. Bitte RAM:amatrix-log.txt zurueckschicken"

@@ -76,6 +76,8 @@ async def run_amiga(binary, args, srv, timeout, log):
     q = lambda a: '"' + a.replace('"', "") + '"'
     script = os.path.join(extra, ".autotest")
     with open(script, "w", encoding="latin-1") as f:
+        verbose = os.environ.get("AMX_VERBOSE")
+        f.write(f"SetEnv AMX_VERBOSE {verbose}\n" if verbose else "UnSetEnv AMX_VERBOSE\n")
         f.write("Stack 262144\nAssign AmiSSL: SYS:AmiSSL\nAssign LIBS: AmiSSL:Libs ADD\n"
                 "Echo \"# emulator: FS-UAE\" >SYS:out.txt\n"
                 f"Extra:test {' '.join(q(a) for a in args)} >>SYS:out.txt\n"

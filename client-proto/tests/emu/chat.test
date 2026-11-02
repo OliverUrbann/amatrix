@@ -1,8 +1,0 @@
-Stack 262144
-Assign AmiSSL: SYS:AmiSSL
-Assign LIBS: AmiSSL:Libs ADD
-CD Extra:
-Echo "== amatrix-recv echo bot in FS-UAE" >SYS:out.txt
-amatrix-recv -e -g "Hallo vom Amiga! Grüße aus FS-UAE" -s RAM:store -n 3 -t 240 https://localhost:8448 amiga amiga-pw >>SYS:out.txt
-Echo "rc=$RC" >>SYS:out.txt
-Echo "done" >SYS:amiga-done
