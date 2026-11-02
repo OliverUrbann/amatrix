@@ -51,7 +51,7 @@ CORE_OBJ := $(patsubst %,$(B)/core/%.o,$(CORE_SRC) $(PLATFORM)) $(B)/core/cJSON.
 
 FEATURES := $(notdir $(wildcard tests/features/*))
 TEST_BIN := $(patsubst %,$(B)/tests/%,$(FEATURES))
-TOOL_BIN := $(B)/tools/amxdiag $(B)/tools/amx-cli
+TOOL_BIN := $(B)/tools/amxdiag $(B)/tools/amx-cli $(B)/examples/minimal
 
 all: $(B)/libamatrix.a $(TEST_BIN) $(TOOL_BIN)
 tests: $(TEST_BIN)
@@ -91,6 +91,11 @@ $(B)/tools/amxdiag: tools/amxdiag.c $(B)/libamatrix.a $(B)/libolm.a
 $(B)/tools/amx-cli: tools/amx-cli.c $(B)/libamatrix.a $(B)/libolm.a
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INC) $< $(B)/libamatrix.a $(B)/libolm.a $(LIBS) -o $@
+	$(STRIP) $@
+
+$(B)/examples/%: examples/%.c $(B)/libamatrix.a $(B)/libolm.a
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Icore/include $< $(B)/libamatrix.a $(B)/libolm.a $(LIBS) -o $@
 	$(STRIP) $@
 
 clean:
