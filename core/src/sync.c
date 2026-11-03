@@ -30,8 +30,11 @@ int amx_sync(AmxClient *c, long timeout_ms)
     } else {
         sprintf(path, "/sync?timeout=0&filter=%s", filter);
     }
+    http_interruptible(c->interruptible);
     r = amx__api(c, "GET", path, NULL, timeout_ms / 1000 + 30, &st);
+    http_interruptible(0);
     free(path);
+    if (st == -1) return 1;             /* woken up by the async layer */
     if (st != 200 || !r) { cJSON_Delete(r); return -1; }
 
     /* to-device first: the room keys for this batch's messages are here */

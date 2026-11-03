@@ -42,6 +42,8 @@ typedef struct {
     int own;                 /* 1 if sent by our own user */
     int history;             /* 1 if delivered by amx_load_history() */
     double timestamp;        /* origin_server_ts in ms */
+    const char *sender_name; /* display name of the sender in this room (or the
+                                localpart of the user ID if none is known) */
 } AmxEvent;
 
 typedef void (*AmxEventFn)(AmxClient *c, const AmxEvent *ev, void *userdata);
@@ -113,6 +115,7 @@ typedef struct {
     int unread;                /* notifications (server count) */
     int highlights;            /* mentions etc. */
     double last_activity;      /* origin_server_ts in ms of the newest event seen, 0 = unknown */
+    const char *avatar_url;    /* mxc:// picture: the room's, else the other person's; may be NULL */
 } AmxRoomInfo;
 
 /* Snapshot of the room list.  Returns the number of rooms (0..), -1 on error;
@@ -139,8 +142,19 @@ int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newe
 
 /* ---------------------------------------------------------------- messages */
 
+/* Marks the room as read up to event_id (read receipt + fully-read marker);
+ * the server's unread count for the room drops to 0. */
+int amx_mark_read(AmxClient *c, const char *room_id, const char *event_id);
+
 /* Sends m.text; encrypted if the room is.  event_id_out may be NULL. */
 int amx_send_text(AmxClient *c, const char *room_id, const char *body, char **event_id_out);
+
+/* ------------------------------------------------------------------ media */
+
+/* A picture (e.g. AmxRoomInfo.avatar_url) as size x size pixels, 0xAARRGGBB,
+ * centre-cropped to a square and scaled.  Fetched once as a server thumbnail
+ * (PNG/JPEG), then taken from the store.  *argb: caller frees.  0 or -1. */
+int amx_avatar(AmxClient *c, const char *mxc_url, int size, unsigned long **argb);
 
 /* ---------------------------------------------------------------- charset */
 

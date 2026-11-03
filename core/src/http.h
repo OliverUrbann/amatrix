@@ -21,10 +21,15 @@ void http_cleanup(void);
 
 /* method: "GET", "POST", "PUT". url: absolute. bearer: access token or NULL.
  * body: request body (JSON) or NULL. timeout_s: overall timeout.
- * Returns 0 on success (any HTTP status), -1 on transport failure. */
+ * Returns 0 on success (any HTTP status), -1 on transport failure,
+ * -2 when interrupted (see http_interruptible). */
 int  http_request(const char *method, const char *url, const char *bearer,
                   const char *body, long timeout_s, HttpResponse *out);
 void http_response_free(HttpResponse *r);
+
+/* While on, a wake-up of the network process (net_set_wakeup) aborts the
+ * request: http_request() returns -2.  Used only around the /sync long poll. */
+void http_interruptible(int on);
 
 /* Why the last http_request() returned -1 (connect, TLS, ...). */
 const char *http_last_error(void);

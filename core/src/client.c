@@ -101,13 +101,17 @@ cJSON *amx__api(AmxClient *c, const char *method, const char *path, const cJSON 
     char *url = amx__malloc(strlen(c->hs) + strlen(path) + 32);
     char *b = body ? cJSON_PrintUnformatted(body) : NULL;
     cJSON *res = NULL;
+    int st;
 
     if (!strncmp(path, "/_matrix", 8)) sprintf(url, "%s%s", c->hs, path);
     else sprintf(url, "%s/_matrix/client/v3%s", c->hs, path);
     LOG2(c, "> %s %s", method, path);
-    if (http_request(method, url, c->token, b, timeout_s, &r) != 0) {
-        amx__fail(c, "network error on %s %s: %s", method, path, http_last_error());
-        *status = 0;
+    if ((st = http_request(method, url, c->token, b, timeout_s, &r)) != 0) {
+        if (st == -2) *status = -1;     /* interrupted, not an error */
+        else {
+            amx__fail(c, "network error on %s %s: %s", method, path, http_last_error());
+            *status = 0;
+        }
     } else {
         *status = r.status;
         if (r.body) res = cJSON_Parse(r.body);
@@ -133,7 +137,20 @@ cJSON *amx__api_ok(AmxClient *c, const char *method, const char *path, const cJS
 
 void amx__emit(AmxClient *c, AmxEvent *ev)
 {
-    if (c->fn) c->fn(c, ev, c->ud);
+    char local[256];
+    if (!c->fn) return;
+    if (!ev->sender_name && ev->sender) {
+        ev->sender_name = amx__member_name(c, ev->room_id, ev->sender);
+        if (!ev->sender_name) {
+            const char *s = ev->sender[0] == '@' ? ev->sender + 1 : ev->sender;
+            size_t n = strcspn(s, ":");
+            if (n >= sizeof local) n = sizeof local - 1;
+            memcpy(local, s, n);
+            local[n] = 0;
+            ev->sender_name = local;
+        }
+    }
+    c->fn(c, ev, c->ud);
 }
 
 /* ---------------------------------------------------------- lifecycle */

@@ -123,7 +123,8 @@ MXT_FN void mxt_record(AmxClient *c, const AmxEvent *e, void *ud)
     m->timestamp = e->timestamp;
     if (e->type == AMX_EV_MESSAGE) {
         char *l = amx_to_local(e->body ? e->body : "");
-        mxt_diag("event message %s from %s: %s%s%s", e->room_id, e->sender, l,
+        mxt_diag("event message %s from %s (%s): %s%s%s", e->room_id, e->sender,
+                 e->sender_name ? e->sender_name : "-", l,
                  e->encrypted ? " (encrypted)" : "", e->history ? " (history)" : "");
         free(l);
     } else if (e->type == AMX_EV_UNDECRYPTABLE) {

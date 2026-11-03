@@ -67,6 +67,7 @@ static void apply_state(AmxClient *c, cJSON *r, const char *room_id, const cJSON
     if (!strcmp(type, "m.room.name")) set_str(r, "name", amx__jstr(ct, "name"));
     else if (!strcmp(type, "m.room.topic")) set_str(r, "topic", amx__jstr(ct, "topic"));
     else if (!strcmp(type, "m.room.canonical_alias")) set_str(r, "alias", amx__jstr(ct, "alias"));
+    else if (!strcmp(type, "m.room.avatar")) set_str(r, "avatar", amx__jstr(ct, "url"));
     else if (!strcmp(type, "m.room.encryption")) {
         cJSON_DeleteItemFromObjectCaseSensitive(r, "enc");
         cJSON_AddTrueToObject(r, "enc");
@@ -74,9 +75,15 @@ static void apply_state(AmxClient *c, cJSON *r, const char *room_id, const cJSON
     } else if (!strcmp(type, "m.room.member")) {
         cJSON *m = cJSON_GetObjectItemCaseSensitive(r, "members");
         const char *ms = amx__jstr(ct, "membership"), *dn = amx__jstr(ct, "displayname");
+        cJSON *av = cJSON_GetObjectItemCaseSensitive(r, "mav");
+        const char *au = amx__jstr(ct, "avatar_url");
+        if (!av) av = cJSON_AddObjectToObject(r, "mav");
         cJSON_DeleteItemFromObjectCaseSensitive(m, sk);
-        if (ms && (!strcmp(ms, "join") || !strcmp(ms, "invite")) && cJSON_GetArraySize(m) < MAX_MEMBERS)
+        cJSON_DeleteItemFromObjectCaseSensitive(av, sk);
+        if (ms && (!strcmp(ms, "join") || !strcmp(ms, "invite")) && cJSON_GetArraySize(m) < MAX_MEMBERS) {
             cJSON_AddStringToObject(m, sk, dn && *dn ? dn : sk);
+            if (au && !strncmp(au, "mxc://", 6)) cJSON_AddStringToObject(av, sk, au);
+        }
         if (c->user_id && !strcmp(sk, c->user_id) && ms && !strcmp(ms, "invite")) {
             set_str(r, "inviter", amx__jstr(ev, "sender"));
             if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(ct, "is_direct"))) {
@@ -137,6 +144,14 @@ void amx__set_direct(AmxClient *c, const cJSON *content)
 {
     cJSON_Delete(c->direct);
     c->direct = cJSON_Duplicate(content, 1);
+}
+
+/* display name of user in room as far as we know it, or NULL */
+const char *amx__member_name(AmxClient *c, const char *room_id, const char *user)
+{
+    const cJSON *r = room_id ? cJSON_GetObjectItemCaseSensitive(c->rooms, room_id) : NULL;
+    const char *n = amx__jstr(cJSON_GetObjectItemCaseSensitive(r, "members"), user);
+    return n && strcmp(n, user) ? n : NULL;
 }
 
 const char *amx__room_inviter_if_direct(AmxClient *c, const char *room_id)
@@ -219,6 +234,23 @@ static char *room_name(AmxClient *c, const char *room_id, const cJSON *r)
     return amx__strdup(room_id);
 }
 
+/* the room's picture; for rooms without one the other person's (direct chat,
+ * or a room with a single other hero) */
+static const char *room_avatar(AmxClient *c, const cJSON *r, const char *dm_user)
+{
+    const char *a = amx__jstr(r, "avatar"), *other = dm_user;
+    const cJSON *h;
+    int n = 0;
+    if (a) return a;
+    if (!other) {
+        cJSON_ArrayForEach(h, cJSON_GetObjectItemCaseSensitive(r, "heroes"))
+            if (cJSON_IsString(h) && !(c->user_id && !strcmp(h->valuestring, c->user_id))) { other = h->valuestring; n++; }
+        if (n != 1) other = NULL;
+    }
+    if (!other) other = amx__jstr(r, "inviter");
+    return other ? amx__jstr(cJSON_GetObjectItemCaseSensitive(r, "mav"), other) : NULL;
+}
+
 static int cmp_rooms(const void *a, const void *b)
 {
     const AmxRoomInfo *x = a, *y = b;
@@ -249,6 +281,7 @@ int amx_rooms(AmxClient *c, AmxRoomInfo **list)
         if (!du && i->membership == AMX_ROOM_INVITED && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(r, "idirect")))
             du = i->inviter;
         i->dm_user = dupn(du);
+        i->avatar_url = dupn(room_avatar(c, r, du));
         i->is_direct = du != NULL;
         i->encrypted = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(r, "enc"));
         i->joined_members = get_int(r, "jc");
@@ -270,6 +303,7 @@ void amx_free_rooms(AmxRoomInfo *list, int n)
     for (i = 0; i < n; i++) {
         free((char *)list[i].room_id); free((char *)list[i].name); free((char *)list[i].topic);
         free((char *)list[i].alias); free((char *)list[i].dm_user); free((char *)list[i].inviter);
+        free((char *)list[i].avatar_url);
     }
     free(list);
 }

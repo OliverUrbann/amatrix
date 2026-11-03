@@ -39,3 +39,19 @@ int amx_send_text(AmxClient *c, const char *room_id, const char *body, char **ev
     cJSON_Delete(ct);
     return r;
 }
+
+int amx_mark_read(AmxClient *c, const char *room_id, const char *event_id)
+{
+    cJSON *b = cJSON_CreateObject(), *r;
+    char *er = http_escape(room_id), *path = amx__malloc(strlen(er) + 40);
+    sprintf(path, "/rooms/%s/read_markers", er);
+    cJSON_AddStringToObject(b, "m.fully_read", event_id);
+    cJSON_AddStringToObject(b, "m.read", event_id);
+    r = amx__api_ok(c, "POST", path, b);
+    cJSON_Delete(b);
+    free(path);
+    free(er);
+    if (!r) return -1;
+    cJSON_Delete(r);
+    return 0;
+}

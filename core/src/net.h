@@ -24,4 +24,13 @@ int  net_write(net_conn *c, const void *buf, size_t len);   /* all or -1 */
 long net_read(net_conn *c, void *buf, size_t len);          /* >0, 0 = EOF, -1 = error */
 void net_close(net_conn *c);
 
+/* Interruptible reads for the async layer (only the network process uses
+ * the net layer).  net_set_wakeup(): Amiga: signal mask (it becomes the
+ * bsdsocket break mask while interruptible); POSIX: fd that becomes
+ * readable.  While net_interruptible(1), a wake-up makes net_read() return
+ * -2.  net_wake_pending(): a wake-up is waiting (without consuming it). */
+void net_set_wakeup(long fd_or_sigmask);
+void net_interruptible(int on);
+int  net_wake_pending(void);
+
 #endif

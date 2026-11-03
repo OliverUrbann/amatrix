@@ -20,17 +20,20 @@ private Synapse started by the tests.
 | room_list | ✔ | ✔ | ✔ |
 | directory | ✔ | ✔ | ✔ |
 | history | ✔ | ✔ | ✔ |
+| async | ✔ | ✔ | ✔ |
+| avatars | ✔ | ✔ | ✔ |
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `core/` | the client core, `libamatrix.a`; API in `core/include/amatrix.h` |
+| `core/` | the client core, `libamatrix.a`; API in `core/include/amatrix.h`, for GUIs `amatrix_async.h` (network process) |
+| `gui/` | the MUI client (MUI 5, NList, TextEditor); `third_party/fetch-mui.sh` fetches the SDK |
 | `examples/minimal.c` | the smallest client: room list and directory, or open a room (history, send, receive) - start here |
 | `tools/` | `amx-cli` (command-line test client), `amxdiag` (network/AmiSSL diagnosis), `amiga-package/` (test package for a real Amiga) |
 | `tests/` | feature tests and their runner, see [tests/README.md](tests/README.md) |
 | `libolm-amiga/` | libolm on AmigaOS: patches, unit tests, `olmbench`, see [its README](libolm-amiga/README.md) |
-| `third_party/` | libolm 3.2.16 (patched), cJSON, AmiSSL 5.27 SDK |
+| `third_party/` | libolm 3.2.16 (patched), cJSON, AmiSSL 5.27 SDK, stb_image |
 | `docs/` | [feature list](docs/matrix-library-features.md), [proof of concept](docs/proof-of-concept.md) |
 | `results/` | logs of the tests on the real Vampire and earlier emulator runs |
 

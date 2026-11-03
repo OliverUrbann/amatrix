@@ -15,7 +15,7 @@ AMISSL := third_party/amissl-sdk
 
 OLM_DEFS := -DOLMLIB_VERSION_MAJOR=3 -DOLMLIB_VERSION_MINOR=2 -DOLMLIB_VERSION_PATCH=16 -DOLM_STATIC_DEFINE
 INC      := -Icore/include -Icore/src -I$(CJSON) -I$(OLM)/include -Itests
-CORE_SRC := client.c keys.c crypto_recv.c crypto_send.c sync.c rooms.c roomstate.c messages.c \
+CORE_SRC := client.c async.c media.c keys.c crypto_recv.c crypto_send.c sync.c rooms.c roomstate.c messages.c \
             canonjson.c http_sock.c net.c
 
 ifeq ($(TARGET),amiga)
@@ -39,7 +39,7 @@ else
   CFLAGS   := -O1 -g -std=gnu99 -Wall $(SAN)
   CXXFLAGS := -O1 -g -std=c++11 $(SAN)
   PLATFORM := platform_posix.c
-  LIBS     := -lssl -lcrypto -lstdc++ $(SAN)
+  LIBS     := -lssl -lcrypto -lstdc++ -lpthread $(SAN)
   STRIP    := true
 endif
 

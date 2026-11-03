@@ -92,6 +92,9 @@ static long dechunk(char *s, size_t len)
     return out - s;
 }
 
+static int interruptible;
+void http_interruptible(int on) { interruptible = on; net_interruptible(on); }
+
 int http_init(void) { return net_init(); }
 void http_cleanup(void) { net_cleanup(); }
 
@@ -121,8 +124,12 @@ int http_request(const char *method, const char *url, const char *bearer,
     path = strchr(p, '/');
     if (!path) path = "/";
 
+    if (net_wake_pending() && interruptible) { seterr("interrupted"); return -2; }
     c = net_connect(host, port, tls, err, sizeof err);
-    if (!c) { seterr("%s", err); return -1; }
+    if (!c) {
+        seterr("%s", err);
+        return interruptible && net_wake_pending() ? -2 : -1;
+    }
 
     hdr = malloc(strlen(path) + strlen(host) + (bearer ? strlen(bearer) : 0) + 400);
     if (!hdr) { net_close(c); return -1; }
@@ -143,6 +150,7 @@ int http_request(const char *method, const char *url, const char *bearer,
     while ((r = net_read(c, tmp, sizeof tmp)) > 0)
         if (buf_add(&b, tmp, r)) { seterr("out of memory"); r = -1; break; }
     net_close(c);
+    if (r == -2) { seterr("interrupted"); free(b.d); return -2; }
 
     if (!b.d || !(sep = strstr(b.d, "\r\n\r\n"))) {
         seterr("no response (%s)", r < 0 ? "read error" : "connection closed");

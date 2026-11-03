@@ -12,6 +12,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <dos/dos.h>
+#include <sys/ioctl.h>
+#include <sys/filio.h>
 
 #ifdef AMX_AMISSL
 #include <libraries/amisslmaster.h>
@@ -29,6 +32,12 @@ static int amissl_open;
 #endif
 
 struct Library *SocketBase = NULL;
+static ULONG wake_mask;
+static int intr_on;
+
+void net_set_wakeup(long m) { wake_mask = (ULONG)m; }
+void net_interruptible(int on) { intr_on = on && wake_mask; }
+int net_wake_pending(void) { return wake_mask && (SetSignal(0, 0) & wake_mask); }
 
 struct net_conn {
     long fd;
@@ -163,9 +172,48 @@ int net_write(net_conn *c, const void *buf, size_t len)
     return 0;
 }
 
+/* interruptible read: WaitSelect() on the socket and the wake-up signal,
+ * non-blocking socket (TLS records without data must not block SSL_read) */
+static long read_intr(net_conn *c, void *buf, size_t len)
+{
+    long one = 1, n;
+    IoctlSocket(c->fd, FIONBIO, (char *)&one);
+    for (;;) {
+#ifdef AMX_AMISSL
+        if (!(c->ssl && SSL_pending(c->ssl)))
+#endif
+        {
+            fd_set rd;
+            ULONG sig = wake_mask;
+            long r;
+            FD_ZERO(&rd);
+            FD_SET(c->fd, &rd);
+            r = WaitSelect(c->fd + 1, &rd, NULL, NULL, NULL, &sig);
+            if (r == 0 && (sig & wake_mask)) return -2;
+            if (r < 0) return -1;
+        }
+#ifdef AMX_AMISSL
+        if (c->ssl) {
+            n = SSL_read(c->ssl, buf, (int)len);
+            if (n > 0) return n;
+            switch (SSL_get_error(c->ssl, (int)n)) {
+            case SSL_ERROR_WANT_READ: case SSL_ERROR_WANT_WRITE: continue;
+            case SSL_ERROR_ZERO_RETURN: case SSL_ERROR_SYSCALL: case SSL_ERROR_SSL: return 0;
+            default: return -1;
+            }
+        }
+#endif
+        n = recv(c->fd, buf, len, 0);
+        if (n >= 0) return n;
+        if (Errno() == EWOULDBLOCK || Errno() == EINTR) continue;
+        return -1;
+    }
+}
+
 long net_read(net_conn *c, void *buf, size_t len)
 {
     long n;
+    if (intr_on) return read_intr(c, buf, len);
 #ifdef AMX_AMISSL
     if (c->ssl) {
         n = SSL_read(c->ssl, buf, (int)len);
@@ -201,8 +249,21 @@ void net_close(net_conn *c)
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
+#include <poll.h>
+#include <fcntl.h>
 struct net_conn { int fd; SSL *ssl; };
 static SSL_CTX *ctx;
+static int wake_fd = -1, intr_on;
+
+void net_set_wakeup(long fd) { wake_fd = (int)fd; }
+void net_interruptible(int on) { intr_on = on && wake_fd >= 0; }
+int net_wake_pending(void)
+{
+    struct pollfd p;
+    if (wake_fd < 0) return 0;
+    p.fd = wake_fd; p.events = POLLIN; p.revents = 0;
+    return poll(&p, 1, 0) > 0 && (p.revents & POLLIN);
+}
 
 int net_init(void)
 {
@@ -269,7 +330,31 @@ int net_write(net_conn *c, const void *buf, size_t len)
 
 long net_read(net_conn *c, void *buf, size_t len)
 {
-    long n = c->ssl ? SSL_read(c->ssl, buf, (int)len) : read(c->fd, buf, len);
+    long n;
+    if (intr_on) {
+        /* non-blocking, so that TLS records without data (session tickets)
+         * cannot leave us stuck in SSL_read() */
+        fcntl(c->fd, F_SETFL, fcntl(c->fd, F_GETFL) | O_NONBLOCK);
+        for (;;) {
+            if (!(c->ssl && SSL_pending(c->ssl))) {
+                struct pollfd p[2];
+                p[0].fd = c->fd; p[0].events = POLLIN; p[0].revents = 0;
+                p[1].fd = wake_fd; p[1].events = POLLIN; p[1].revents = 0;
+                while (poll(p, 2, -1) < 0 && errno == EINTR) ;
+                if (p[1].revents & POLLIN) return -2;
+            }
+            n = c->ssl ? SSL_read(c->ssl, buf, (int)len) : read(c->fd, buf, len);
+            if (n > 0) return n;
+            if (c->ssl) {
+                int e = SSL_get_error(c->ssl, (int)n);
+                if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE) continue;
+                return e == SSL_ERROR_ZERO_RETURN || n == 0 ? 0 : -1;
+            }
+            if (n < 0 && (errno == EAGAIN || errno == EINTR)) continue;
+            return n < 0 ? -1 : 0;
+        }
+    }
+    n = c->ssl ? SSL_read(c->ssl, buf, (int)len) : read(c->fd, buf, len);
     if (n < 0 && c->ssl && SSL_get_error(c->ssl, (int)n) == SSL_ERROR_ZERO_RETURN) return 0;
     return n < 0 ? -1 : n;
 }
