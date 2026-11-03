@@ -6,7 +6,10 @@
  * sends).  All networking and crypto run in the network process of the core
  * (amatrix_async.h); this file is only the GUI.
  *
- *   Amatrix [SERVER=<url>] [USER=<name>] [PASSWORD=<pw>]
+ *   Amatrix [SERVER=<url>] [USER=<name>] [PASSWORD=<pw>] [DEBUG]
+ *
+ * DEBUG writes a detailed log to PROGDIR:Amatrix.log (line by line, so it
+ * survives a crash).
  *
  * Without arguments the last account is used (the login is kept in the
  * store, the password is never saved); the first time a login window opens.
@@ -87,6 +90,7 @@ typedef struct {
 } Img;
 
 static AmxAsync *A;
+static int debug;                 /* DEBUG: log to PROGDIR:Amatrix.log */
 static Object *app, *win_main, *lv_rooms, *lst_rooms, *txt_status;
 static Object *win_login, *str_server, *str_user, *str_pass, *txt_login;
 static Object *win_newchat, *str_chatuser;
@@ -322,6 +326,7 @@ static void open_chat(const char *room_id);
 
 static void update_rooms(const AmxMsg *m)
 {
+    amx_log("room list: %d rooms", m->n);
     Room *nl = calloc(m->n + 1, sizeof *nl), *act = NULL;
     char *active = NULL;
     ChatWin *w;
@@ -458,6 +463,7 @@ MakeStaticHook(chat_older_hook, chat_older_func);
 
 static void open_chat(const char *room_id)
 {
+    amx_log("open_chat %s", room_id);
     ChatWin *w = chat_by_room(room_id);
     Room *r = room_by_id(room_id);
     unsigned long h;
@@ -525,6 +531,8 @@ static void open_chat(const char *room_id)
     w->next = chats;
     chats = w;
     set(w->win, MUIA_Window_Open, TRUE);
+    amx_log("chat window open (%ld,%ld %ldx%ld)", (long)left, (long)top, (long)width,
+            (long)xget(w->win, MUIA_Window_Height));
     w->loading = 1;
     set(w->older, MUIA_Disabled, TRUE);
     amx_async_load_history(A, room_id, FIRST_PAGE, 1, TAG_HIST);
@@ -691,6 +699,8 @@ static void chat_event(const AmxEvent *e)
     ChatWin *w = e->room_id ? chat_by_room(e->room_id) : NULL;
     char *text;
     if (!w) return;
+    amx_log("chat_event type %d %s hist %d body %ld", (int)e->type, e->event_id ? e->event_id : "-", e->history,
+            (long)(e->body ? strlen(e->body) : -1));
     if (e->type == AMX_EV_MESSAGE && e->event_id && w->n_undec) {
         if ((text = format_event(e)) != NULL && replace_undecryptable(w, e, text)) {
             free(text);
@@ -704,6 +714,7 @@ static void chat_event(const AmxEvent *e)
     if (!(text = format_event(e))) return;
     insert_text(w, e->event_id, text, e->history ? MUIV_NList_Insert_Top : MUIV_NList_Insert_Bottom,
                 e->type == AMX_EV_UNDECRYPTABLE && e->event_id);
+    amx_log("  inserted (%ld lines)", (long)w->lines);
     free(text);
     if (!e->history) DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
     note_newest(w, e);
@@ -712,6 +723,8 @@ static void chat_event(const AmxEvent *e)
 static void history_done(const AmxMsg *m)
 {
     ChatWin *w = m->result ? chat_by_room(m->result) : NULL;
+    amx_log("history_done %s status %d count %d at_start %d", m->result ? m->result : "-", m->status, m->count,
+            m->at_start);
     if (!w) return;
     w->loading = 0;
     w->at_start = m->status == 0 && m->at_start;
@@ -720,6 +733,7 @@ static void history_done(const AmxMsg *m)
     if (m->status) return;
     if (!xget(w->list, MUIA_NList_First) || w->lines <= m->count + 1)
         DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
+    amx_log("history_done finished");
 }
 
 /* --------------------------------------------------------------- dialogs */
@@ -738,6 +752,7 @@ static void do_login(const char *server, const char *user, const char *password)
     {
         char v[16];
         if (GetVar((STRPTR)"AMX_VERBOSE", (STRPTR)v, sizeof v, 0) > 0) amx_async_set_verbose(A, atoi(v));
+        if (debug) amx_async_set_verbose(A, 2);
     }
     set_status("Anmelden als %s ...", user, NULL);
     amx_async_login(A, user, password ? password : "", TAG_LOGIN);
@@ -872,6 +887,7 @@ static void join_selected(void)
 
 static void handle_result(const AmxMsg *m)
 {
+    amx_log("result tag %lu cmd %d status %d %s", m->tag, (int)m->cmd, m->status, m->error ? m->error : "");
     switch (m->tag) {
     case TAG_LOGIN:
         if (m->status) {
@@ -1345,7 +1361,7 @@ static void handle_id(ULONG id)
 int main(int argc, char **argv)
 {
     struct RDArgs *rda = NULL;
-    LONG args[3] = { 0, 0, 0 };
+    LONG args[4] = { 0, 0, 0, 0 };
     ULONG sigs = 0, id;
     int i;
 
@@ -1356,7 +1372,14 @@ int main(int argc, char **argv)
     if (!NameFromLock(GetProgramDir(), (STRPTR)prog_dir, sizeof prog_dir - 2)) strcpy(prog_dir, "PROGDIR:");
     if (prog_dir[strlen(prog_dir) - 1] != ':') strcat(prog_dir, "/");
     load_prefs();
-    if (argc > 0) rda = ReadArgs((STRPTR)"SERVER/K,USER/K,PASSWORD/K", args, NULL);
+    if (argc > 0) rda = ReadArgs((STRPTR)"SERVER/K,USER/K,PASSWORD/K,DEBUG/S", args, NULL);
+    if (args[3]) {
+        char lp[300];
+        snprintf(lp, sizeof lp, "%sAmatrix.log", prog_dir);
+        amx_set_logfile(lp);
+        debug = 1;
+        amx_log("Amatrix started, %s", version + 6);
+    }
     if (args[0]) { free(cfg_server); cfg_server = strdup((char *)args[0]); }
     if (args[1]) { free(cfg_user); cfg_user = strdup((char *)args[1]); }
 

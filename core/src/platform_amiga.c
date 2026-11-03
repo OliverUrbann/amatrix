@@ -118,6 +118,17 @@ int plat_mkdir(const char *path)
 
 void plat_sleep(int seconds) { Delay(seconds * 50); }
 
+/* dos.library directly, no stdio buffer: the line is on disk when we return */
+void plat_append_line(const char *path, const char *line)
+{
+    BPTR f = Open((STRPTR)path, MODE_READWRITE);
+    if (!f) return;
+    Seek(f, 0, OFFSET_END);
+    Write(f, (APTR)line, strlen(line));
+    Write(f, (APTR)"\n", 1);
+    Close(f);
+}
+
 char *plat_display(const char *utf8)
 {
     const unsigned char *s = (const unsigned char *)utf8;

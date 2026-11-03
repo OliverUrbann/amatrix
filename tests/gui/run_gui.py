@@ -217,6 +217,49 @@ async def scenario(ctx, amiga, srv, me):
             return r == "0"
         check(await amiga.until(readable, 120), f"{name}: every message decrypted (late keys replace the placeholder)")
 
+    # a room with a long, mixed history from before we joined (like a real
+    # account on a new device): nothing of it is decryptable for us
+    alt = await p.create_room(encrypted=True, name="Altraum")
+    await p.sync(500)
+    ids = []
+    for i in range(1, 36):
+        r = await p.c.room_send(alt, "m.room.message",
+                                {"msgtype": "m.text", "body": f"alt {i:02d}\nzweite Zeile",
+                                 "format": "org.matrix.custom.html",
+                                 "formatted_body": f"<b>alt</b> {i:02d}<br>zweite Zeile"},
+                                ignore_unverified_devices=True)
+        ids.append(getattr(r, "event_id", None))
+    await p.c.room_send(alt, "m.reaction", {"m.relates_to": {"rel_type": "m.annotation",
+                        "event_id": ids[0], "key": "👍"}}, ignore_unverified_devices=True)
+    await p.c.room_send(alt, "m.room.message", {"msgtype": "m.text", "body": "* korrigiert",
+                        "m.new_content": {"msgtype": "m.text", "body": "korrigiert"},
+                        "m.relates_to": {"rel_type": "m.replace", "event_id": ids[1]}},
+                        ignore_unverified_devices=True)
+    await p.c.room_redact(alt, ids[2], reason="weg damit")
+    await p.c.room_send(alt, "m.room.message", {"msgtype": "m.image", "body": "bild.png",
+                        "url": "mxc://amatrix.test/nichtda", "info": {"w": 10, "h": 10}},
+                        ignore_unverified_devices=True)
+    await p.c.room_put_state(alt, "m.room.topic", {"topic": "Ein Thema mit Ümläuten"})
+    await p.invite(alt, me.user_id)
+
+    async def accept_alt():
+        rc, _ = await amiga.rexx("ACCEPT Altraum")
+        return rc == "0"
+    check(await amiga.until(accept_alt, 180), "accepted Altraum (history from before we joined)")
+    ok = await p.wait(lambda: p.joined(alt, me.user_id), 240)
+    rc, _ = await amiga.rexx("OPENCHAT Altraum")
+    await asyncio.sleep(25)
+    rc, st = await amiga.rexx("STATUS")
+    check(st.startswith("Online"), f"GUI still answers after opening Altraum ({st!r})")
+    rc, n = await amiga.rexx("CHATLINES Altraum")
+    check(n.isdigit() and int(n) > 0, f"Altraum shows its history ({n} lines)")
+    await amiga.shot("07a-altraum")
+    rc, _ = await amiga.rexx("OLDER Altraum")
+    await asyncio.sleep(20)
+    rc, st = await amiga.rexx("STATUS")
+    check(st.startswith("Online"), f"GUI still answers after loading older messages ({st!r})")
+    await amiga.shot("07b-altraum-older")
+
     # older messages: 45 in a room, the window loads the newest 30, the button the rest
     archiv = await p.create_room(invite=[me.user_id], encrypted=True, name="Archiv")
     async def accept_archiv():

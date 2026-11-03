@@ -51,6 +51,12 @@ typedef void (*AmxEventFn)(AmxClient *c, const AmxEvent *ev, void *userdata);
 /* ------------------------------------------------------------- lifecycle */
 
 int  amx_init(void);                  /* once per program: network (bsdsocket/AmiSSL) */
+
+/* Diagnosis: every log line (amx_set_verbose) and amx_log() also goes to this
+ * file, written and closed line by line so it survives a crash or a frozen
+ * machine.  NULL switches it off.  Shared by all processes of the program. */
+void amx_set_logfile(const char *path);
+void amx_log(const char *fmt, ...);
 void amx_cleanup(void);
 
 /* homeserver: "https://host[:port]".  store_dir: directory for this

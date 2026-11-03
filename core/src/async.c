@@ -304,6 +304,7 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
 
     if (!a->c) { post_result(a, c, -1, NULL); return; }
     amx_set_verbose(a->c, a->verbose);
+    LOG(a->c, "command %d (tag %lu) %s", c->cmd, c->tag, c->s1 ? c->s1 : "");
     switch (c->cmd) {
     case AMX_CMD_LOGIN:
         r = amx_login(a->c, c->s1, c->s2 ? c->s2 : "");
@@ -429,7 +430,10 @@ static void worker(AmxAsync *a)
 
         amx_set_verbose(a->c, a->verbose);
         {
-            int r = amx_sync(a->c, first ? 0 : 30000);
+            int r;
+            LOG2(a->c, "sync (%s)", first ? "first" : "long poll");
+            r = amx_sync(a->c, first ? 0 : 30000);
+            LOG2(a->c, "sync returned %d", r);
             if (r == 1) continue;                     /* a command woke us up */
             if (r < 0) {
                 if (!a->logged_in) continue;

@@ -20,6 +20,7 @@ char *plat_read_file(const char *path);         /* malloc'd, NUL-terminated; NUL
 int   plat_write_file(const char *path, const char *data); /* atomic replace; 0 on success */
 int   plat_mkdir(const char *path);             /* 0 if it exists afterwards */
 void  plat_sleep(int seconds);
+void  plat_append_line(const char *path, const char *line);   /* open, append, close */
 /* Text for the console: UTF-8 as is on the host; on the Amiga converted to
  * ISO-8859-1 (characters outside Latin-1 become '?').  Caller frees. */
 char *plat_display(const char *utf8);

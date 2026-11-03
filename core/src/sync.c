@@ -128,10 +128,14 @@ int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newe
     r = amx__api(c, "GET", path, NULL, 60, &st);
     free(path);
     if (st != 200 || !r) { cJSON_Delete(r); return -1; }
+    LOG(c, "history %s: %d events", room_id, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(r, "chunk")));
     cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(r, "chunk")) {
+        LOG2(c, "  history event %s %s", amx__jstr(x, "type") ? amx__jstr(x, "type") : "?",
+             amx__jstr(x, "event_id") ? amx__jstr(x, "event_id") : "?");
         amx__handle_room_event(c, room_id, x, 1);
         n++;
     }
+    LOG(c, "history %s: done", room_id);
     cJSON_DeleteItemFromObjectCaseSensitive(c->hist, room_id);
     if (amx__jstr(r, "end") && n > 0) {
         cJSON_AddStringToObject(c->hist, room_id, amx__jstr(r, "end"));

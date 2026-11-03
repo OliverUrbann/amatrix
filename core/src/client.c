@@ -5,10 +5,41 @@
 
 /* ------------------------------------------------------------ helpers */
 
+static char *logfile;
+
+void amx_set_logfile(const char *path)
+{
+    free(logfile);
+    logfile = path ? amx__strdup(path) : NULL;
+}
+
+static void log_line(const char *who, const char *fmt, va_list ap)
+{
+    char buf[700];
+    int n = snprintf(buf, sizeof buf, "%lu %s ", (unsigned long)time(NULL), who);
+    vsnprintf(buf + n, sizeof buf - n, fmt, ap);
+    if (logfile) plat_append_line(logfile, buf);
+}
+
+void amx_log(const char *fmt, ...)
+{
+    va_list ap;
+    if (!logfile) return;
+    va_start(ap, fmt);
+    log_line("gui", fmt, ap);
+    va_end(ap);
+}
+
 void amx__log(AmxClient *c, int level, const char *fmt, ...)
 {
     va_list ap;
     if (!c || c->verbose < level) return;
+    if (logfile) {
+        va_start(ap, fmt);
+        log_line("net", fmt, ap);
+        va_end(ap);
+        return;
+    }
     va_start(ap, fmt);
     vfprintf(AMX_ERR, fmt, ap);
     va_end(ap);

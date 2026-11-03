@@ -72,3 +72,11 @@ char *plat_from_local(const char *local)
     if (r) strcpy(r, local);
     return r;
 }
+
+void plat_append_line(const char *path, const char *line)
+{
+    FILE *f = fopen(path, "a");
+    if (!f) return;
+    fprintf(f, "%s\n", line);
+    fclose(f);
+}
