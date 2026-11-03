@@ -70,7 +70,7 @@ $(B)/olm/%.c.o: $(OLM)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(filter-out -Wall,$(CFLAGS)) -w $(OLM_DEFS) -I$(OLM)/include -I$(OLM)/lib -c $< -o $@
 
-$(B)/core/%.c.o: core/src/%.c core/src/amx_internal.h core/include/amatrix.h
+$(B)/core/%.c.o: core/src/%.c core/src/amx_internal.h core/include/amatrix.h core/include/amatrix_async.h
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(OLM_DEFS) $(INC) -c $< -o $@
 
@@ -101,4 +101,26 @@ $(B)/examples/%: examples/%.c $(B)/libamatrix.a $(B)/libolm.a
 clean:
 	rm -rf build
 
-.PHONY: all tests clean
+.PHONY: gui all tests clean
+
+# ---------------------------------------------------------------- MUI client
+# (Amiga only; the MUI SDK comes from third_party/fetch-mui.sh)
+MUI_INC := third_party/mui/include
+GUI_SRC := gui/amatrix.c gui/mui_util.c
+GUI_CFLAGS = $(CFLAGS) -Wno-attributes -Wno-pointer-sign -finput-charset=UTF-8 -fexec-charset=ISO-8859-1 \
+             -I$(MUI_INC) -Icore/include -Igui
+
+gui: $(B)/gui/Amatrix $(B)/gui/muicheck
+
+$(MUI_INC)/libraries/mui.h:
+	third_party/fetch-mui.sh
+
+$(B)/gui/Amatrix: $(GUI_SRC) gui/mui_util.h $(MUI_INC)/libraries/mui.h $(B)/libamatrix.a $(B)/libolm.a
+	@mkdir -p $(dir $@)
+	$(CC) $(GUI_CFLAGS) $(GUI_SRC) $(B)/libamatrix.a $(B)/libolm.a $(LIBS) -lamiga -o $@
+	$(STRIP) $@
+
+$(B)/gui/muicheck: gui/muicheck.c gui/mui_util.c gui/mui_util.h $(MUI_INC)/libraries/mui.h
+	@mkdir -p $(dir $@)
+	$(CC) $(GUI_CFLAGS) gui/muicheck.c gui/mui_util.c -lamiga -o $@
+	$(STRIP) $@

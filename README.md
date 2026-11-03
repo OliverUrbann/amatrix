@@ -28,7 +28,7 @@ private Synapse started by the tests.
 | Path | What |
 |---|---|
 | `core/` | the client core, `libamatrix.a`; API in `core/include/amatrix.h`, for GUIs `amatrix_async.h` (network process) |
-| `gui/` | the MUI client (MUI 5, NList, TextEditor); `third_party/fetch-mui.sh` fetches the SDK |
+| `gui/` | **Amatrix**, the MUI client (MUI 5, NList, BetterString): `make TARGET=amiga gui`, test `tests/gui/run_gui.py`, package `tools/amiga-package/make-gui-package.sh`; the SDK comes from `third_party/fetch-mui.sh` |
 | `examples/minimal.c` | the smallest client: room list and directory, or open a room (history, send, receive) - start here |
 | `tools/` | `amx-cli` (command-line test client), `amxdiag` (network/AmiSSL diagnosis), `amiga-package/` (test package for a real Amiga) |
 | `tests/` | feature tests and their runner, see [tests/README.md](tests/README.md) |

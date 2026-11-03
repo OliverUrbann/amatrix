@@ -40,6 +40,22 @@ sides print TAP; the feature passes if both pass, the program exits 0 and no
 sanitizer error shows up.  On the Amiga the store is `RAM:amx-store` and
 timeouts are tripled.
 
+## GUI test (MUI client in FS-UAE)
+
+```sh
+tests/emu/setup-emu-mui.sh           # once: MUI 5 + NList etc. into the emulator, 256-colour screen
+tests/gui/run_gui.py [-v]            # builds Amatrix, runs the chat scenario, screenshots
+```
+
+The emulated Amiga runs Amatrix and a small AmigaDOS loop that executes
+ARexx scripts (port `AMATRIX.1`) the host drops into `Extra:`; the peer chats
+with it from the host; the host takes the screenshots (`xwd` on the Xvfb
+display) into `build/amiga/gui-shots/`.  Checks are TAP lines in
+`build/amiga/gui-test.log`.  Lessons: MUI names the port `<BASE>.1`;
+ARexx host commands must be quoted strings; a nested `Execute` inside the
+running autotest script ends it; console output opens the CLI window in
+front of the GUI (redirect the program's output).
+
 ## Adding a feature test
 
 1. `tests/features/<name>/test.c`: `#include "mxtest.h"`, `mxt_args()`,
