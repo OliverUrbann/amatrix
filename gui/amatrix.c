@@ -203,29 +203,67 @@ static void store_dir(char *buf, size_t n, const char *server, const char *user)
 
 /* ----------------------------------------------------------------- avatars */
 
-/* toolbar icons, 16x16: '#' dark, '+' colour, '.' transparent */
+/* toolbar icons, 16x16, in the MagicWB style: its palette plus a darker
+ * blue for the shadow side, light from the top left, black outlines and a
+ * drop shadow.  '.' = transparent */
 #define IC 16
 static Alpha icon_up, icon_invite;
 static const char *const art_up[IC] = {
-    "................", ".......##.......", "......####......", ".....######.....",
-    "....########....", "...##########...", "..############..", ".######..######.",
-    "......####......", "......####......", "......####......", "......####......",
-    "......####......", "......####......", "......####......", "................" };
+    "................",
+    ".......kk.......",
+    "......kwbk......",
+    ".....kwbbBk.....",
+    "....kwbbbbBk....",
+    "...kwbbbbbbBk...",
+    "..kwbbbbbbbbBk..",
+    ".kkkkkwbbBkkkkkd",
+    "..ddd.kwbBkddddd",
+    ".....kwbbBkd....",
+    ".....kwbbBkd....",
+    ".....kwbbBkd....",
+    ".....kwbbBkd....",
+    ".....kwbbBkd....",
+    ".....kBBBBkd....",
+    "......kkkkdd...." };
 static const char *const art_invite[IC] = {
-    "................", ".....####.......", "....######......", "....######......",
-    "....######......", ".....####.......", "................", "...########.....",
-    "..##########....", ".###########.++..", ".#########.++++.", ".#########.++++.",
-    ".##########.++..", ".############...", "................", "................" };
+    "....kkkkk.......",
+    "...kwwfffk......",
+    "..kwffffffk.....",
+    "..kwfffffek.....",
+    "..kffffffekd....",
+    "..kfffffeekd....",
+    "...kffeeekd.....",
+    "....kkkkkd.kkk..",
+    "..kkkkkkkkkkwk..",
+    ".kwbbbbbbkkkwkkk",
+    "kwbbbbbbbkwwwwwk",
+    "kbbbbbbbbkkkwkkk",
+    "kbbbbbbbbbbkwk..",
+    "kbbbbbbbbbbkkk..",
+    "kBBBBBBBBBBBkd..",
+    "kkkkkkkkkkkkkd.." };
 
-static void make_icon(Alpha *a, const char *const *art, ULONG colour)
+static ULONG wb_colour(char ch)
+{
+    switch (ch) {
+    case 'k': return 0xff000000UL;            /* black */
+    case 'w': return 0xffffffffUL;            /* white */
+    case 'b': return 0xff3b67a2UL;            /* MagicWB blue */
+    case 'B': return 0xff244070UL;            /* its shadow side */
+    case 'd': return 0x806e6e6eUL;            /* drop shadow, half transparent */
+    case 'l': return 0xffafafafUL;            /* light grey */
+    case 'f': return 0xffffa997UL;            /* skin */
+    case 'e': return 0xffd2826eUL;            /* skin, shadow side */
+    default:  return 0;
+    }
+}
+
+static void make_icon(Alpha *a, const char *const *art)
 {
     int x, y;
     a->ad.width = a->ad.height = IC;
     for (y = 0; y < IC; y++)
-        for (x = 0; x < IC; x++) {
-            char ch = art[y][x];
-            a->px[y * IC + x] = ch == '#' ? 0xff303030UL : ch == '+' ? (0xff000000UL | colour) : 0;
-        }
+        for (x = 0; x < IC; x++) a->px[y * IC + x] = wb_colour(art[y][x]);
 }
 
 /* a toolbar button: icon only, the text as bubble help */
@@ -1483,8 +1521,8 @@ int main(int argc, char **argv)
     ULONG sigs = 0, id;
     int i;
 
-    make_icon(&icon_up, art_up, 0x303030);
-    make_icon(&icon_invite, art_invite, 0x2a9a40);
+    make_icon(&icon_up, art_up);
+    make_icon(&icon_invite, art_invite);
     if (!(MUIMasterBase = OpenLibrary((STRPTR)"muimaster.library", 20))) {
         printf("Amatrix braucht MUI 5 (muimaster.library V20).\n");
         return 20;
