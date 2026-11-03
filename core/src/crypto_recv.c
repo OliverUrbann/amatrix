@@ -408,10 +408,23 @@ void amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev, 
     const cJSON *ct = cJSON_GetObjectItemCaseSensitive(ev, "content");
     if (!type) return;
     if (!strcmp(type, "m.room.encrypted")) {
-        if (!try_megolm(c, room_id, ev, 1, history) && !history) {
-            cJSON *e = cJSON_Duplicate(ev, 1);
-            cJSON_AddStringToObject(e, "_room_id", room_id);
-            cJSON_AddItemToArray(c->pending, e);
+        if (!try_megolm(c, room_id, ev, 1, history)) {
+            /* the key may still come (to-device): try again after each sync,
+             * also for history; once per event */
+            const char *id = amx__jstr(ev, "event_id");
+            const cJSON *x;
+            int dup = 0;
+            cJSON_ArrayForEach(x, c->pending)
+                if (id && amx__jstr(x, "event_id") && !strcmp(amx__jstr(x, "event_id"), id)) dup = 1;
+            if (!dup) {
+                cJSON *e;
+                while (cJSON_GetArraySize(c->pending) >= 300)      /* keep the oldest out */
+                    cJSON_DeleteItemFromArray(c->pending, 0);
+                e = cJSON_Duplicate(ev, 1);
+                cJSON_AddStringToObject(e, "_room_id", room_id);
+                if (history) cJSON_AddTrueToObject(e, "_history");
+                cJSON_AddItemToArray(c->pending, e);
+            }
         }
     } else if (!strcmp(type, "m.room.encryption")) {
         amx__note_room_encryption(c, room_id, 1);
@@ -436,7 +449,8 @@ void amx__retry_pending(AmxClient *c)
     cJSON *e = c->pending->child, *next;
     while (e) {
         next = e->next;
-        if (try_megolm(c, amx__jstr(e, "_room_id"), e, 0, 0))
+        if (try_megolm(c, amx__jstr(e, "_room_id"), e, 0,
+                       cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(e, "_history"))))
             cJSON_Delete(cJSON_DetachItemViaPointer(c->pending, e));
         e = next;
     }

@@ -205,6 +205,56 @@ async def scenario(ctx, amiga, srv, me):
             return r == "0"
         check(await amiga.until(readable, 120), f"{name}: every message decrypted (late keys replace the placeholder)")
 
+    # older messages: 45 in a room, the window loads the newest 30, the button the rest
+    archiv = await p.create_room(invite=[me.user_id], encrypted=True, name="Archiv")
+    async def accept_archiv():
+        rc, _ = await amiga.rexx("ACCEPT Archiv")
+        return rc == "0"
+    check(await amiga.until(accept_archiv, 180), "accepted Archiv")
+    ok = await p.wait(lambda: p.joined(archiv, me.user_id), 240)
+    check(ok, "joined Archiv")
+    await p.refresh_devices(me.user_id)
+    for i in range(1, 46):
+        await p.send(archiv, f"Nachricht {i:02d}")
+    await p.sync(1000)
+    await amiga.rexx("OPENCHAT Archiv")      # the window may have opened on accepting; reopen = front
+
+    async def archiv_lines():
+        rc, r = await amiga.rexx("CHATLINES Archiv")
+        return int(r) if r.isdigit() else 0
+    async def has45():
+        rc, r = await amiga.rexx("FIRSTLINE Archiv")
+        n = await archiv_lines()
+        return n >= 45 and n
+    n1 = await amiga.until(lambda: archiv_lines(), 180)
+    await asyncio.sleep(20)                  # let live messages and the first history page settle
+    n1 = await archiv_lines()
+    rc, first1 = await amiga.rexx("FIRSTLINE Archiv")
+    check(n1 > 0 and "Nachricht 01" not in first1,
+          f"window opens with the newest messages, not all ({n1} lines, top: {first1!r})")
+    await amiga.shot("08-archiv-before")
+    rc, _ = await amiga.rexx("OLDER Archiv")
+    check(rc == "0", "pressed 'Ältere Nachrichten laden'")
+    n2 = await amiga.until(has45, 120)
+    rc, first2 = await amiga.rexx("FIRSTLINE Archiv")
+    check(n2 and "Nachricht 01" in first2, f"older messages loaded on top ({n2} lines, top: {first2!r})")
+    async def archiv_readable():
+        rc, r = await amiga.rexx("UNREADABLE Archiv")
+        return r == "0"
+    check(await amiga.until(archiv_readable, 120), "Archiv: no placeholder left after the keys arrived")
+    for _ in range(6):                       # press until the button is greyed out
+        rc, _ = await amiga.rexx("OLDER Archiv")
+        if rc == "10":
+            break
+        await asyncio.sleep(15)
+    check(rc == "10", f"at the beginning of the room the button is greyed out (rc {rc})")
+    for name in ("Archiv", "Alice", "Amiga-Runde"):
+        async def read0(name=name):
+            rc, r = await amiga.rexx("UNREAD " + name)
+            return r == "0"
+        check(await amiga.until(read0, 120), f"{name}: open window marks it read (no unread count)")
+    await amiga.shot("09-archiv-after")
+
     rc, _ = await amiga.rexx("NEWCHAT " + ctx.peer_user.user_id)
     check(rc == "0", "new chat with an existing partner opens the existing chat")
     await asyncio.sleep(5)

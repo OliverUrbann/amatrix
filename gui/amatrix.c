@@ -11,7 +11,7 @@
  * Without arguments the last account is used (the login is kept in the
  * store, the password is never saved); the first time a login window opens.
  * ARexx port AMATRIX.1: OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, STATUS,
- * CHATLINES, UNREADABLE, QUIT (see rexx_cmds below) - used by the emulator tests.
+ * CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, QUIT (see rexx_cmds below) - used by the emulator tests.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,6 +40,9 @@ static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.20
 
 #define AV 24                     /* avatar size in the room list */
 #define N_PLACEHOLDER 8
+#define FIRST_PAGE 30             /* messages loaded when a chat window opens */
+#define OLDER_PAGE 20             /* per click on "20 ältere Nachrichten laden" */
+#define OLDER_LABEL "20 ältere Nachrichten laden"
 
 enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
@@ -61,10 +64,12 @@ typedef struct ChatWin {
     Object *win, *list, *input, *older;
     char **seen;                  /* event IDs shown (history and live overlap) */
     int n_seen, cap_seen;
-    char **undec;                 /* "event_id\nline" of lines shown as undecryptable */
-    int n_undec;
+    int n_undec;                  /* placeholder lines for undecryptable messages */
     int at_start, loading, close_req, lines;
-    char *last_event;             /* newest event shown: for the read marker */
+    char *last_event;             /* newest message shown: for the read marker */
+    double last_ts;
+    char *marked;                 /* event the read marker was last sent for */
+    int mark_pending;             /* marker sent, room list not refreshed since */
     char *title;
 } ChatWin;
 
@@ -317,6 +322,7 @@ static void update_rooms(const AmxMsg *m)
     set(lst_rooms, MUIA_NList_Quiet, FALSE);
     free(active);
     request_avatars();
+    for (w = chats; w; w = w->next) w->mark_pending = 0;
     for (w = chats; w; w = w->next) {      /* window titles follow renames */
         Room *r = room_by_id(w->room_id);
         if (r && (!w->title || strcmp(w->title, r->name))) {
@@ -334,6 +340,39 @@ static void update_rooms(const AmxMsg *m)
 }
 
 /* -------------------------------------------------------------- chat windows */
+
+/* One line of the chat list: the text and the event it belongs to (a
+ * message with line breaks becomes several lines with the same event). */
+typedef struct {
+    char *eid;
+    char *text;
+    int undec;                    /* placeholder for a message we cannot decrypt (yet) */
+} Line;
+
+static Line *new_line(const char *eid, const char *text, size_t n, int undec)
+{
+    Line *l = calloc(1, sizeof *l);
+    if (!l) return NULL;
+    l->eid = xstrdup(eid);
+    l->text = malloc(n + 1);
+    if (l->text) { memcpy(l->text, text, n); l->text[n] = 0; }
+    l->undec = undec;
+    return l;
+}
+
+static void free_line(Line *l)
+{
+    if (!l) return;
+    free(l->eid); free(l->text); free(l);
+}
+
+HOOKPROTONHNO(line_disp_func, LONG, struct NList_DisplayMessage *m)
+{
+    const Line *l = m->entry;
+    m->strings[0] = l && l->text ? l->text : "";
+    return 0;
+}
+MakeStaticHook(line_disp_hook, line_disp_func);
 
 HOOKPROTONH(chat_close_func, LONG, Object *obj, ULONG *param)
 {
@@ -370,7 +409,7 @@ HOOKPROTONH(chat_older_func, LONG, Object *obj, ULONG *param)
     if (!w->loading && !w->at_start) {
         w->loading = 1;
         set(w->older, MUIA_Disabled, TRUE);
-        amx_async_load_history(A, w->room_id, 30, 0, TAG_HIST);
+        amx_async_load_history(A, w->room_id, OLDER_PAGE, 0, TAG_HIST);
     }
     return 0;
 }
@@ -418,11 +457,10 @@ static void open_chat(const char *room_id)
         MUIA_Window_Width, width,
         MUIA_Window_Height, MUIV_Window_Height_Visible(55),
         WindowContents, VGroup,
-            Child, w->older = SimpleButton("Ältere Nachrichten laden"),
+            Child, w->older = SimpleButton(OLDER_LABEL),
             Child, NListviewObject,
                 MUIA_NListview_NList, w->list = NListObject,
-                    MUIA_NList_ConstructHook, MUIV_NList_ConstructHook_String,
-                    MUIA_NList_DestructHook, MUIV_NList_DestructHook_String,
+                    MUIA_NList_DisplayHook2, &line_disp_hook,
                     MUIA_NList_Input, FALSE,
                     MUIA_NList_AutoVisible, TRUE,
                 End,
@@ -448,7 +486,7 @@ static void open_chat(const char *room_id)
     set(w->win, MUIA_Window_Open, TRUE);
     w->loading = 1;
     set(w->older, MUIA_Disabled, TRUE);
-    amx_async_load_history(A, room_id, 30, 1, TAG_HIST);
+    amx_async_load_history(A, room_id, FIRST_PAGE, 1, TAG_HIST);
 }
 
 static void close_chat(ChatWin *w)
@@ -457,13 +495,20 @@ static void close_chat(ChatWin *w)
     int i;
     for (p = &chats; *p; p = &(*p)->next) if (*p == w) { *p = w->next; break; }
     set(w->win, MUIA_Window_Open, FALSE);
+    {   /* our entries: take them out of the list, then free them */
+        LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k;
+        for (k = 0; k < n; k++) {
+            void *l = NULL;
+            DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+            free_line(l);
+        }
+        DoMethod(w->list, MUIM_NList_Clear);
+    }
     DoMethod(app, OM_REMMEMBER, w->win);
     MUI_DisposeObject(w->win);
     for (i = 0; i < w->n_seen; i++) free(w->seen[i]);
     free(w->seen);
-    for (i = 0; i < w->n_undec; i++) free(w->undec[i]);
-    free(w->undec);
-    free(w->room_id); free(w->last_event); free(w->title);
+    free(w->room_id); free(w->last_event); free(w->marked); free(w->title);
     free(w);
 }
 
@@ -534,86 +579,106 @@ static char *format_event(const AmxEvent *e)
     return out;
 }
 
-/* an event shown as undecryptable was decrypted later (its key arrived):
- * replace that line; 1 if done */
-static int replace_undecryptable(ChatWin *w, const AmxEvent *e, const char *line)
+
+/* inserts text (split at line breaks) at pos (entry index, or Top/Bottom) */
+static void insert_text(ChatWin *w, const char *eid, const char *text, LONG pos, int undec)
 {
-    size_t idl = strlen(e->event_id);
-    int i;
-    LONG n, k;
-    for (i = 0; i < w->n_undec; i++) {
-        const char *u = w->undec[i];
-        if (strncmp(u, e->event_id, idl) || u[idl] != '\n') continue;
-        n = (LONG)xget(w->list, MUIA_NList_Entries);
-        for (k = 0; k < n; k++) {
-            char *s = NULL;
-            DoMethod(w->list, MUIM_NList_GetEntry, k, &s);
-            if (s && !strcmp(s, u + idl + 1)) {
-                DoMethod(w->list, MUIM_NList_ReplaceSingle, line, k, WRAPCOL0, ALIGN_LEFT);
-                break;
-            }
-        }
-        free(w->undec[i]);
-        w->undec[i] = w->undec[--w->n_undec];
+    const char *p = text, *nl;
+    Line *ls[64];
+    int n = 0, i;
+    do {
+        nl = strchr(p, '\n');
+        if (n < 64) ls[n++] = new_line(eid, p, nl ? (size_t)(nl - p) : strlen(p), undec);
+        p = nl ? nl + 1 : NULL;
+    } while (p);
+    for (i = 0; i < n; i++) {
+        if (!ls[i]) continue;
+        DoMethod(w->list, MUIM_NList_InsertSingleWrap, ls[i],
+                 pos == MUIV_NList_Insert_Bottom ? pos : pos == MUIV_NList_Insert_Top ? i : pos + i,
+                 WRAPCOL0, ALIGN_LEFT);
+        w->lines++;
+    }
+    if (undec) w->n_undec++;
+}
+
+/* a message shown as undecryptable was decrypted later (its key arrived):
+ * the placeholder line is replaced in place; 1 if there was one */
+static int replace_undecryptable(ChatWin *w, const AmxEvent *e, const char *text)
+{
+    LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k;
+    for (k = 0; k < n; k++) {
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (!l || !l->undec || !l->eid || strcmp(l->eid, e->event_id)) continue;
+        DoMethod(w->list, MUIM_NList_Remove, k);
+        free_line(l);
+        w->lines--;
+        w->n_undec--;
+        insert_text(w, e->event_id, text, k, 0);
         return 1;
     }
     return 0;
 }
 
+/* remembers the newest message shown; the read marker follows it (read_markers) */
+static void note_newest(ChatWin *w, const AmxEvent *e)
+{
+    if (e->type != AMX_EV_MESSAGE || !e->event_id || e->timestamp < w->last_ts) return;
+    w->last_ts = e->timestamp;
+    free(w->last_event);
+    w->last_event = strdup(e->event_id);
+}
+
+/* once per round: open chat windows are read up to their newest message */
+static void send_read_markers(void)
+{
+    ChatWin *w;
+    for (w = chats; w; w = w->next) {
+        Room *r = room_by_id(w->room_id);
+        if (!w->last_event || w->loading) continue;
+        if (w->marked && !strcmp(w->marked, w->last_event) && !(r && r->unread)) continue;
+        if (w->marked && !strcmp(w->marked, w->last_event) && r && r->unread && w->mark_pending) continue;
+        amx_async_mark_read(A, w->room_id, w->last_event, TAG_READ);
+        free(w->marked);
+        w->marked = strdup(w->last_event);
+        w->mark_pending = 1;
+    }
+}
+
 static void chat_event(const AmxEvent *e)
 {
     ChatWin *w = e->room_id ? chat_by_room(e->room_id) : NULL;
-    char *line;
+    char *text;
     if (!w) return;
     if (e->type == AMX_EV_MESSAGE && e->event_id && w->n_undec) {
-        if ((line = format_event(e)) != NULL && !strchr(line, '\n') && replace_undecryptable(w, e, line)) {
-            free(line);
-            if (!e->own) amx_async_mark_read(A, w->room_id, e->event_id, TAG_READ);
+        if ((text = format_event(e)) != NULL && replace_undecryptable(w, e, text)) {
+            free(text);
+            note_newest(w, e);
             return;
         }
-        free(line);
+        free(text);
     }
     if (seen_before(w, e->event_id)) return;
     if (e->type == AMX_EV_MEMBERSHIP && e->history) return;     /* keep old history quiet */
-    if (!(line = format_event(e))) return;
-    DoMethod(w->list, MUIM_NList_InsertWrap, line, -2,
-             e->history ? MUIV_NList_Insert_Top : MUIV_NList_Insert_Bottom, WRAPCOL0, ALIGN_LEFT, 0);
-    if (e->type == AMX_EV_UNDECRYPTABLE && e->event_id) {
-        char **t = realloc(w->undec, sizeof *t * (w->n_undec + 1));
-        if (t) {
-            w->undec = t;
-            if ((t[w->n_undec] = malloc(strlen(e->event_id) + strlen(line) + 2)) != NULL)
-                sprintf(t[w->n_undec++], "%s\n%s", e->event_id, line);
-        }
-    }
-    free(line);
-    w->lines++;
-    if (!e->history) {
-        DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
-        if (e->event_id && e->type == AMX_EV_MESSAGE) {
-            free(w->last_event);
-            w->last_event = strdup(e->event_id);
-            if (!e->own) amx_async_mark_read(A, w->room_id, e->event_id, TAG_READ);
-        }
-    } else if (e->event_id && e->type == AMX_EV_MESSAGE && !w->last_event) {
-        w->last_event = strdup(e->event_id);   /* newest first: the first one is the newest */
-    }
+    if (!(text = format_event(e))) return;
+    insert_text(w, e->event_id, text, e->history ? MUIV_NList_Insert_Top : MUIV_NList_Insert_Bottom,
+                e->type == AMX_EV_UNDECRYPTABLE && e->event_id);
+    free(text);
+    if (!e->history) DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
+    note_newest(w, e);
 }
 
 static void history_done(const AmxMsg *m)
 {
     ChatWin *w = m->result ? chat_by_room(m->result) : NULL;
-    Room *r;
     if (!w) return;
     w->loading = 0;
     w->at_start = m->status == 0 && m->at_start;
     set(w->older, MUIA_Disabled, w->at_start);
-    if (w->at_start) set(w->older, MUIA_Text_Contents, "Anfang des Raums");
+    if (w->at_start) set(w->older, MUIA_Text_Contents, "Anfang des Chats - keine älteren Nachrichten");
     if (m->status) return;
     if (!xget(w->list, MUIA_NList_First) || w->lines <= m->count + 1)
         DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
-    r = room_by_id(w->room_id);
-    if (r && r->unread && w->last_event) amx_async_mark_read(A, w->room_id, w->last_event, TAG_READ);
 }
 
 /* --------------------------------------------------------------- dialogs */
@@ -948,6 +1013,41 @@ HOOKPROTONH(rx_unread_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_unread_hook, rx_unread_func);
 
+HOOKPROTONH(rx_older_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    if (xget(w->older, MUIA_Disabled)) return 10;          /* button greyed out */
+    DoMethod(app, MUIM_CallHook, &chat_older_hook, w);      /* exactly what a click does */
+    return 0;
+}
+MakeStaticHook(rx_older_hook, rx_older_func);
+
+HOOKPROTONH(rx_first_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    Line *l = NULL;
+    (void)obj;
+    if (w) DoMethod(w->list, MUIM_NList_GetEntry, 0, &l);
+    rexx_result(l && l->text ? l->text : "");
+    return 0;
+}
+MakeStaticHook(rx_first_hook, rx_first_func);
+
+HOOKPROTONH(rx_unreadcount_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    char b[16];
+    (void)obj;
+    snprintf(b, sizeof b, "%d", r ? r->unread : -1);
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_unreadcount_hook, rx_unreadcount_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
@@ -957,6 +1057,9 @@ static struct MUI_Command rexx_cmds[] = {
     { "STATUS",    NULL,              0, &rx_status_hook,   { 0 } },
     { "CHATLINES", "ROOM/F",          1, &rx_lines_hook,    { 0 } },
     { "UNREADABLE","ROOM/F",          1, &rx_unread_hook,   { 0 } },
+    { "OLDER",     "ROOM/F",          1, &rx_older_hook,    { 0 } },
+    { "UNREAD",    "ROOM/F",          1, &rx_unreadcount_hook, { 0 } },
+    { "FIRSTLINE", "ROOM/F",          1, &rx_first_hook,    { 0 } },
     { NULL,        NULL,              0, NULL,              { 0 } }
 };
 
@@ -1221,6 +1324,7 @@ int main(int argc, char **argv)
         if (id) handle_id(id);
         for (w = chats; w; w = nx) { nx = w->next; if (w->close_req) close_chat(w); }
         handle_net();
+        if (A && my_user) send_read_markers();
         if (sigs) {
             sigs = Wait(sigs | (A ? amx_async_sigmask(A) : 0) | SIGBREAKF_CTRL_C);
             if (sigs & SIGBREAKF_CTRL_C) break;

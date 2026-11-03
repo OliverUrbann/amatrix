@@ -30,10 +30,13 @@ Bedienung
 - Neuer Raum: Name, Einladungen, verschlüsselt, im Verzeichnis
 - Menü "Raum betreten ...": öffentliche Räume suchen oder #alias:server
 - Menü "Abmelden": meldet dieses Gerät ab und löscht seine Schlüssel
-- Chatfenster: oben "Ältere Nachrichten laden", unten tippen, Return
+- Chatfenster: lädt beim Öffnen die letzten 30 Nachrichten; oben
+              "20 ältere Nachrichten laden" holt jeweils 20 weitere;
+              unten tippen, Return sendet
 
 ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, STATUS,
-CHATLINES, UNREADABLE, QUIT).
+CHATLINES, UNREADABLE, OLDER,
+FIRSTLINE, UNREAD, QUIT).
 
 Was noch fehlt: Bilder/Dateien anzeigen und senden, Geräte-Verifizierung
 (Element zeigt das Gerät als "nicht verifiziert"), Passwort für die
