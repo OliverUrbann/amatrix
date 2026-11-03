@@ -205,42 +205,42 @@ static void store_dir(char *buf, size_t n, const char *server, const char *user)
 
 /* toolbar icons, 16x16, in the MagicWB style: its palette plus a darker
  * blue for the shadow side, light from the top left, black outlines and a
- * drop shadow.  '.' = transparent */
+ * drop shadow; dithered transitions as in MagicWB.  '.' = transparent */
 #define IC 16
 static Alpha icon_up, icon_invite;
 static const char *const art_up[IC] = {
     "................",
     ".......kk.......",
-    "......kwbk......",
-    ".....kwbbBk.....",
-    "....kwbbbbBk....",
-    "...kwbbbbbbBk...",
-    "..kwbbbbbbbbBk..",
-    ".kkkkkwbbBkkkkkd",
-    "..ddd.kwbBkddddd",
+    "......kwwk......",
+    ".....kwwbbk.....",
+    "....kwwbbbbk....",
+    "...kwwbbbbbbk...",
+    "..kwwbbbbbbbbk..",
+    ".kkkkkwwbbkkkkkd",
+    "..dddkwbbBk.ddd.",
+    ".....kwwbbk.....",
     ".....kwbbBkd....",
+    ".....kwwbbkd....",
     ".....kwbbBkd....",
-    ".....kwbbBkd....",
-    ".....kwbbBkd....",
-    ".....kwbbBkd....",
-    ".....kBBBBkd....",
+    ".....kwwbbkd....",
+    ".....kbBbBkd....",
     "......kkkkdd...." };
 static const char *const art_invite[IC] = {
     "....kkkkk.......",
     "...kwwfffk......",
     "..kwffffffk.....",
-    "..kwfffffek.....",
+    "..kwffffffk.....",
     "..kffffffekd....",
     "..kfffffeekd....",
-    "...kffeeekd.....",
+    "...kfefeekd.....",
     "....kkkkkd.kkk..",
     "..kkkkkkkkkkwk..",
-    ".kwbbbbbbkkkwkkk",
-    "kwbbbbbbbkwwwwwk",
-    "kbbbbbbbbkkkwkkk",
+    ".kwwbbbbbkkkwkkk",
+    "kwwbbbbbbkwwwwwk",
+    "kwbbbbbbbkkklkkk",
     "kbbbbbbbbbbkwk..",
     "kbbbbbbbbbbkkk..",
-    "kBBBBBBBBBBBkd..",
+    "kBbBbBbBbBbBkd..",
     "kkkkkkkkkkkkkd.." };
 
 static ULONG wb_colour(char ch)
@@ -252,8 +252,9 @@ static ULONG wb_colour(char ch)
     case 'B': return 0xff244070UL;            /* its shadow side */
     case 'd': return 0x806e6e6eUL;            /* drop shadow, half transparent */
     case 'l': return 0xffafafafUL;            /* light grey */
+    case 'g': return 0xff959595UL;            /* MagicWB grey */
     case 'f': return 0xffffa997UL;            /* skin */
-    case 'e': return 0xffd2826eUL;            /* skin, shadow side */
+    case 'e': return 0xffaa907cUL;            /* MagicWB beige: skin, shadow side */
     default:  return 0;
     }
 }
