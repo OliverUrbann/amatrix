@@ -116,6 +116,10 @@ typedef struct {
     int highlights;            /* mentions etc. */
     double last_activity;      /* origin_server_ts in ms of the newest event seen, 0 = unknown */
     const char *avatar_url;    /* mxc:// picture: the room's, else the other person's; may be NULL */
+    const char *last_sender;   /* newest message seen (live): sender's display name, may be NULL */
+    const char *last_body;     /*   its text (shortened; "(verschlüsselt)" without key), may be NULL */
+    int last_own;              /*   1 if we sent it */
+    const char *inviter_name;  /* AMX_ROOM_INVITED: display name of who invited us */
 } AmxRoomInfo;
 
 /* Snapshot of the room list.  Returns the number of rooms (0..), -1 on error;

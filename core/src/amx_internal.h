@@ -102,6 +102,7 @@ int   amx__encrypt_room_event(AmxClient *c, const char *room_id, const char *typ
 int   amx__rooms_load(AmxClient *c);
 int   amx__rooms_save(AmxClient *c);
 const char *amx__member_name(AmxClient *c, const char *room_id, const char *user);
+void  amx__room_note_message(AmxClient *c, const AmxEvent *ev);
 void  amx__room_sync_join(AmxClient *c, const char *room_id, const cJSON *jr);
 void  amx__room_sync_invite(AmxClient *c, const char *room_id, const cJSON *ir);
 void  amx__room_forget(AmxClient *c, const char *room_id);

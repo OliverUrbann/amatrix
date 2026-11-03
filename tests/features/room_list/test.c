@@ -67,6 +67,8 @@ int main(int argc, char **argv)
     for (i = 0; i < n; i++) {
         MXT_OK(l[i].membership == AMX_ROOM_INVITED && l[i].inviter && !strcmp(l[i].inviter, a.peer),
                "room %d: invited by the peer", i + 1);
+        MXT_OK(l[i].inviter_name && !strcmp(l[i].inviter_name, "Peer Tester"),
+               "room %d: inviter's display name (%s)", i + 1, l[i].inviter_name ? l[i].inviter_name : "-");
         if (!strcmp(l[i].name, "Amiga Freunde")) group = mxt_dup(l[i].room_id);
         else if (l[i].is_direct) dm = mxt_dup(l[i].room_id);
     }
@@ -94,6 +96,11 @@ int main(int argc, char **argv)
     MXT_OK(d && d->is_direct && d->dm_user && !strcmp(d->dm_user, a.peer), "direct chat with the peer");
     MXT_OK(d && !strcmp(d->name, "Peer Tester"), "direct chat named after the peer (%s)", d ? d->name : "-");
     MXT_OK(n == 2 && l[0].last_activity >= l[1].last_activity && l[1].last_activity > 0, "sorted by activity");
+    MXT_OK(g && g->last_body && !strcmp(g->last_body, "hallo gruppe 2") && g->last_sender &&
+           !strcmp(g->last_sender, "Peer Tester") && !g->last_own,
+           "group: newest message for the preview (%s: %s)", g && g->last_sender ? g->last_sender : "-",
+           g && g->last_body ? g->last_body : "-");
+    MXT_OK(d && d->last_body && !strcmp(d->last_body, "hallo direkt"), "direct chat: newest message");
     amx_free_rooms(l, n);
 
     /* our own direct chat */

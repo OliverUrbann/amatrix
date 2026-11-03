@@ -154,6 +154,39 @@ const char *amx__member_name(AmxClient *c, const char *room_id, const char *user
     return n && strcmp(n, user) ? n : NULL;
 }
 
+/* the newest message of a room, for the room list (live events only) */
+void amx__room_note_message(AmxClient *c, const AmxEvent *ev)
+{
+    cJSON *r, *l;
+    char body[124];
+    const char *b;
+    size_t n;
+    if (ev->history || !ev->room_id || (ev->type != AMX_EV_MESSAGE && ev->type != AMX_EV_UNDECRYPTABLE)) return;
+    if (!(r = cJSON_GetObjectItemCaseSensitive(c->rooms, ev->room_id))) return;
+    l = cJSON_GetObjectItemCaseSensitive(r, "last");
+    if (l && get_num(l, "ts") > ev->timestamp) return;
+    b = ev->type == AMX_EV_MESSAGE ? (ev->body ? ev->body : "") : "(verschl\xc3\xbcsselt)";
+    if (ev->type == AMX_EV_MESSAGE && ev->msgtype && strcmp(ev->msgtype, "m.text") && strcmp(ev->msgtype, "m.notice")
+        && strcmp(ev->msgtype, "m.emote"))
+        b = !strcmp(ev->msgtype, "m.image") ? "[Bild]" : !strcmp(ev->msgtype, "m.video") ? "[Video]" :
+            !strcmp(ev->msgtype, "m.audio") ? "[Audio]" : "[Datei]";
+    n = strcspn(b, "\r\n");
+    if (n > 100) {                 /* cut at a UTF-8 character boundary */
+        n = 100;
+        while (n && ((unsigned char)b[n] & 0xc0) == 0x80) n--;
+    }
+    memcpy(body, b, n);
+    body[n] = 0;
+    if (n < strlen(b)) strcat(body, "...");
+    cJSON_DeleteItemFromObjectCaseSensitive(r, "last");
+    l = cJSON_AddObjectToObject(r, "last");
+    cJSON_AddStringToObject(l, "s", ev->sender_name ? ev->sender_name : (ev->sender ? ev->sender : ""));
+    cJSON_AddStringToObject(l, "b", body);
+    cJSON_AddNumberToObject(l, "ts", ev->timestamp);
+    if (ev->own) cJSON_AddTrueToObject(l, "own");
+    if (ev->event_id) cJSON_AddStringToObject(l, "id", ev->event_id);
+}
+
 const char *amx__room_inviter_if_direct(AmxClient *c, const char *room_id)
 {
     const cJSON *r = cJSON_GetObjectItemCaseSensitive(c->rooms, room_id);
@@ -276,12 +309,19 @@ int amx_rooms(AmxClient *c, AmxRoomInfo **list)
         i->topic = dupn(amx__jstr(r, "topic"));
         i->alias = dupn(amx__jstr(r, "alias"));
         i->inviter = dupn(amx__jstr(r, "inviter"));
+        i->inviter_name = i->inviter ? dupn(display(r, i->inviter)) : NULL;
         i->membership = !strcmp(m, "invite") ? AMX_ROOM_INVITED : AMX_ROOM_JOINED;
         du = direct_user(c, r->string);
         if (!du && i->membership == AMX_ROOM_INVITED && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(r, "idirect")))
             du = i->inviter;
         i->dm_user = dupn(du);
         i->avatar_url = dupn(room_avatar(c, r, du));
+        {
+            const cJSON *l = cJSON_GetObjectItemCaseSensitive(r, "last");
+            i->last_sender = dupn(amx__jstr(l, "s"));
+            i->last_body = dupn(amx__jstr(l, "b"));
+            i->last_own = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(l, "own"));
+        }
         i->is_direct = du != NULL;
         i->encrypted = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(r, "enc"));
         i->joined_members = get_int(r, "jc");
@@ -304,6 +344,8 @@ void amx_free_rooms(AmxRoomInfo *list, int n)
         free((char *)list[i].room_id); free((char *)list[i].name); free((char *)list[i].topic);
         free((char *)list[i].alias); free((char *)list[i].dm_user); free((char *)list[i].inviter);
         free((char *)list[i].avatar_url);
+        free((char *)list[i].last_sender); free((char *)list[i].last_body);
+        free((char *)list[i].inviter_name);
     }
     free(list);
 }

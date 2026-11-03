@@ -151,6 +151,8 @@ async def scenario(ctx, amiga, srv, me):
         rc, r = await amiga.rexx("STATUS")
         return "invites=2" in r
     check(await amiga.until(invites, 180), "two invitations in the list")
+    rc, v = await amiga.rexx("ROOMLINE Kaffeeklatsch")
+    check(v == "Einladung von Alice", f"second line of an invitation names the inviter ({v!r})")
     await amiga.shot("02-invitations")
 
     rc1, _ = await amiga.rexx("ACCEPT Alice")
@@ -180,6 +182,16 @@ async def scenario(ctx, amiga, srv, me):
         v = await lines_dm()
         return v and n0 and v > n0
     check(await amiga.until(more, 120), "reply shows up live")
+
+    async def preview(name, want):
+        async def f():
+            rc, r = await amiga.rexx("ROOMLINE " + name)
+            return want in r and r
+        return await amiga.until(f, 60)
+    v = await preview("Alice", "Wie geht es dir?")
+    check(v, f"room list, second line of Alice: newest message ({v!r})")
+    v = await preview("Kaffeeklatsch", "Alice: Wer hat Kuchen mitgebracht?")
+    check(v, f"second line of a group: sender and message ({v!r})")
     await amiga.shot("04-chat-reply")
 
     rc, _ = await amiga.rexx("OPENCHAT Kaffeeklatsch")

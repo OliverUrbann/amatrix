@@ -138,7 +138,6 @@ cJSON *amx__api_ok(AmxClient *c, const char *method, const char *path, const cJS
 void amx__emit(AmxClient *c, AmxEvent *ev)
 {
     char local[256];
-    if (!c->fn) return;
     if (!ev->sender_name && ev->sender) {
         ev->sender_name = amx__member_name(c, ev->room_id, ev->sender);
         if (!ev->sender_name) {
@@ -150,7 +149,8 @@ void amx__emit(AmxClient *c, AmxEvent *ev)
             ev->sender_name = local;
         }
     }
-    c->fn(c, ev, c->ud);
+    amx__room_note_message(c, ev);
+    if (c->fn) c->fn(c, ev, c->ud);
 }
 
 /* ---------------------------------------------------------- lifecycle */

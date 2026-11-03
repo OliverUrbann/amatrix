@@ -11,7 +11,7 @@
  * Without arguments the last account is used (the login is kept in the
  * store, the password is never saved); the first time a login window opens.
  * ARexx port AMATRIX.1: OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, STATUS,
- * CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, QUIT (see rexx_cmds below) - used by the emulator tests.
+ * CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, ROOMLINE, QUIT (see rexx_cmds below) - used by the emulator tests.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,7 +55,9 @@ enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TA
 
 typedef struct {
     char *id, *name, *dm_user, *inviter, *avatar_url;   /* name/inviter: local charset */
-    int invited, unread, highlights, direct, encrypted, members;
+    char *topic, *last_sender, *last_body;              /* local charset */
+    int invited, unread, highlights, direct, encrypted, members, last_own;
+    double last_ts;
 } Room;
 
 typedef struct ChatWin {
@@ -73,15 +75,19 @@ typedef struct ChatWin {
     char *title;
 } ChatWin;
 
+/* a picture for the room list: raw ARGB that MUI 5 draws itself (ESC A) */
+typedef struct {
+    struct MUI_AlphaData ad;
+    ULONG px[AV * AV];
+} Alpha;
+
 typedef struct {
     char *url;
-    unsigned long *px;
-    Object *pm;
-    int idx;
+    Alpha *img;                   /* NULL until loaded */
 } Img;
 
 static AmxAsync *A;
-static Object *app, *win_main, *lst_rooms, *txt_status;
+static Object *app, *win_main, *lv_rooms, *lst_rooms, *txt_status;
 static Object *win_login, *str_server, *str_user, *str_pass, *txt_login;
 static Object *win_newchat, *str_chatuser;
 static Object *win_newroom, *str_roomname, *chk_enc, *chk_pub, *str_invite;
@@ -91,8 +97,7 @@ static int n_rooms;
 static ChatWin *chats;
 static Img *imgs;
 static int n_imgs;
-static Object *placeholder[N_PLACEHOLDER];
-static unsigned long placeholder_px[N_PLACEHOLDER][AV * AV];
+static Alpha placeholder[N_PLACEHOLDER];
 static char *my_user, *cfg_server, *cfg_user;
 static char *pending_open;        /* room to open as soon as it is in the list */
 static char prog_dir[256];
@@ -195,29 +200,23 @@ static void make_placeholders(void)
     static const unsigned long col[N_PLACEHOLDER] = {
         0x3b6fd4, 0xd0503a, 0x3a9a50, 0xb0479e, 0xd08a2a, 0x2a9aa8, 0x7a5ad0, 0x8a8a40 };
     int i, x, y;
-    for (i = 0; i < N_PLACEHOLDER; i++)
+    for (i = 0; i < N_PLACEHOLDER; i++) {
+        placeholder[i].ad.width = placeholder[i].ad.height = AV;
         for (y = 0; y < AV; y++)
             for (x = 0; x < AV; x++) {
                 int dx = 2 * x - AV + 1, dy = 2 * y - AV + 1;
-                placeholder_px[i][y * AV + x] = dx * dx + dy * dy <= AV * AV ? 0xff000000UL | col[i] : 0;
+                placeholder[i].px[y * AV + x] = dx * dx + dy * dy <= AV * AV ? 0xff000000UL | col[i] : 0;
             }
+    }
 }
 
-static Object *pixmap(unsigned long *px)
-{
-    return MUI_NewObject(MUIC_Pixmap,
-                         MUIA_Pixmap_Width, AV, MUIA_Pixmap_Height, AV,
-                         MUIA_Pixmap_Format, MUIV_Pixmap_Format_ARGB32,
-                         MUIA_Pixmap_Data, px, TAG_DONE);
-}
-
-static int image_for(const Room *r)
+static Alpha *image_for(const Room *r)
 {
     int i;
     if (r->avatar_url)
         for (i = 0; i < n_imgs; i++)
-            if (imgs[i].pm && !strcmp(imgs[i].url, r->avatar_url)) return imgs[i].idx;
-    return (int)(hash(r->id) % N_PLACEHOLDER);
+            if (imgs[i].img && !strcmp(imgs[i].url, r->avatar_url)) return imgs[i].img;
+    return &placeholder[hash(r->id) % N_PLACEHOLDER];
 }
 
 static void request_avatars(void)
@@ -234,7 +233,6 @@ static void request_avatars(void)
         imgs = t;
         memset(&imgs[n_imgs], 0, sizeof *imgs);
         imgs[n_imgs].url = strdup(u);
-        imgs[n_imgs].idx = N_PLACEHOLDER + n_imgs;
         n_imgs++;
         amx_async_avatar(A, u, AV, TAG_AVATAR);
     }
@@ -244,31 +242,68 @@ static void got_avatar(const AmxMsg *m)
 {
     int i;
     for (i = 0; i < n_imgs; i++) {
-        if (strcmp(imgs[i].url, m->result) || imgs[i].pm || m->status || !m->pixels) continue;
-        imgs[i].px = malloc(sizeof *imgs[i].px * AV * AV);
-        if (!imgs[i].px) return;
-        memcpy(imgs[i].px, m->pixels, sizeof *imgs[i].px * AV * AV);
-        if ((imgs[i].pm = pixmap(imgs[i].px)) != NULL) {
-            DoMethod(lst_rooms, MUIM_NList_UseImage, imgs[i].pm, imgs[i].idx, 0);
-            DoMethod(lst_rooms, MUIM_NList_Redraw, MUIV_NList_Redraw_All);
-        }
+        if (strcmp(imgs[i].url, m->result) || imgs[i].img || m->status || !m->pixels) continue;
+        if (!(imgs[i].img = calloc(1, sizeof *imgs[i].img))) return;
+        imgs[i].img->ad.width = imgs[i].img->ad.height = AV;
+        memcpy(imgs[i].img->px, m->pixels, sizeof imgs[i].img->px);
+        DoMethod(lst_rooms, MUIM_List_Redraw, MUIV_List_Redraw_All);
     }
 }
 
 /* --------------------------------------------------------------- room list */
 
-HOOKPROTONHNO(room_disp_func, LONG, struct NList_DisplayMessage *m)
+/* the second line of a room in the list (local charset, no codes) */
+static void second_line(const Room *r, char *buf, size_t n)
 {
-    static char buf[400];
-    const Room *r = m->entry;
-    if (!r) { m->strings[0] = ""; return 0; }
     if (r->invited)
-        snprintf(buf, sizeof buf, "\33o[%d] \33i%s\33n  (Einladung)", image_for(r), r->name);
-    else if (r->unread)
-        snprintf(buf, sizeof buf, "\33o[%d] \33b%s (%d)", image_for(r), r->name, r->unread);
+        snprintf(buf, n, "Einladung von %s", r->inviter ? r->inviter : "?");
+    else if (r->last_body && r->last_own)
+        snprintf(buf, n, "Du: %s", r->last_body);
+    else if (r->last_body && (r->direct || !r->last_sender))
+        snprintf(buf, n, "%s", r->last_body);
+    else if (r->last_body)
+        snprintf(buf, n, "%s: %s", r->last_sender, r->last_body);
+    else if (r->topic)
+        snprintf(buf, n, "%s", r->topic);
     else
-        snprintf(buf, sizeof buf, "\33o[%d] %s", image_for(r), r->name);
-    m->strings[0] = buf;
+        snprintf(buf, n, "%d Mitglied%s", r->members, r->members == 1 ? "" : "er");
+}
+
+static void time_text(double ms, char *buf, size_t n)
+{
+    time_t t = (time_t)(ms / 1000), now = time(NULL);
+    struct tm tm_t, *tm;
+    int today;
+    buf[0] = 0;
+    if (ms <= 0) return;
+    tm = localtime(&now);
+    if (!tm) return;
+    today = tm->tm_yday + tm->tm_year * 400;
+    tm = localtime(&t);
+    if (!tm) return;
+    tm_t = *tm;
+    strftime(buf, n, tm_t.tm_yday + tm_t.tm_year * 400 == today ? "%H:%M" : "%d.%m.", &tm_t);
+}
+
+/* three columns: picture | name, second line | time */
+HOOKPROTONH(room_disp_func, LONG, char **array, Room *r)
+{
+    static char img[24], text[400], when[16];
+    char second[200];
+    if (!r) { array[0] = array[1] = array[2] = ""; return 0; }
+    snprintf(img, sizeof img, "\33A[%08lx]", (unsigned long)&image_for(r)->ad);
+    second_line(r, second, sizeof second);
+    if (r->invited)
+        snprintf(text, sizeof text, "\33b%s\33n\n\33i%s", r->name, second);
+    else if (r->unread)                  /* unread: count, second line in normal colour */
+        snprintf(text, sizeof text, "\33b%s (%d)\33n\n\33i%s", r->name, r->unread, second);
+    else
+        snprintf(text, sizeof text, "\33b%s\33n\n\33i\33P[808080]%s", r->name, second);
+    time_text(r->last_ts, when, sizeof when);
+    snprintf(when + strlen(when), sizeof when - strlen(when), "\n ");
+    array[0] = img;
+    array[1] = text;
+    array[2] = when;
     return 0;
 }
 MakeStaticHook(room_disp_hook, room_disp_func);
@@ -278,6 +313,7 @@ static void free_rooms(Room *l, int n)
     int i;
     for (i = 0; i < n; i++) {
         free(l[i].id); free(l[i].name); free(l[i].dm_user); free(l[i].inviter); free(l[i].avatar_url);
+        free(l[i].topic); free(l[i].last_sender); free(l[i].last_body);
     }
     free(l);
 }
@@ -290,17 +326,17 @@ static void update_rooms(const AmxMsg *m)
     char *active = NULL;
     ChatWin *w;
     int i;
-    LONG pos = MUIV_NList_Active_Off;
+    LONG pos = MUIV_List_Active_Off;
 
     if (!nl) return;
-    DoMethod(lst_rooms, MUIM_NList_GetEntry, MUIV_NList_GetEntry_Active, &act);
+    DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &act);
     if (act) active = strdup(act->id);
     for (i = 0; i < m->n; i++) {
         const AmxRoomInfo *ri = &m->rooms[i];
         nl[i].id = strdup(ri->room_id);
         nl[i].name = local(ri->name);
         nl[i].dm_user = xstrdup(ri->dm_user);
-        nl[i].inviter = ri->inviter ? local(ri->inviter) : NULL;
+        nl[i].inviter = ri->inviter_name ? local(ri->inviter_name) : ri->inviter ? local(ri->inviter) : NULL;
         nl[i].avatar_url = xstrdup(ri->avatar_url);
         nl[i].invited = ri->membership == AMX_ROOM_INVITED;
         nl[i].unread = ri->unread;
@@ -308,18 +344,23 @@ static void update_rooms(const AmxMsg *m)
         nl[i].direct = ri->is_direct;
         nl[i].encrypted = ri->encrypted;
         nl[i].members = ri->joined_members;
+        nl[i].topic = ri->topic ? local(ri->topic) : NULL;
+        nl[i].last_sender = ri->last_sender ? local(ri->last_sender) : NULL;
+        nl[i].last_body = ri->last_body ? local(ri->last_body) : NULL;
+        nl[i].last_own = ri->last_own;
+        nl[i].last_ts = ri->last_activity;
     }
-    set(lst_rooms, MUIA_NList_Quiet, TRUE);
-    DoMethod(lst_rooms, MUIM_NList_Clear);
+    set(lst_rooms, MUIA_List_Quiet, TRUE);
+    DoMethod(lst_rooms, MUIM_List_Clear);
     free_rooms(rooms, n_rooms);
     rooms = nl;
     n_rooms = m->n;
     for (i = 0; i < n_rooms; i++) {
-        DoMethod(lst_rooms, MUIM_NList_InsertSingle, &rooms[i], MUIV_NList_Insert_Bottom);
+        DoMethod(lst_rooms, MUIM_List_InsertSingle, &rooms[i], MUIV_List_Insert_Bottom);
         if (active && !strcmp(active, rooms[i].id)) pos = i;
     }
-    set(lst_rooms, MUIA_NList_Active, pos);
-    set(lst_rooms, MUIA_NList_Quiet, FALSE);
+    set(lst_rooms, MUIA_List_Active, pos);
+    set(lst_rooms, MUIA_List_Quiet, FALSE);
     free(active);
     request_avatars();
     for (w = chats; w; w = w->next) w->mark_pending = 0;
@@ -787,7 +828,7 @@ static void accept_invite(Room *r, int yes)
 static void room_double_click(void)
 {
     Room *r = NULL;
-    DoMethod(lst_rooms, MUIM_NList_GetEntry, MUIV_NList_GetEntry_Active, &r);
+    DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
     if (!r) return;
     if (r->invited) {
         LONG k = MUI_Request(app, win_main, 0, (STRPTR)"Einladung",
@@ -1048,6 +1089,18 @@ HOOKPROTONH(rx_unreadcount_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_unreadcount_hook, rx_unreadcount_func);
 
+HOOKPROTONH(rx_roomline_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    char b[200];
+    (void)obj;
+    if (!r) return 5;
+    second_line(r, b, sizeof b);
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_roomline_hook, rx_roomline_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
@@ -1059,6 +1112,7 @@ static struct MUI_Command rexx_cmds[] = {
     { "UNREADABLE","ROOM/F",          1, &rx_unread_hook,   { 0 } },
     { "OLDER",     "ROOM/F",          1, &rx_older_hook,    { 0 } },
     { "UNREAD",    "ROOM/F",          1, &rx_unreadcount_hook, { 0 } },
+    { "ROOMLINE",  "ROOM/F",          1, &rx_roomline_hook, { 0 } },
     { "FIRSTLINE", "ROOM/F",          1, &rx_first_hook,    { 0 } },
     { NULL,        NULL,              0, NULL,              { 0 } }
 };
@@ -1095,16 +1149,19 @@ static Object *build_app(void)
             MUIA_Window_ID, MAKE_ID('A','M','X','M'),
             MUIA_Window_LeftEdge, 8,
             MUIA_Window_TopEdge, MUIV_Window_TopEdge_Centered,
-            MUIA_Window_Width, MUIV_Window_Width_Visible(28),
+            MUIA_Window_Width, MUIV_Window_Width_Visible(38),
             MUIA_Window_Height, MUIV_Window_Height_Visible(65),
             WindowContents, VGroup,
-                Child, NListviewObject,
-                    MUIA_NListview_NList, lst_rooms = NListObject,
-                        MUIA_NList_DisplayHook2, &room_disp_hook,
-                        MUIA_NList_MinLineHeight, AV + 2,
-                        MUIA_NList_AutoVisible, TRUE,
-                        MUIA_CycleChain, TRUE,
+                Child, lv_rooms = ListviewObject,
+                    MUIA_Listview_List, lst_rooms = ListObject,
+                        InputListFrame,
+                        MUIA_List_DisplayHook, &room_disp_hook,
+                        MUIA_List_AutoLineHeight, TRUE,
+                        MUIA_List_Format, "P=\33c,MIW=0 W=100,P=\33r",   /* clip, no ellipsis: it eats line 2 */
+                        MUIA_List_HScrollerVisibility, MUIV_List_HScrollerVisibility_Never,
+                        MUIA_List_AutoVisible, TRUE,
                     End,
+                    MUIA_CycleChain, TRUE,
                 End,
                 Child, HGroup,
                     Child, b_chat = SimpleButton("Neuer _Chat"),
@@ -1186,7 +1243,7 @@ static Object *build_app(void)
 
     DoMethod(win_main, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, a, 2,
              MUIM_Application_ReturnID, MUIV_Application_ReturnID_Quit);
-    DoMethod(lst_rooms, MUIM_Notify, MUIA_NList_DoubleClick, MUIV_EveryTime, a, 2,
+    DoMethod(lv_rooms, MUIM_Notify, MUIA_Listview_DoubleClick, TRUE, a, 2,
              MUIM_Application_ReturnID, ID_ROOM_DCLICK);
     DoMethod(b_chat, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_NEWCHAT);
     DoMethod(b_room, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_NEWROOM);
@@ -1309,9 +1366,6 @@ int main(int argc, char **argv)
         CloseLibrary(MUIMasterBase);
         return 20;
     }
-    for (i = 0; i < N_PLACEHOLDER; i++)
-        if ((placeholder[i] = pixmap(placeholder_px[i])) != NULL)
-            DoMethod(lst_rooms, MUIM_NList_UseImage, placeholder[i], i, 0);
     set(win_main, MUIA_Window_Open, TRUE);
 
     if (cfg_server && cfg_user) do_login(cfg_server, cfg_user, (char *)args[2]);
@@ -1335,8 +1389,7 @@ int main(int argc, char **argv)
     while (chats) close_chat(chats);
     set(win_main, MUIA_Window_Open, FALSE);
     MUI_DisposeObject(app);
-    for (i = 0; i < N_PLACEHOLDER; i++) if (placeholder[i]) MUI_DisposeObject(placeholder[i]);
-    for (i = 0; i < n_imgs; i++) { if (imgs[i].pm) MUI_DisposeObject(imgs[i].pm); free(imgs[i].px); free(imgs[i].url); }
+    for (i = 0; i < n_imgs; i++) { free(imgs[i].img); free(imgs[i].url); }
     free(imgs);
     free_rooms(rooms, n_rooms);
     amx_free_public_rooms(pub, n_pub);

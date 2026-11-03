@@ -24,8 +24,10 @@ neben dem Programm - diese Schublade bitte nicht weitergeben).
 
 Bedienung
 ---------
-- Liste:      Chats und Räume, fett mit (n) = ungelesene Nachrichten,
-              kursiv = Einladung (Doppelklick: annehmen/ablehnen)
+- Liste:      Chats und Räume mit Bild; darunter die letzte Nachricht
+              (bzw. Thema, Mitglieder, Einladung), rechts die Uhrzeit;
+              (n) = ungelesene Nachrichten; Doppelklick öffnet den Chat
+              bzw. fragt bei Einladungen nach Annehmen/Ablehnen
 - Neuer Chat: Direktchat mit einem Nutzer (@name:server oder nur "name")
 - Neuer Raum: Name, Einladungen, verschlüsselt, im Verzeichnis
 - Menü "Raum betreten ...": öffentliche Räume suchen oder #alias:server
@@ -36,7 +38,7 @@ Bedienung
 
 ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, STATUS,
 CHATLINES, UNREADABLE, OLDER,
-FIRSTLINE, UNREAD, QUIT).
+FIRSTLINE, UNREAD, ROOMLINE, QUIT).
 
 Was noch fehlt: Bilder/Dateien anzeigen und senden, Geräte-Verifizierung
 (Element zeigt das Gerät als "nicht verifiziert"), Passwort für die
