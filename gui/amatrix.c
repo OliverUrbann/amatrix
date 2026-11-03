@@ -13,7 +13,7 @@
  *
  * Without arguments the last account is used (the login is kept in the
  * store, the password is never saved); the first time a login window opens.
- * ARexx port AMATRIX.1: OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, STATUS,
+ * ARexx port AMATRIX.1: OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
  * CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, ROOMLINE, QUIT (see rexx_cmds below) - used by the emulator tests.
  */
 #include <stdio.h>
@@ -45,14 +45,16 @@ static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.20
 #define N_PLACEHOLDER 8
 #define FIRST_PAGE 30             /* messages loaded when a chat window opens */
 #define OLDER_PAGE 20             /* per click on "20 ältere Nachrichten laden" */
-#define OLDER_LABEL "20 ältere Nachrichten laden"
+#define OLDER_HELP "20 ältere Nachrichten laden"
+#define OLDER_HELP_END "Anfang des Chats - keine älteren Nachrichten"
+#define INVITE_HELP "Jemanden in diesen Raum einladen"
 
 enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
-    ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT
+    ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO
 };
 enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TAG_AVATAR,
-       TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT };
+       TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE };
 
 /* ------------------------------------------------------------------ state */
 
@@ -66,7 +68,7 @@ typedef struct {
 typedef struct ChatWin {
     struct ChatWin *next;
     char *room_id;
-    Object *win, *list, *input, *older;
+    Object *win, *list, *input, *older, *invite;
     char **seen;                  /* event IDs shown (history and live overlap) */
     int n_seen, cap_seen;
     int n_undec;                  /* placeholder lines for undecryptable messages */
@@ -94,7 +96,9 @@ static int debug;                 /* DEBUG: log to PROGDIR:Amatrix.log */
 static Object *app, *win_main, *lv_rooms, *lst_rooms, *txt_status;
 static Object *win_login, *str_server, *str_user, *str_pass, *txt_login;
 static Object *win_newchat, *str_chatuser;
-static Object *win_newroom, *str_roomname, *chk_enc, *chk_pub, *str_invite;
+static Object *win_newroom, *str_roomname, *chk_enc, *chk_pub;
+static Object *win_invite, *str_inviteuser, *txt_inviteroom;
+static char *invite_room;          /* room the invite window is for */
 static Object *win_join, *str_search, *lst_pub;
 static Room *rooms;
 static int n_rooms;
@@ -198,6 +202,49 @@ static void store_dir(char *buf, size_t n, const char *server, const char *user)
 }
 
 /* ----------------------------------------------------------------- avatars */
+
+/* toolbar icons, 16x16: '#' dark, '+' colour, '.' transparent */
+#define IC 16
+static Alpha icon_up, icon_invite;
+static const char *const art_up[IC] = {
+    "................", ".......##.......", "......####......", ".....######.....",
+    "....########....", "...##########...", "..############..", ".######..######.",
+    "......####......", "......####......", "......####......", "......####......",
+    "......####......", "......####......", "......####......", "................" };
+static const char *const art_invite[IC] = {
+    "................", ".....####.......", "....######......", "....######......",
+    "....######......", ".....####.......", "................", "...########.....",
+    "..##########....", ".###########.++..", ".#########.++++.", ".#########.++++.",
+    ".##########.++..", ".############...", "................", "................" };
+
+static void make_icon(Alpha *a, const char *const *art, ULONG colour)
+{
+    int x, y;
+    a->ad.width = a->ad.height = IC;
+    for (y = 0; y < IC; y++)
+        for (x = 0; x < IC; x++) {
+            char ch = art[y][x];
+            a->px[y * IC + x] = ch == '#' ? 0xff303030UL : ch == '+' ? (0xff000000UL | colour) : 0;
+        }
+}
+
+/* a toolbar button: icon only, the text as bubble help */
+static Object *icon_button(Alpha *a, const char *help)
+{
+    static char txt[2][32];
+    static int n;
+    char *t = txt[n++ & 1];
+    snprintf(t, 32, "\33c\33A[%08lx]", (unsigned long)&a->ad);
+    return TextObject,
+        ButtonFrame,
+        MUIA_Background, MUII_ButtonBack,
+        MUIA_InputMode, MUIV_InputMode_RelVerify,
+        MUIA_Text_Contents, t,
+        MUIA_Text_SetMax, TRUE,
+        MUIA_ShortHelp, help,
+        MUIA_CycleChain, TRUE,
+    End;
+}
 
 static void make_placeholders(void)
 {
@@ -461,6 +508,30 @@ HOOKPROTONH(chat_older_func, LONG, Object *obj, ULONG *param)
 }
 MakeStaticHook(chat_older_hook, chat_older_func);
 
+static Room *room_by_id(const char *id);
+
+/* toolbar "invite": a small window for the Matrix ID */
+static void show_invite(const char *room_id)
+{
+    static char title[200];
+    Room *r = room_by_id(room_id);
+    free(invite_room);
+    invite_room = strdup(room_id);
+    snprintf(title, sizeof title, "Einladen in \33b%s", r ? r->name : room_id);
+    set(txt_inviteroom, MUIA_Text_Contents, title);
+    set(str_inviteuser, MUIA_String_Contents, "");
+    set(win_invite, MUIA_Window_Open, TRUE);
+    set(win_invite, MUIA_Window_ActiveObject, str_inviteuser);
+}
+
+HOOKPROTONH(chat_invite_func, LONG, Object *obj, ULONG *param)
+{
+    (void)obj;
+    show_invite(((ChatWin *)param[0])->room_id);
+    return 0;
+}
+MakeStaticHook(chat_invite_hook, chat_invite_func);
+
 static void open_chat(const char *room_id)
 {
     amx_log("open_chat %s", room_id);
@@ -504,7 +575,11 @@ static void open_chat(const char *room_id)
         MUIA_Window_Width, width,
         MUIA_Window_Height, MUIV_Window_Height_Visible(55),
         WindowContents, VGroup,
-            Child, w->older = SimpleButton(OLDER_LABEL),
+            Child, HGroup,                          /* toolbar */
+                Child, w->older = icon_button(&icon_up, OLDER_HELP),
+                Child, w->invite = icon_button(&icon_invite, INVITE_HELP),
+                Child, HSpace(0),
+            End,
             Child, NListviewObject,
                 MUIA_NListview_NList, w->list = NListObject,
                     MUIA_NList_DisplayHook2, &line_disp_hook,
@@ -527,6 +602,8 @@ static void open_chat(const char *room_id)
              MUIM_CallHook, &chat_send_hook, w);
     DoMethod(w->older, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
              MUIM_CallHook, &chat_older_hook, w);
+    DoMethod(w->invite, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
+             MUIM_CallHook, &chat_invite_hook, w);
     set(w->win, MUIA_Window_ActiveObject, w->input);
     w->next = chats;
     chats = w;
@@ -729,7 +806,7 @@ static void history_done(const AmxMsg *m)
     w->loading = 0;
     w->at_start = m->status == 0 && m->at_start;
     set(w->older, MUIA_Disabled, w->at_start);
-    if (w->at_start) set(w->older, MUIA_Text_Contents, "Anfang des Chats - keine älteren Nachrichten");
+    if (w->at_start) set(w->older, MUIA_ShortHelp, OLDER_HELP_END);
     if (m->status) return;
     if (!xget(w->list, MUIA_NList_First) || w->lines <= m->count + 1)
         DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
@@ -811,24 +888,28 @@ static void new_chat(const char *who)
     free(uid);
 }
 
-static void new_room(const char *name, int enc, int pub_, const char *invites)
+static void new_room(const char *name, int enc, int pub_)
 {
-    char *u = amx_from_local(name), *list = xstrdup(invites), *tok, *ids[33];
+    char *u = amx_from_local(name);
     AmxRoomOptions opt;
-    int n = 0;
     memset(&opt, 0, sizeof opt);
-    for (tok = list ? strtok(list, " ,;") : NULL; tok && n < 32; tok = strtok(NULL, " ,;"))
-        ids[n++] = full_user_id(tok);
-    ids[n] = NULL;
     opt.name = u;
     opt.encrypted = enc;
     opt.is_public = pub_;
-    opt.invite = (const char **)ids;
     amx_async_create_room(A, &opt, TAG_NEWROOM);
     set_status("Raum wird angelegt ...", NULL, NULL);
-    while (n) free(ids[--n]);
-    free(list);
     free(u);
+}
+
+static void invite_go(void)
+{
+    char *t = (char *)xget(str_inviteuser, MUIA_String_Contents), *uid;
+    if (!t || !*t || !invite_room || !A) return;
+    uid = full_user_id(t);
+    amx_async_invite(A, invite_room, uid, TAG_INVITE);
+    set_status("%s wird eingeladen ...", uid, NULL);
+    free(uid);
+    set(win_invite, MUIA_Window_Open, FALSE);
 }
 
 static void accept_invite(Room *r, int yes)
@@ -917,6 +998,12 @@ static void handle_result(const AmxMsg *m)
         free(pending_open);
         pending_open = strdup(m->result);
         if (room_by_id(pending_open)) { char *id = pending_open; pending_open = NULL; open_chat(id); free(id); }
+        set_status("Online - %s", my_user, NULL);
+        break;
+    case TAG_INVITE:
+        if (m->status)
+            MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
+                        (STRPTR)"Einladen hat nicht geklappt:\n%s", (ULONG)(m->error ? m->error : ""));
         set_status("Online - %s", my_user, NULL);
         break;
     case TAG_SEND:
@@ -1029,7 +1116,7 @@ HOOKPROTONH(rx_newroom_func, LONG, Object *obj, ULONG *arg)
 {
     (void)obj;
     if (!A || !my_user) return 10;
-    new_room((char *)arg[0], 1, 0, (char *)arg[1]);
+    new_room((char *)arg[0], 1, 0);
     return 0;
 }
 MakeStaticHook(rx_newroom_hook, rx_newroom_func);
@@ -1117,12 +1204,29 @@ HOOKPROTONH(rx_roomline_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_roomline_hook, rx_roomline_func);
 
+/* as if the toolbar button was pressed and the ID typed */
+HOOKPROTONH(rx_invite_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!r || r->invited) return 5;
+    if (!w) { open_chat(r->id); w = chat_by_room(r->id); }
+    if (!w) return 10;
+    DoMethod(app, MUIM_CallHook, &chat_invite_hook, w);
+    set(str_inviteuser, MUIA_String_Contents, (char *)arg[1]);
+    invite_go();
+    return 0;
+}
+MakeStaticHook(rx_invite_hook, rx_invite_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
     { "ACCEPT",    "ROOM/F",          1, &rx_accept_hook,   { 0 } },
     { "NEWCHAT",   "USER/A",          1, &rx_newchat_hook,  { 0 } },
-    { "NEWROOM",   "NAME/A,INVITE/F", 2, &rx_newroom_hook,  { 0 } },
+    { "NEWROOM",   "NAME/A",          1, &rx_newroom_hook,  { 0 } },
+    { "INVITE",    "ROOM/A,USER/A",   2, &rx_invite_hook,   { 0 } },
     { "STATUS",    NULL,              0, &rx_status_hook,   { 0 } },
     { "CHATLINES", "ROOM/F",          1, &rx_lines_hook,    { 0 } },
     { "UNREADABLE","ROOM/F",          1, &rx_unread_hook,   { 0 } },
@@ -1149,7 +1253,7 @@ static struct NewMenu menu[] = {
 
 static Object *build_app(void)
 {
-    Object *b_chat, *b_room, *b_login, *b_go_chat, *b_go_room, *b_search, *b_join;
+    Object *b_chat, *b_room, *b_login, *b_go_chat, *b_go_room, *b_search, *b_join, *b_invite;
     Object *a = ApplicationObject,
         MUIA_Application_Title, "Amatrix",
         MUIA_Application_Version, version,
@@ -1225,8 +1329,6 @@ static Object *build_app(void)
                 Child, ColGroup(2),
                     Child, Label2("Name:"),
                     Child, str_roomname = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
-                    Child, Label2("Einladen:"),
-                    Child, str_invite = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
                     Child, Label1("Verschlüsselt:"),
                     Child, HGroup, Child, chk_enc = CheckMark(TRUE), Child, HSpace(0), End,
                     Child, Label1("Im Verzeichnis:"),
@@ -1254,8 +1356,23 @@ static Object *build_app(void)
                 Child, b_join = SimpleButton("_Betreten"),
             End,
         End,
+        SubWindow, win_invite = WindowObject,
+            MUIA_Window_Title, "Einladen",
+            MUIA_Window_ID, MAKE_ID('A','M','X','I'),
+            WindowContents, VGroup,
+                Child, txt_inviteroom = TextObject, MUIA_Text_Contents, "", End,
+                Child, TextObject, MUIA_Text_Contents, "Wen? (z.B. @name:server)", End,
+                Child, str_inviteuser = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
+                Child, b_invite = SimpleButton("_Einladen"),
+            End,
+        End,
     End;
     if (!a) return NULL;
+    DoMethod(b_invite, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INVITE_GO);
+    DoMethod(str_inviteuser, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2,
+             MUIM_Application_ReturnID, ID_INVITE_GO);
+    DoMethod(win_invite, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_invite, 3,
+             MUIM_Set, MUIA_Window_Open, FALSE);
 
     DoMethod(win_main, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, a, 2,
              MUIM_Application_ReturnID, MUIV_Application_ReturnID_Quit);
@@ -1314,15 +1431,13 @@ static void handle_id(ULONG id)
     case ID_NEWROOM:
         if (!my_user) break;
         set(str_roomname, MUIA_String_Contents, "");
-        set(str_invite, MUIA_String_Contents, "");
         set(win_newroom, MUIA_Window_Open, TRUE);
         set(win_newroom, MUIA_Window_ActiveObject, str_roomname);
         break;
     case ID_NEWROOM_GO: {
         char *n = (char *)xget(str_roomname, MUIA_String_Contents);
         if (n && *n) {
-            new_room(n, xget(chk_enc, MUIA_Selected), xget(chk_pub, MUIA_Selected),
-                     (char *)xget(str_invite, MUIA_String_Contents));
+            new_room(n, xget(chk_enc, MUIA_Selected), xget(chk_pub, MUIA_Selected));
             set(win_newroom, MUIA_Window_Open, FALSE);
         }
         break;
@@ -1341,6 +1456,9 @@ static void handle_id(ULONG id)
         free(u);
         break;
     }
+    case ID_INVITE_GO:
+        invite_go();
+        break;
     case ID_JOIN_GO:
         join_selected();
         set(win_join, MUIA_Window_Open, FALSE);
@@ -1365,6 +1483,8 @@ int main(int argc, char **argv)
     ULONG sigs = 0, id;
     int i;
 
+    make_icon(&icon_up, art_up, 0x303030);
+    make_icon(&icon_invite, art_invite, 0x2a9a40);
     if (!(MUIMasterBase = OpenLibrary((STRPTR)"muimaster.library", 20))) {
         printf("Amatrix braucht MUI 5 (muimaster.library V20).\n");
         return 20;
@@ -1416,7 +1536,7 @@ int main(int argc, char **argv)
     free(imgs);
     free_rooms(rooms, n_rooms);
     amx_free_public_rooms(pub, n_pub);
-    free(my_user); free(cfg_server); free(cfg_user); free(pending_open);
+    free(my_user); free(cfg_server); free(cfg_user); free(pending_open); free(invite_room);
     if (rda) FreeArgs(rda);
     CloseLibrary(MUIMasterBase);
     return 0;

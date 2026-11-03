@@ -199,8 +199,15 @@ async def scenario(ctx, amiga, srv, me):
     await asyncio.sleep(10)
     await amiga.shot("05-group")
 
-    rc, _ = await amiga.rexx(f"NEWROOM Amiga-Runde {ctx.peer_user.user_id}")
-    check(rc == "0", "new room command")
+    rc, _ = await amiga.rexx("NEWROOM Amiga-Runde")
+    check(rc == "0", "new room command (no invitations in that window any more)")
+    await asyncio.sleep(10)
+    await amiga.shot("05b-new-room-toolbar")
+
+    async def invite():
+        rc, _ = await amiga.rexx(f"INVITE Amiga-Runde {ctx.peer_user.user_id}")
+        return rc == "0"
+    check(await amiga.until(invite, 120), "invited through the toolbar button of the room")
     new = await p.wait_invite(240)
     check(new is not None, "peer invited to the room created in the GUI")
     if new:

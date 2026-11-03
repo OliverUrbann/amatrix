@@ -29,14 +29,16 @@ Bedienung
               (n) = ungelesene Nachrichten; Doppelklick öffnet den Chat
               bzw. fragt bei Einladungen nach Annehmen/Ablehnen
 - Neuer Chat: Direktchat mit einem Nutzer (@name:server oder nur "name")
-- Neuer Raum: Name, Einladungen, verschlüsselt, im Verzeichnis
+- Neuer Raum: Name, verschlüsselt, im Verzeichnis
 - Menü "Raum betreten ...": öffentliche Räume suchen oder #alias:server
 - Menü "Abmelden": meldet dieses Gerät ab und löscht seine Schlüssel
-- Chatfenster: lädt beim Öffnen die letzten 30 Nachrichten; oben
-              "20 ältere Nachrichten laden" holt jeweils 20 weitere;
-              unten tippen, Return sendet
+- Chatfenster: lädt beim Öffnen die letzten 30 Nachrichten.
+              Werkzeugleiste oben (Maus darüber zeigt die Erklärung):
+                Pfeil nach oben  = 20 ältere Nachrichten laden
+                Person mit Plus  = jemanden in diesen Raum einladen
+              Unten tippen, Return sendet.
 
-ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, STATUS,
+ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
 CHATLINES, UNREADABLE, OLDER,
 FIRSTLINE, UNREAD, ROOMLINE, QUIT).
 
