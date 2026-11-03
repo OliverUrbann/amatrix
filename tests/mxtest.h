@@ -20,10 +20,12 @@
 #include <time.h>
 #include "amatrix.h"
 
+#define MXT_FN static __attribute__((unused))
+
 #ifdef __amigaos__
 #include <proto/dos.h>
 unsigned long __stack = 256 * 1024;
-static const char *mxt_getenv(const char *name)
+MXT_FN const char *mxt_getenv(const char *name)
 {
     static char buf[64];
     return GetVar((STRPTR)name, (STRPTR)buf, sizeof buf, 0) > 0 ? buf : NULL;
@@ -36,7 +38,7 @@ static const char *mxt_getenv(const char *name)
 
 static int mxt_n, mxt_failed;
 
-static void mxt_ok(int ok, const char *fmt, ...)
+MXT_FN void mxt_ok(int ok, const char *fmt, ...)
 {
     va_list ap;
     printf("%sok %d - ", ok ? "" : "not ", ++mxt_n);
@@ -49,7 +51,7 @@ static void mxt_ok(int ok, const char *fmt, ...)
 }
 #define MXT_OK(cond, ...) mxt_ok(!!(cond), __VA_ARGS__)
 
-static void mxt_diag(const char *fmt, ...)
+MXT_FN void mxt_diag(const char *fmt, ...)
 {
     va_list ap;
     printf("# ");
@@ -60,7 +62,7 @@ static void mxt_diag(const char *fmt, ...)
     fflush(stdout);
 }
 
-static int mxt_done(void)
+MXT_FN int mxt_done(void)
 {
     printf("1..%d\n", mxt_n);
     fflush(stdout);
@@ -75,7 +77,7 @@ typedef struct {
     char **extra;
 } MxtArgs;
 
-static void mxt_args(int argc, char **argv, MxtArgs *a)
+MXT_FN void mxt_args(int argc, char **argv, MxtArgs *a)
 {
     if (argc < 6) {
         printf("usage: %s SERVER USER PASSWORD PEER_USER STORE_DIR [EXTRA...]\n", argv[0]);
@@ -92,16 +94,17 @@ static void mxt_args(int argc, char **argv, MxtArgs *a)
 typedef struct {
     AmxEventType type;
     char *room_id, *event_id, *sender, *body, *reason, *state_key;
-    int encrypted, own;
+    int encrypted, own, history;
+    double timestamp;
 } MxtEvent;
 
 #define MXT_MAX_EVENTS 512
 static MxtEvent mxt_ev[MXT_MAX_EVENTS];
 static int mxt_n_ev;
 
-static char *mxt_dup(const char *s) { return s ? strcpy(malloc(strlen(s) + 1), s) : NULL; }
+MXT_FN char *mxt_dup(const char *s) { return s ? strcpy(malloc(strlen(s) + 1), s) : NULL; }
 
-static void mxt_record(AmxClient *c, const AmxEvent *e, void *ud)
+MXT_FN void mxt_record(AmxClient *c, const AmxEvent *e, void *ud)
 {
     MxtEvent *m;
     (void)c; (void)ud;
@@ -116,10 +119,12 @@ static void mxt_record(AmxClient *c, const AmxEvent *e, void *ud)
     m->state_key = mxt_dup(e->state_key);
     m->encrypted = e->encrypted;
     m->own = e->own;
+    m->history = e->history;
+    m->timestamp = e->timestamp;
     if (e->type == AMX_EV_MESSAGE) {
         char *l = amx_to_local(e->body ? e->body : "");
-        mxt_diag("event message %s from %s: %s%s", e->room_id, e->sender, l,
-                 e->encrypted ? " (encrypted)" : "");
+        mxt_diag("event message %s from %s: %s%s%s", e->room_id, e->sender, l,
+                 e->encrypted ? " (encrypted)" : "", e->history ? " (history)" : "");
         free(l);
     } else if (e->type == AMX_EV_UNDECRYPTABLE) {
         mxt_diag("event undecryptable %s from %s: %s", e->event_id ? e->event_id : "?",
@@ -134,7 +139,7 @@ static void mxt_record(AmxClient *c, const AmxEvent *e, void *ud)
 }
 
 /* first recorded event matching (any field NULL = don't care), or NULL */
-static MxtEvent *mxt_find(AmxEventType type, const char *room, const char *sender, const char *body)
+MXT_FN MxtEvent *mxt_find(AmxEventType type, const char *room, const char *sender, const char *body)
 {
     int i;
     for (i = 0; i < mxt_n_ev; i++) {
@@ -148,7 +153,7 @@ static MxtEvent *mxt_find(AmxEventType type, const char *room, const char *sende
     return NULL;
 }
 
-static int mxt_count(AmxEventType type, const char *room, const char *sender)
+MXT_FN int mxt_count(AmxEventType type, const char *room, const char *sender)
 {
     int i, n = 0;
     for (i = 0; i < mxt_n_ev; i++) {
@@ -164,7 +169,7 @@ static int mxt_count(AmxEventType type, const char *room, const char *sender)
 /* ----------------------------------------------------------------- client */
 
 /* amx_init + client + login, events recorded.  Exits on failure. */
-static AmxClient *mxt_client(const MxtArgs *a)
+MXT_FN AmxClient *mxt_client(const MxtArgs *a)
 {
     static int inited;
     AmxClient *c;
@@ -184,7 +189,7 @@ static AmxClient *mxt_client(const MxtArgs *a)
 }
 
 /* Syncs until cond() is true or secs have passed.  1 if cond was met. */
-static int mxt_sync_until(AmxClient *c, int (*cond)(void *), void *arg, int secs)
+MXT_FN int mxt_sync_until(AmxClient *c, int (*cond)(void *), void *arg, int secs)
 {
     time_t end = time(NULL) + secs;
     while (time(NULL) < end) {
@@ -197,17 +202,17 @@ static int mxt_sync_until(AmxClient *c, int (*cond)(void *), void *arg, int secs
 }
 
 /* common conditions */
-static int mxt_have_invite(void *unused) { (void)unused; return mxt_find(AMX_EV_INVITE, NULL, NULL, NULL) != NULL; }
+MXT_FN int mxt_have_invite(void *unused) { (void)unused; return mxt_find(AMX_EV_INVITE, NULL, NULL, NULL) != NULL; }
 
 typedef struct { const char *room, *sender, *body; } MxtMsg;
-static int mxt_have_message(void *p)
+MXT_FN int mxt_have_message(void *p)
 {
     MxtMsg *m = p;
     return mxt_find(AMX_EV_MESSAGE, m->room, m->sender, m->body) != NULL;
 }
 
 typedef struct { const char *room, *user, *membership; } MxtMember;
-static int mxt_have_membership(void *p)
+MXT_FN int mxt_have_membership(void *p)
 {
     MxtMember *m = p;
     int i;

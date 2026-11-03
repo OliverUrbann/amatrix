@@ -177,6 +177,7 @@ void amx_client_free(AmxClient *c)
     olm_clear_utility(c->util); free(c->util);
     cJSON_Delete(c->pending); cJSON_Delete(c->devices); cJSON_Delete(c->outbound);
     cJSON_Delete(c->nokey); cJSON_Delete(c->room_enc); cJSON_Delete(c->seen);
+    cJSON_Delete(c->rooms); cJSON_Delete(c->direct); cJSON_Delete(c->hist);
     free(c->hs); free(c->store); free(c->user_id); free(c->device_id); free(c->token);
     free(c->curve); free(c->ed); free(c->since);
     free(c);
@@ -242,6 +243,7 @@ int amx_login(AmxClient *c, const char *user, const char *password)
     if (amx__load_or_create_account(c)) return -1;
     if (amx__load_sessions(c)) return -1;
     if (amx__load_send_state(c)) return -1;
+    if (amx__rooms_load(c)) return -1;
     c->since = amx__read_store(c, "since");
     {
         /* publish device keys right away, so others can encrypt for us
@@ -257,7 +259,8 @@ int amx_login(AmxClient *c, const char *user, const char *password)
 int amx_logout(AmxClient *c)
 {
     static const char *files[] = { "login.json", "account", "keys_uploaded", "olm_sessions",
-                                   "megolm_sessions", "megolm_out.json", "since", NULL };
+                                   "megolm_sessions", "megolm_out.json", "since", "rooms.json",
+                                   "direct.json", NULL };
     cJSON *body = cJSON_CreateObject(), *r = amx__api_ok(c, "POST", "/logout", body);
     int i;
     cJSON_Delete(body);

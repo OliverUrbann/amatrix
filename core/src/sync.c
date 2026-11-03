@@ -45,10 +45,21 @@ int amx_sync(AmxClient *c, long timeout_ms)
                               cJSON_GetObjectItemCaseSensitive(r, "device_lists"), "changed"))
         if (cJSON_IsString(x)) amx__forget_devices(c, x->valuestring);
 
+    /* account data: m.direct (which rooms are direct chats) */
+    cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(
+                              cJSON_GetObjectItemCaseSensitive(r, "account_data"), "events"))
+        if (amx__jstr(x, "type") && !strcmp(amx__jstr(x, "type"), "m.direct"))
+            amx__set_direct(c, cJSON_GetObjectItemCaseSensitive(x, "content"));
+
+    cJSON_ArrayForEach(room, cJSON_GetObjectItemCaseSensitive(
+                                 cJSON_GetObjectItemCaseSensitive(r, "rooms"), "leave"))
+        amx__room_forget(c, room->string);
+
     cJSON_ArrayForEach(room, cJSON_GetObjectItemCaseSensitive(
                                  cJSON_GetObjectItemCaseSensitive(r, "rooms"), "invite")) {
         AmxEvent e;
         const cJSON *sev;
+        amx__room_sync_invite(c, room->string, room);
         memset(&e, 0, sizeof e);
         e.type = AMX_EV_INVITE;
         e.room_id = room->string;
@@ -65,10 +76,12 @@ int amx_sync(AmxClient *c, long timeout_ms)
                                  cJSON_GetObjectItemCaseSensitive(r, "rooms"), "join")) {
         handle_state(c, room->string, cJSON_GetObjectItemCaseSensitive(
                                           cJSON_GetObjectItemCaseSensitive(room, "state"), "events"));
+        amx__room_sync_join(c, room->string, room);
         cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(
                                   cJSON_GetObjectItemCaseSensitive(room, "timeline"), "events"))
-            amx__handle_room_event(c, room->string, x);
+            amx__handle_room_event(c, room->string, x, 0);
     }
+    amx__rooms_save(c);
 
     x = cJSON_GetObjectItemCaseSensitive(
             cJSON_GetObjectItemCaseSensitive(r, "device_one_time_keys_count"), "signed_curve25519");
@@ -84,4 +97,45 @@ int amx_sync(AmxClient *c, long timeout_ms)
     }
     cJSON_Delete(r);
     return 0;
+}
+
+/* ------------------------------------------------------------ history */
+
+int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newest, int *at_start)
+{
+    const char *from = from_newest ? NULL : amx__jstr(c->hist, room_id);
+    char *esc = http_escape(room_id), *fesc = from ? http_escape(from) : NULL, *path;
+    cJSON *r, *x;
+    int n = 0;
+    long st;
+
+    if (at_start) *at_start = 0;
+    if (!c->hist) c->hist = cJSON_CreateObject();
+    if (!from_newest && !from && cJSON_GetObjectItemCaseSensitive(c->hist, room_id)) {
+        /* we already reached the beginning */
+        free(esc);
+        if (at_start) *at_start = 1;
+        return 0;
+    }
+    path = amx__malloc(strlen(esc) + (fesc ? strlen(fesc) : 0) + 80);
+    sprintf(path, "/rooms/%s/messages?dir=b&limit=%d%s%s", esc, limit > 0 ? limit : 20,
+            fesc ? "&from=" : "", fesc ? fesc : "");
+    free(esc);
+    free(fesc);
+    r = amx__api(c, "GET", path, NULL, 60, &st);
+    free(path);
+    if (st != 200 || !r) { cJSON_Delete(r); return -1; }
+    cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(r, "chunk")) {
+        amx__handle_room_event(c, room_id, x, 1);
+        n++;
+    }
+    cJSON_DeleteItemFromObjectCaseSensitive(c->hist, room_id);
+    if (amx__jstr(r, "end") && n > 0) {
+        cJSON_AddStringToObject(c->hist, room_id, amx__jstr(r, "end"));
+    } else {
+        cJSON_AddNullToObject(c->hist, room_id);      /* beginning reached */
+        if (at_start) *at_start = 1;
+    }
+    cJSON_Delete(r);
+    return n;
 }

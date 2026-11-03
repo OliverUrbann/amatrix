@@ -53,6 +53,8 @@ int amx_create_room(AmxClient *c, const AmxRoomOptions *o, char **room_id_out)
     *room_id_out = amx__strdup(amx__jstr(r, "room_id"));
     amx__note_room_encryption(c, *room_id_out, o->encrypted ? 1 : 0);
     cJSON_Delete(r);
+    if (o->is_direct && o->invite && o->invite[0] && amx__add_direct(c, o->invite[0], *room_id_out))
+        LOG(c, "could not mark %s as direct chat: %s", *room_id_out, c->err);
     LOG(c, "created room %s", *room_id_out);
     return 0;
 }
@@ -70,6 +72,16 @@ int amx_join(AmxClient *c, const char *room_id_or_alias, char **room_id_out)
     if (!r || !amx__jstr(r, "room_id")) { cJSON_Delete(r); return -1; }
     if (room_id_out) *room_id_out = amx__strdup(amx__jstr(r, "room_id"));
     LOG(c, "joined %s", amx__jstr(r, "room_id"));
+    {
+        /* accepting a direct-chat invite: mark it as direct for us too */
+        const char *inviter = amx__room_inviter_if_direct(c, amx__jstr(r, "room_id"));
+        if (inviter) {
+            char *who = amx__strdup(inviter);
+            if (amx__add_direct(c, who, amx__jstr(r, "room_id")))
+                LOG(c, "could not mark room as direct chat: %s", c->err);
+            free(who);
+        }
+    }
     cJSON_Delete(r);
     return 0;
 }
@@ -92,6 +104,8 @@ int amx_leave(AmxClient *c, const char *room_id)
 {
     int r = room_post(c, room_id, "leave", cJSON_CreateObject());
     if (!r) {
+        amx__room_forget(c, room_id);
+        amx__rooms_save(c);
         cJSON_DeleteItemFromObjectCaseSensitive(c->outbound, room_id);   /* no reuse after re-join */
         amx__save_json(c, "megolm_out.json", c->outbound);
     }

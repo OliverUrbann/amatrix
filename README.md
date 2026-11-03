@@ -17,13 +17,16 @@ private Synapse started by the tests.
 | e2ee_receive | ✔ | ✔ | ✔ |
 | e2ee_send | ✔ | ✔ | ✔ |
 | tls_verify | ✔ | ✔ | ✔ |
+| room_list | ✔ | ✔ | ✔ |
+| directory | ✔ | ✔ | ✔ |
+| history | ✔ | ✔ | ✔ |
 
 ## Layout
 
 | Path | What |
 |---|---|
 | `core/` | the client core, `libamatrix.a`; API in `core/include/amatrix.h` |
-| `examples/minimal.c` | the smallest client: log in, join, send, print messages (start here) |
+| `examples/minimal.c` | the smallest client: room list and directory, or open a room (history, send, receive) - start here |
 | `tools/` | `amx-cli` (command-line test client), `amxdiag` (network/AmiSSL diagnosis), `amiga-package/` (test package for a real Amiga) |
 | `tests/` | feature tests and their runner, see [tests/README.md](tests/README.md) |
 | `libolm-amiga/` | libolm on AmigaOS: patches, unit tests, `olmbench`, see [its README](libolm-amiga/README.md) |

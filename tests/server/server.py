@@ -97,6 +97,9 @@ trusted_key_servers: []
 report_stats: false
 presence:
   enabled: false
+# newer Synapse lets only admins publish rooms to the directory by default
+room_list_publication_rules:
+  - action: allow
 """
         for rc in ["rc_message", "rc_registration", "rc_key_requests", "rc_3pid_validation",
                    "rc_admin_redaction", "rc_media_create", "rc_delayed_event_mgmt"]:

@@ -60,6 +60,9 @@ timeouts are tripled.
 
 ## Lessons learned (keep in mind when writing peers)
 
+- Synapse >= 1.12x lets only admins publish rooms to the directory by
+  default; the test server allows it (`room_list_publication_rules`).
+- `amiga` is a predefined macro of m68k-amigaos-gcc: never use it as a name.
 - nio's `room.users` includes invited users: wait with `Peer.wait_member`,
   which checks the real join, before sending; otherwise the room key is
   shared before the (slow, emulated) client is in the room.

@@ -40,6 +40,8 @@ typedef struct {
     const char *reason;      /* AMX_EV_UNDECRYPTABLE: "no key", "UNKNOWN_MESSAGE_INDEX", ... */
     int encrypted;           /* 1 if the event was end-to-end encrypted */
     int own;                 /* 1 if sent by our own user */
+    int history;             /* 1 if delivered by amx_load_history() */
+    double timestamp;        /* origin_server_ts in ms */
 } AmxEvent;
 
 typedef void (*AmxEventFn)(AmxClient *c, const AmxEvent *ev, void *userdata);
@@ -87,9 +89,53 @@ int amx_create_room(AmxClient *c, const AmxRoomOptions *o, char **room_id_out); 
 int amx_join(AmxClient *c, const char *room_id_or_alias, char **room_id_out);    /* out may be NULL */
 int amx_leave(AmxClient *c, const char *room_id);
 int amx_invite(AmxClient *c, const char *room_id, const char *user_id);
-/* NULL-terminated list of joined room IDs; free with amx_free_strings. */
+/* NULL-terminated list of joined room IDs (asks the server); free with
+ * amx_free_strings. */
 char **amx_joined_rooms(AmxClient *c);
 void amx_free_strings(char **list);
+
+/* The room list as the client knows it from /sync (kept in the store, so it
+ * is complete after a restart too): joined rooms and pending invites, most
+ * recent activity first, invites on top. */
+typedef enum { AMX_ROOM_JOINED = 1, AMX_ROOM_INVITED } AmxMembership;
+
+typedef struct {
+    const char *room_id;
+    const char *name;          /* display name: room name, alias, or the members' names */
+    const char *topic;         /* may be NULL */
+    const char *alias;         /* canonical alias, may be NULL */
+    const char *dm_user;       /* direct chat: the other user, else NULL */
+    const char *inviter;       /* AMX_ROOM_INVITED: who invited us */
+    AmxMembership membership;
+    int is_direct;             /* direct chat (m.direct) */
+    int encrypted;
+    int joined_members, invited_members;
+    int unread;                /* notifications (server count) */
+    int highlights;            /* mentions etc. */
+    double last_activity;      /* origin_server_ts in ms of the newest event seen, 0 = unknown */
+} AmxRoomInfo;
+
+/* Snapshot of the room list.  Returns the number of rooms (0..), -1 on error;
+ * *list is valid until amx_free_rooms(). */
+int  amx_rooms(AmxClient *c, AmxRoomInfo **list);
+void amx_free_rooms(AmxRoomInfo *list, int n);
+
+/* Public room directory of the own server (server NULL) or another one.
+ * search may be NULL; at most limit entries.  Returns the count or -1. */
+typedef struct {
+    const char *room_id, *name, *topic, *alias;
+    int members;
+} AmxPublicRoom;
+int  amx_public_rooms(AmxClient *c, const char *server, const char *search, int limit,
+                      AmxPublicRoom **list);
+void amx_free_public_rooms(AmxPublicRoom *list, int n);
+
+/* Room history, newest first, as events (ev->history = 1) via the callback,
+ * decrypted where keys are known.  from_newest = 1 starts at the present,
+ * 0 continues where the previous call stopped.  *at_start (may be NULL) is
+ * set to 1 when the beginning of the room is reached.  Returns the number of
+ * events delivered or -1. */
+int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newest, int *at_start);
 
 /* ---------------------------------------------------------------- messages */
 

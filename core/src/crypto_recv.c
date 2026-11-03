@@ -290,8 +290,15 @@ void amx__handle_to_device(AmxClient *c, const cJSON *ev)
 
 /* ---------------------------------------------------------- room events */
 
+static void stamp(AmxEvent *e, const cJSON *ev, int history)
+{
+    const cJSON *ts = cJSON_GetObjectItemCaseSensitive(ev, "origin_server_ts");
+    e->history = history;
+    e->timestamp = cJSON_IsNumber(ts) ? ts->valuedouble : 0;
+}
+
 static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, const char *type,
-                         const cJSON *content, int encrypted)
+                         const cJSON *content, int encrypted, int history)
 {
     AmxEvent e;
     const char *sender = amx__jstr(ev, "sender");
@@ -305,10 +312,11 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
     e.body = amx__jstr(content, "body") ? amx__jstr(content, "body") : "";
     e.encrypted = encrypted;
     e.own = sender && c->user_id && !strcmp(sender, c->user_id);
+    stamp(&e, ev, history);
     amx__emit(c, &e);
 }
 
-static void emit_undecryptable(AmxClient *c, const char *room_id, const cJSON *ev, const char *reason)
+static void emit_undecryptable(AmxClient *c, const char *room_id, const cJSON *ev, const char *reason, int history)
 {
     AmxEvent e;
     memset(&e, 0, sizeof e);
@@ -319,6 +327,7 @@ static void emit_undecryptable(AmxClient *c, const char *room_id, const cJSON *e
     e.reason = reason;
     e.encrypted = 1;
     e.own = e.sender && c->user_id && !strcmp(e.sender, c->user_id);
+    stamp(&e, ev, history);
     amx__emit(c, &e);
 }
 
@@ -337,7 +346,7 @@ static int is_replay(AmxClient *c, const char *sid, uint32_t idx, const char *ev
 }
 
 /* 1 = handled (decrypted or never decryptable), 0 = key missing (retry later) */
-static int try_megolm(AmxClient *c, const char *room_id, const cJSON *ev, int report)
+static int try_megolm(AmxClient *c, const char *room_id, const cJSON *ev, int report, int history)
 {
     const cJSON *ct = cJSON_GetObjectItemCaseSensitive(ev, "content");
     const char *sid = amx__jstr(ct, "session_id"), *cipher = amx__jstr(ct, "ciphertext");
@@ -348,12 +357,12 @@ static int try_megolm(AmxClient *c, const char *room_id, const cJSON *ev, int re
     cJSON *p;
 
     if (!amx__jstr(ct, "algorithm") || strcmp(amx__jstr(ct, "algorithm"), MEGOLM_ALG) || !sid || !cipher) {
-        if (report) emit_undecryptable(c, room_id, ev, "unsupported algorithm");
+        if (report) emit_undecryptable(c, room_id, ev, "unsupported algorithm", history);
         return 1;
     }
     g = find_group(c, room_id, sid);
     if (!g) {
-        if (report) emit_undecryptable(c, room_id, ev, "no key");
+        if (report) emit_undecryptable(c, room_id, ev, "no key", history);
         return 0;
     }
     len = strlen(cipher);
@@ -361,7 +370,7 @@ static int try_megolm(AmxClient *c, const char *room_id, const cJSON *ev, int re
     max = olm_group_decrypt_max_plaintext_length(g->s, tmp, len);
     free(tmp);
     if (max == olm_error()) {
-        emit_undecryptable(c, room_id, ev, olm_inbound_group_session_last_error(g->s));
+        emit_undecryptable(c, room_id, ev, olm_inbound_group_session_last_error(g->s), history);
         return 1;
     }
     plain = amx__malloc(max + 1);
@@ -370,36 +379,36 @@ static int try_megolm(AmxClient *c, const char *room_id, const cJSON *ev, int re
     free(tmp);
     if (n == olm_error()) {
         /* UNKNOWN_MESSAGE_INDEX: sent before we were given the key */
-        emit_undecryptable(c, room_id, ev, olm_inbound_group_session_last_error(g->s));
+        emit_undecryptable(c, room_id, ev, olm_inbound_group_session_last_error(g->s), history);
         free(plain);
         return 1;
     }
     plain[n] = 0;
     if (is_replay(c, sid, idx, amx__jstr(ev, "event_id"))) {
         LOG(c, "Megolm: replayed message index %lu in %s, dropped", (unsigned long)idx, room_id);
-        emit_undecryptable(c, room_id, ev, "replayed message index");
+        emit_undecryptable(c, room_id, ev, "replayed message index", history);
         free(plain);
         return 1;
     }
     p = cJSON_Parse((char *)plain);
     free(plain);
     if (!p || !amx__jstr(p, "room_id") || strcmp(amx__jstr(p, "room_id"), room_id) || !amx__jstr(p, "type")) {
-        emit_undecryptable(c, room_id, ev, "payload room_id mismatch");
+        emit_undecryptable(c, room_id, ev, "payload room_id mismatch", history);
         cJSON_Delete(p);
         return 1;
     }
-    emit_message(c, room_id, ev, amx__jstr(p, "type"), cJSON_GetObjectItemCaseSensitive(p, "content"), 1);
+    emit_message(c, room_id, ev, amx__jstr(p, "type"), cJSON_GetObjectItemCaseSensitive(p, "content"), 1, history);
     cJSON_Delete(p);
     return 1;
 }
 
-void amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev)
+void amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev, int history)
 {
     const char *type = amx__jstr(ev, "type");
     const cJSON *ct = cJSON_GetObjectItemCaseSensitive(ev, "content");
     if (!type) return;
     if (!strcmp(type, "m.room.encrypted")) {
-        if (!try_megolm(c, room_id, ev, 1)) {
+        if (!try_megolm(c, room_id, ev, 1, history) && !history) {
             cJSON *e = cJSON_Duplicate(ev, 1);
             cJSON_AddStringToObject(e, "_room_id", room_id);
             cJSON_AddItemToArray(c->pending, e);
@@ -415,9 +424,10 @@ void amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev)
         e.sender = amx__jstr(ev, "sender");
         e.state_key = amx__jstr(ev, "state_key");
         e.body = amx__jstr(ct, "membership");
+        stamp(&e, ev, history);
         amx__emit(c, &e);
     } else {
-        emit_message(c, room_id, ev, type, ct, 0);
+        emit_message(c, room_id, ev, type, ct, 0, history);
     }
 }
 
@@ -426,7 +436,7 @@ void amx__retry_pending(AmxClient *c)
     cJSON *e = c->pending->child, *next;
     while (e) {
         next = e->next;
-        if (try_megolm(c, amx__jstr(e, "_room_id"), e, 0))
+        if (try_megolm(c, amx__jstr(e, "_room_id"), e, 0, 0))
             cJSON_Delete(cJSON_DetachItemViaPointer(c->pending, e));
         e = next;
     }

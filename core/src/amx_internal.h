@@ -40,6 +40,9 @@ struct AmxClient {
     cJSON *nokey;                  /* curve -> true: no one-time key (this run) */
     cJSON *room_enc;               /* room -> true/false: encryption state cache */
     cJSON *seen;                   /* "session|index" -> event_id (replay protection) */
+    cJSON *rooms;                  /* room list state (rooms.json) */
+    cJSON *direct;                 /* m.direct account data: user -> [room ids] */
+    cJSON *hist;                   /* room -> pagination token for amx_load_history */
     OlmUtility *util;
     AmxEventFn fn; void *ud;
     int verbose;
@@ -85,7 +88,7 @@ void  amx__add_olm_session(AmxClient *c, const char *sender_key, OlmSession *s);
 void  amx__add_group_session(AmxClient *c, const char *room, const char *sid, const char *sender_key,
                              const char *ed, OlmInboundGroupSession *s);
 void  amx__handle_to_device(AmxClient *c, const cJSON *ev);
-void  amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev);
+void  amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev, int history);
 void  amx__retry_pending(AmxClient *c);
 
 /* crypto_send.c */
@@ -93,6 +96,16 @@ int   amx__load_send_state(AmxClient *c);
 void  amx__forget_devices(AmxClient *c, const char *user);
 int   amx__encrypt_room_event(AmxClient *c, const char *room_id, const char *type,
                               const cJSON *content, cJSON **encrypted_out);
+
+/* roomstate.c */
+int   amx__rooms_load(AmxClient *c);
+int   amx__rooms_save(AmxClient *c);
+void  amx__room_sync_join(AmxClient *c, const char *room_id, const cJSON *jr);
+void  amx__room_sync_invite(AmxClient *c, const char *room_id, const cJSON *ir);
+void  amx__room_forget(AmxClient *c, const char *room_id);
+void  amx__set_direct(AmxClient *c, const cJSON *content);
+const char *amx__room_inviter_if_direct(AmxClient *c, const char *room_id);
+int   amx__add_direct(AmxClient *c, const char *user, const char *room_id);
 
 /* rooms.c */
 int   amx__room_encrypted(AmxClient *c, const char *room_id);   /* 1, 0, -1 error */
