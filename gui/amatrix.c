@@ -14,7 +14,7 @@
  * Without arguments the last account is used (the login is kept in the
  * store, the password is never saved); the first time a login window opens.
  * ARexx port AMATRIX.1: OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
- * CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, ROOMLINE, QUIT (see rexx_cmds below) - used by the emulator tests.
+ * CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, QUIT (see rexx_cmds below) - used by the emulator tests.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,10 +51,10 @@ static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.20
 
 enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
-    ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO
+    ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO
 };
 enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TAG_AVATAR,
-       TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE };
+       TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY };
 
 /* ------------------------------------------------------------------ state */
 
@@ -99,6 +99,8 @@ static Object *win_newchat, *str_chatuser;
 static Object *win_newroom, *str_roomname, *chk_enc, *chk_pub;
 static Object *win_invite, *str_inviteuser, *txt_inviteroom;
 static char *invite_room;          /* room the invite window is for */
+static Object *win_recovery, *str_recovery, *txt_recovery, *b_recovery;
+static int verified;               /* this device signed (this session) */
 static Object *win_join, *str_search, *lst_pub;
 static Room *rooms;
 static int n_rooms;
@@ -940,6 +942,20 @@ static void new_room(const char *name, int enc, int pub_)
     free(u);
 }
 
+static void recovery_go(const char *typed)
+{
+    char *t = (char *)(typed ? typed : (const char *)xget(str_recovery, MUIA_String_Contents)), *u;
+    if (!t || !*t || !A || !my_user) return;
+    u = amx_from_local(t);
+    amx_async_recovery(A, u, TAG_RECOVERY);
+    memset(u, 0, strlen(u));
+    free(u);
+    set(str_recovery, MUIA_String_Contents, "");
+    set(txt_recovery, MUIA_Text_Contents, "Wird geprüft ... (eine Passphrase kann einige Minuten dauern)");
+    set(b_recovery, MUIA_Disabled, TRUE);
+    set_status("Sicherheitsschlüssel wird geprüft ...", NULL, NULL);
+}
+
 static void invite_go(void)
 {
     char *t = (char *)xget(str_inviteuser, MUIA_String_Contents), *uid;
@@ -1039,6 +1055,30 @@ static void handle_result(const AmxMsg *m)
         if (room_by_id(pending_open)) { char *id = pending_open; pending_open = NULL; open_chat(id); free(id); }
         set_status("Online - %s", my_user, NULL);
         break;
+    case TAG_RECOVERY: {
+        ChatWin *w;
+        set(b_recovery, MUIA_Disabled, FALSE);
+        if (m->status) {
+            set(txt_recovery, MUIA_Text_Contents, m->error && strstr(m->error, "wrong")
+                ? "Falscher Schlüssel bzw. falsche Passphrase." : (m->error ? m->error : "Fehler"));
+            set_status(verified ? "Online - %s (verifiziert)" : "Online - %s", my_user, NULL);
+            break;
+        }
+        if (m->verified) verified = 1;
+        {   /* result in the window (a requester would block the program) */
+            static char res[300];
+            snprintf(res, sizeof res, "\33b%s\33n\n%s",
+                     m->verified ? "Dieses Gerät ist jetzt verifiziert."
+                                 : "Verifizieren war nicht möglich (Cross-Signing nicht eingerichtet?).",
+                     m->backup ? "Alte Nachrichten werden beim Öffnen eines Raums entschlüsselt."
+                               : "Auf dem Server gibt es keine Schlüsselsicherung.");
+            set(txt_recovery, MUIA_Text_Contents, res);
+        }
+        set_status(verified ? "Online - %s (verifiziert)" : "Online - %s", my_user, NULL);
+        /* open windows: reload, which fetches their keys from the backup */
+        for (w = chats; w; w = w->next) amx_async_load_history(A, w->room_id, FIRST_PAGE, 1, TAG_HIST);
+        break;
+    }
     case TAG_INVITE:
         if (m->status)
             MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
@@ -1089,7 +1129,7 @@ static void handle_net(void)
         case AMX_MSG_ROOMS:  update_rooms(m); break;
         case AMX_MSG_RESULT: handle_result(m); break;
         case AMX_MSG_STATE:
-            if (m->online) set_status("Online - %s", my_user, NULL);
+            if (m->online) set_status(verified ? "Online - %s (verifiziert)" : "Online - %s", my_user, NULL);
             else set_status("Offline: %s", m->error, NULL);
             break;
         }
@@ -1259,6 +1299,15 @@ HOOKPROTONH(rx_invite_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_invite_hook, rx_invite_func);
 
+HOOKPROTONH(rx_recovery_func, LONG, Object *obj, ULONG *arg)
+{
+    (void)obj;
+    if (!A || !my_user) return 10;
+    recovery_go((char *)arg[0]);
+    return 0;
+}
+MakeStaticHook(rx_recovery_hook, rx_recovery_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
@@ -1272,6 +1321,7 @@ static struct MUI_Command rexx_cmds[] = {
     { "OLDER",     "ROOM/F",          1, &rx_older_hook,    { 0 } },
     { "UNREAD",    "ROOM/F",          1, &rx_unreadcount_hook, { 0 } },
     { "ROOMLINE",  "ROOM/F",          1, &rx_roomline_hook, { 0 } },
+    { "RECOVERY",  "KEY/F",           1, &rx_recovery_hook, { 0 } },
     { "FIRSTLINE", "ROOM/F",          1, &rx_first_hook,    { 0 } },
     { NULL,        NULL,              0, NULL,              { 0 } }
 };
@@ -1284,6 +1334,7 @@ static struct NewMenu menu[] = {
     { NM_ITEM,  (STRPTR)"Neuer Chat ...",    (STRPTR)"N", 0, 0, (APTR)ID_NEWCHAT },
     { NM_ITEM,  (STRPTR)"Neuer Raum ...",    NULL, 0, 0, (APTR)ID_NEWROOM },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Sicherheitsschlüssel eingeben ...", (STRPTR)"S", 0, 0, (APTR)ID_RECOVERY },
     { NM_ITEM,  (STRPTR)"Abmelden",          NULL, 0, 0, (APTR)ID_LOGOUT },
     { NM_ITEM,  (STRPTR)"Über Amatrix ...",  (STRPTR)"?", 0, 0, (APTR)ID_ABOUT },
     { NM_ITEM,  (STRPTR)"Beenden",           (STRPTR)"Q", 0, 0, (APTR)MUIV_Application_ReturnID_Quit },
@@ -1395,6 +1446,21 @@ static Object *build_app(void)
                 Child, b_join = SimpleButton("_Betreten"),
             End,
         End,
+        SubWindow, win_recovery = WindowObject,
+            MUIA_Window_Title, "Sicherheitsschlüssel",
+            MUIA_Window_ID, MAKE_ID('A','M','X','K'),
+            WindowContents, VGroup,
+                Child, TextObject, MUIA_Text_Contents,
+                    "Der Sicherheitsschlüssel aus Element (z.B. \33bEsTc 9xYz ...\33n)\n"
+                    "oder die Sicherheits-Passphrase.  Damit wird dieses Gerät\n"
+                    "verifiziert, und alte Nachrichten werden lesbar.", End,
+                Child, str_recovery = StringObject, StringFrame, MUIA_String_MaxLen, 300,
+                                      MUIA_CycleChain, TRUE, End,
+                Child, txt_recovery = TextObject, MUIA_Text_Contents, "", End,
+                Child, b_recovery = SimpleButton("_Entsperren"),
+            End,
+        End,
+
         SubWindow, win_invite = WindowObject,
             MUIA_Window_Title, "Einladen",
             MUIA_Window_ID, MAKE_ID('A','M','X','I'),
@@ -1408,6 +1474,11 @@ static Object *build_app(void)
     End;
     if (!a) return NULL;
     DoMethod(b_invite, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INVITE_GO);
+    DoMethod(b_recovery, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_RECOVERY_GO);
+    DoMethod(str_recovery, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2,
+             MUIM_Application_ReturnID, ID_RECOVERY_GO);
+    DoMethod(win_recovery, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_recovery, 3,
+             MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(str_inviteuser, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2,
              MUIM_Application_ReturnID, ID_INVITE_GO);
     DoMethod(win_invite, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_invite, 3,
@@ -1497,6 +1568,16 @@ static void handle_id(ULONG id)
     }
     case ID_INVITE_GO:
         invite_go();
+        break;
+    case ID_RECOVERY:
+        if (!my_user) break;
+        set(txt_recovery, MUIA_Text_Contents, "");
+        set(b_recovery, MUIA_Disabled, FALSE);
+        set(win_recovery, MUIA_Window_Open, TRUE);
+        set(win_recovery, MUIA_Window_ActiveObject, str_recovery);
+        break;
+    case ID_RECOVERY_GO:
+        recovery_go(NULL);
         break;
     case ID_JOIN_GO:
         join_selected();

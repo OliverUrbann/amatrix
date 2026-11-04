@@ -38,7 +38,7 @@ typedef struct AmxAsync AmxAsync;
 typedef enum {
     AMX_CMD_LOGIN = 1, AMX_CMD_LOGOUT, AMX_CMD_SEND_TEXT, AMX_CMD_JOIN, AMX_CMD_LEAVE,
     AMX_CMD_INVITE, AMX_CMD_CREATE_ROOM, AMX_CMD_LOAD_HISTORY, AMX_CMD_PUBLIC_ROOMS,
-    AMX_CMD_AVATAR, AMX_CMD_MARK_READ
+    AMX_CMD_AVATAR, AMX_CMD_MARK_READ, AMX_CMD_RECOVERY
 } AmxCmd;
 
 typedef enum {
@@ -65,6 +65,7 @@ typedef struct {
     int count;                    /* LOAD_HISTORY: events delivered */
     int online;                   /* AMX_MSG_STATE */
     unsigned long *pixels;        /* AVATAR: size x size, 0xAARRGGBB (freed with the message) */
+    int verified, backup;         /* RECOVERY: device signed / backup key taken over */
     int size;
 } AmxMsg;
 
@@ -100,6 +101,8 @@ int amx_async_public_rooms(AmxAsync *a, const char *server, const char *search, 
                            unsigned long tag);
 int amx_async_avatar(AmxAsync *a, const char *mxc_url, int size, unsigned long tag);
 int amx_async_mark_read(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag);
+/* amx_recovery_unlock() in the network process (a passphrase can take minutes) */
+int amx_async_recovery(AmxAsync *a, const char *key_or_passphrase, unsigned long tag);
 
 #ifdef __cplusplus
 }

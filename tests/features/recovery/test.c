@@ -67,6 +67,18 @@ int main(int argc, char **argv)
         if (!e || !e->encrypted) { ok = 0; mxt_diag("missing: %s", msgs[i]); }
     }
     MXT_OK(ok, "all 5 messages from before this device existed are readable");
+    {
+        AmxRoomInfo *l;
+        int n = amx_rooms(c, &l), k, found = 0;
+        for (k = 0; k < n; k++)
+            if (!strcmp(l[k].room_id, room)) {
+                found = 1;
+                MXT_OK(l[k].last_body && !strcmp(l[k].last_body, msgs[4]),
+                       "room list preview decrypted too (%s)", l[k].last_body ? l[k].last_body : "-");
+            }
+        if (!found) MXT_OK(0, "room in the list");
+        amx_free_rooms(l, n);
+    }
 
     /* after a restart the imported keys are still there */
     amx_client_free(c);

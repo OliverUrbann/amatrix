@@ -317,6 +317,46 @@ async def scenario(ctx, amiga, srv, me):
         check(await amiga.until(read0, 120), f"{name}: open window marks it read (no unread count)")
     await amiga.shot("09-archiv-after")
 
+    # security key: a second device of our user (like Element) with old
+    # messages only the key backup can decrypt
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("recovery_peer", os.path.join(TESTS, "features", "recovery", "peer.py"))
+    rec = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rec)
+    info = await rec.element_device(ctx, me)
+    check(info is not None, "Element-like second device of our user set up")
+    if info:
+        async def open_old():
+            rc, _ = await amiga.rexx("OPENCHAT Vor meiner Zeit")
+            return rc == "0"
+        check(await amiga.until(open_old, 180), "room of the other device opened")
+        await asyncio.sleep(20)
+        rc, u = await amiga.rexx("UNREADABLE Vor meiner Zeit")
+        check(u.isdigit() and int(u) >= 5, f"before the key: messages not readable ({u} placeholders)")
+        await amiga.shot("10-before-key")
+        rc, _ = await amiga.rexx("RECOVERY " + rec.RECOVERY_KEY)
+        check(rc == "0", "security key entered")
+
+        async def verified():
+            rc, r = await amiga.rexx("STATUS")
+            return "verifiziert" in r
+        check(await amiga.until(verified, 300), "status says verified")
+
+        async def readable():
+            rc, r = await amiga.rexx("UNREADABLE Vor meiner Zeit")
+            return r == "0"
+        check(await amiga.until(readable, 240), "old messages decrypted from the key backup")
+        rc, first = await amiga.rexx("FIRSTLINE Vor meiner Zeit")
+        rc, n = await amiga.rexx("CHATLINES Vor meiner Zeit")
+        ctx.diag(f"Vor meiner Zeit: {n} lines, first {first!r}")
+        async def preview_ok():
+            rc, r = await amiga.rexx("ROOMLINE Vor meiner Zeit")
+            return "aus der Zeit vor Amatrix 5" in r and r
+        v = await amiga.until(preview_ok, 60)
+        check(v, f"room list preview decrypted too ({v!r})")
+        await amiga.shot("11-after-key")
+        check(await rec.wait_signed(ctx, info, 120), "Element would show the Amiga device as verified")
+
     rc, _ = await amiga.rexx("NEWCHAT " + ctx.peer_user.user_id)
     check(rc == "0", "new chat with an existing partner opens the existing chat")
     await asyncio.sleep(5)

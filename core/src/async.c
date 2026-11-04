@@ -267,7 +267,11 @@ static void post_rooms(AmxAsync *a, int force)
         sig_add(&s, &len, r[i].alias);
         sig_add(&s, &len, r[i].dm_user);
         sig_add(&s, &len, r[i].inviter);
-        sprintf(num, "%d %d %d %d %d %d %d %.0f", (int)r[i].membership, r[i].is_direct,
+        sig_add(&s, &len, r[i].inviter_name);
+        sig_add(&s, &len, r[i].avatar_url);
+        sig_add(&s, &len, r[i].last_sender);
+        sig_add(&s, &len, r[i].last_body);
+        sprintf(num, "%d %d %d %d %d %d %d %d %.0f", r[i].last_own, (int)r[i].membership, r[i].is_direct,
                 r[i].encrypted, r[i].joined_members, r[i].invited_members, r[i].unread,
                 r[i].highlights, r[i].last_activity);
         sig_add(&s, &len, num);
@@ -304,7 +308,8 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
 
     if (!a->c) { post_result(a, c, -1, NULL); return; }
     amx_set_verbose(a->c, a->verbose);
-    LOG(a->c, "command %d (tag %lu) %s", c->cmd, c->tag, c->s1 ? c->s1 : "");
+    LOG(a->c, "command %d (tag %lu) %s", c->cmd, c->tag,
+        c->s1 && c->cmd != AMX_CMD_RECOVERY && c->cmd != AMX_CMD_LOGIN ? c->s1 : "");
     switch (c->cmd) {
     case AMX_CMD_LOGIN:
         r = amx_login(a->c, c->s1, c->s2 ? c->s2 : "");
@@ -354,6 +359,24 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
             if (n < 0) o->m.error = own(o, amx_error(a->c));
             put_out(a, o);
         }
+        post_rooms(a, 0);       /* keys from the backup may have changed the previews */
+        return;
+    }
+    case AMX_CMD_RECOVERY: {
+        int v = 0, b = 0;
+        Out *o = new_out(AMX_MSG_RESULT);
+        r = amx_recovery_unlock(a->c, c->s1 ? c->s1 : "", &v, &b);
+        if (c->s1) memset(c->s1, 0, strlen(c->s1));      /* do not keep the key around */
+        if (o) {
+            o->m.cmd = AMX_CMD_RECOVERY;
+            o->m.tag = c->tag;
+            o->m.status = r;
+            o->m.verified = v;
+            o->m.backup = b;
+            if (r) o->m.error = own(o, amx_error(a->c));
+            put_out(a, o);
+        }
+        post_rooms(a, 0);
         return;
     }
     case AMX_CMD_AVATAR: {
@@ -634,6 +657,8 @@ int amx_async_public_rooms(AmxAsync *a, const char *server, const char *search, 
 
 int amx_async_mark_read(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag)
 { return cmd(a, AMX_CMD_MARK_READ, tag, room_id, event_id, 0, 0); }
+int amx_async_recovery(AmxAsync *a, const char *key, unsigned long tag)
+{ return cmd(a, AMX_CMD_RECOVERY, tag, key, NULL, 0, 0); }
 int amx_async_avatar(AmxAsync *a, const char *mxc_url, int size, unsigned long tag)
 { return cmd(a, AMX_CMD_AVATAR, tag, mxc_url, NULL, size, 0); }
 

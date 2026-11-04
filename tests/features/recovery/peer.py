@@ -92,12 +92,13 @@ class Api:
         return self.call("PUT", f"/user/{u}/account_data/{typ}", content)
 
 
-async def peer(ctx):
+async def element_device(ctx, me, room_name="Vor meiner Zeit"):
+    """A second device of user `me` set up like Element (see module doc).
+    Returns a dict for wait_signed(), or None."""
     import olm
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
     from cryptography.hazmat.primitives import serialization
 
-    me = ctx.target_user
     p = await ctx.peer(me)                       # a second device of the client's user
     api = Api(ctx, p.c.access_token, me.user_id)
     loop = asyncio.get_running_loop()
@@ -116,11 +117,11 @@ async def peer(ctx):
             await asyncio.sleep(2)
     ctx.check(client_dev is not None, "client device seen")
     if not client_dev:
-        return
+        return None
     p.c.blacklist_device(client_dev)
 
     # 2. a room with messages the client cannot decrypt (no key shared with it)
-    room = await p.create_room(encrypted=True, name="Vor meiner Zeit")
+    room = await p.create_room(encrypted=True, name=room_name)
     for m in MESSAGES:
         await p.send(room, m)
     await p.sync(500)
@@ -189,22 +190,35 @@ async def peer(ctx):
     ctx.check(ok, "secret storage written (key, 4 secrets, default key)")
     ctx.diag(f"recovery key {RECOVERY_KEY}")
 
-    # 6. the client signs its device: wait for the signature by our self-signing key
-    want = "ed25519:" + signers["self_signing"].public_key
-    signed = False
-    end = time.time() + 240 * ctx.scale
-    while time.time() < end and not signed:
-        st, r = await run(api.call, "POST", "/keys/query", {"device_keys": {me.user_id: []}})
-        dk = r.get("device_keys", {}).get(me.user_id, {}).get(client_dev.id, {})
+    return {"api": api, "me": me, "client_dev": client_dev, "room": room,
+            "ssk_pub": signers["self_signing"].public_key}
+
+
+async def wait_signed(ctx, info, secs):
+    """True once the client's device carries a valid signature by our self-signing key."""
+    import olm
+    api, me, dev = info["api"], info["me"], info["client_dev"]
+    loop = asyncio.get_running_loop()
+    want = "ed25519:" + info["ssk_pub"]
+    end = time.time() + secs
+    while time.time() < end:
+        st, r = await loop.run_in_executor(None, api.call, "POST", "/keys/query", {"device_keys": {me.user_id: []}})
+        dk = r.get("device_keys", {}).get(me.user_id, {}).get(dev.id, {})
         sig = dk.get("signatures", {}).get(me.user_id, {}).get(want)
         if sig:
             o = {k2: v for k2, v in dk.items() if k2 not in ("signatures", "unsigned")}
             try:
-                olm.ed25519_verify(signers["self_signing"].public_key, canonical(o), sig)
-                signed = True
+                olm.ed25519_verify(info["ssk_pub"], canonical(o), sig)
+                return True
             except olm.OlmVerifyError:
                 ctx.diag("signature present but invalid")
-                break
-        else:
-            await asyncio.sleep(3)
-    ctx.check(signed, "client device signed by the self-signing key (verified, as Element sees it)")
+                return False
+        await asyncio.sleep(3)
+    return False
+
+
+async def peer(ctx):
+    info = await element_device(ctx, ctx.target_user)
+    if info:
+        ctx.check(await wait_signed(ctx, info, 240 * ctx.scale),
+                  "client device signed by the self-signing key (verified, as Element sees it)")
