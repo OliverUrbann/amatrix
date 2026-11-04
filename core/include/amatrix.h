@@ -72,6 +72,19 @@ const char *amx_error(AmxClient *c);
 
 /* Uses the saved login in store_dir if there is one, else logs in with the
  * password and creates a new device.  Uploads device keys as needed. */
+/* ------------------------------------------------------- store passphrase */
+
+/* The store (login, keys, sessions, key backup key) can be protected with a
+ * passphrase: AES-256-GCM per file, key by PBKDF2.  amx_store_encrypted():
+ * the store has one (store.json); amx_store_locked(): ... and it was not
+ * given yet - then amx_store_unlock() must come before amx_login().
+ * amx_store_set_passphrase(): set, change (store unlocked) or with NULL/""
+ * remove it; existing files are converted. */
+int amx_store_encrypted(AmxClient *c);
+int amx_store_locked(AmxClient *c);
+int amx_store_unlock(AmxClient *c, const char *passphrase);
+int amx_store_set_passphrase(AmxClient *c, const char *passphrase);
+
 int amx_login(AmxClient *c, const char *user, const char *password);
 int amx_logout(AmxClient *c);                    /* this device; clears the store */
 const char *amx_user_id(AmxClient *c);

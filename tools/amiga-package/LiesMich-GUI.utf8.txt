@@ -37,6 +37,10 @@ Bedienung
               und alte Nachrichten werden beim Öffnen eines Raums aus der
               Schlüsselsicherung entschlüsselt.  Eine Passphrase braucht auf
               dem Amiga einige Minuten, der Schlüssel geht schnell.
+- Menü "Passwort für Amatrix-Daten ...": schützt Anmeldung, Schlüssel und
+              Sitzungen in der Schublade "Amatrix-xxxxxxxx" mit einem
+              Passwort (AES-256).  Amatrix fragt dann beim Start danach.
+              Vergessen = Daten unbrauchbar (dann abmelden/neu anmelden).
 - Menü "Abmelden": meldet dieses Gerät ab und löscht seine Schlüssel
 - Chatfenster: lädt beim Öffnen die letzten 30 Nachrichten.
               Werkzeugleiste oben (Maus darüber zeigt die Erklärung):
@@ -46,10 +50,12 @@ Bedienung
 
 ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
 CHATLINES, UNREADABLE, OLDER,
-FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, QUIT).
+FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS,
+QUIT).
 
 Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
-schlüssel auch den Schlüssel zur Schlüsselsicherung - nicht weitergeben.
+schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem
+Passwort schützen (siehe oben) und nicht weitergeben.
 
 Was noch fehlt: Bilder/Dateien anzeigen und senden, andere Nutzer
-verifizieren, Passwort für die Schlüssel-Schublade.
+verifizieren.

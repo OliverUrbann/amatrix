@@ -309,7 +309,8 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
     if (!a->c) { post_result(a, c, -1, NULL); return; }
     amx_set_verbose(a->c, a->verbose);
     LOG(a->c, "command %d (tag %lu) %s", c->cmd, c->tag,
-        c->s1 && c->cmd != AMX_CMD_RECOVERY && c->cmd != AMX_CMD_LOGIN ? c->s1 : "");
+        c->s1 && c->cmd != AMX_CMD_RECOVERY && c->cmd != AMX_CMD_LOGIN && c->cmd != AMX_CMD_STORE_UNLOCK
+        && c->cmd != AMX_CMD_STORE_PASS ? c->s1 : "");
     switch (c->cmd) {
     case AMX_CMD_LOGIN:
         r = amx_login(a->c, c->s1, c->s2 ? c->s2 : "");
@@ -341,6 +342,14 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
         break;
     case AMX_CMD_MARK_READ:
         r = amx_mark_read(a->c, c->s1, c->s2);
+        break;
+    case AMX_CMD_STORE_UNLOCK:
+        r = amx_store_unlock(a->c, c->s1 ? c->s1 : "");
+        if (c->s1) memset(c->s1, 0, strlen(c->s1));
+        break;
+    case AMX_CMD_STORE_PASS:
+        r = amx_store_set_passphrase(a->c, c->s1 && *c->s1 ? c->s1 : NULL);
+        if (c->s1) memset(c->s1, 0, strlen(c->s1));
         break;
     case AMX_CMD_CREATE_ROOM:
         c->opt.invite = (const char **)c->invite;
@@ -657,6 +666,10 @@ int amx_async_public_rooms(AmxAsync *a, const char *server, const char *search, 
 
 int amx_async_mark_read(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag)
 { return cmd(a, AMX_CMD_MARK_READ, tag, room_id, event_id, 0, 0); }
+int amx_async_store_unlock(AmxAsync *a, const char *pass, unsigned long tag)
+{ return cmd(a, AMX_CMD_STORE_UNLOCK, tag, pass, NULL, 0, 0); }
+int amx_async_store_passphrase(AmxAsync *a, const char *pass, unsigned long tag)
+{ return cmd(a, AMX_CMD_STORE_PASS, tag, pass ? pass : "", NULL, 0, 0); }
 int amx_async_recovery(AmxAsync *a, const char *key, unsigned long tag)
 { return cmd(a, AMX_CMD_RECOVERY, tag, key, NULL, 0, 0); }
 int amx_async_avatar(AmxAsync *a, const char *mxc_url, int size, unsigned long tag)

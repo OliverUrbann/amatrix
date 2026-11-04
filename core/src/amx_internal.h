@@ -45,6 +45,8 @@ struct AmxClient {
     cJSON *hist;                   /* room -> pagination token for amx_load_history */
     cJSON *backup;                 /* backup.json: key backup version + private key */
     cJSON *bk_done;                /* rooms whose backed-up keys were fetched (this run) */
+    unsigned char skey[32];        /* store key (passphrase), if skey_set */
+    int skey_set;
     OlmUtility *util;
     AmxEventFn fn; void *ud;
     int verbose;
@@ -85,6 +87,8 @@ int   amx__verify_signed(AmxClient *c, const cJSON *obj, const char *user, const
 int   amx__load_sessions(AmxClient *c);
 int   amx__save_olm_sessions(AmxClient *c);
 int   amx__save_group_sessions(AmxClient *c);
+char *amx__store_decode(AmxClient *c, const char *name, char *file);
+char *amx__store_encode(AmxClient *c, const char *name, const char *data);
 GroupSess *amx__find_group(AmxClient *c, const char *room_id, const char *session_id);
 OlmSession *amx__new_olm_session(void);
 OlmInboundGroupSession *amx__new_group_session(void);

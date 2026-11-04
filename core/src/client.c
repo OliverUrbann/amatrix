@@ -91,13 +91,18 @@ char *amx__read_store(AmxClient *c, const char *name)
 {
     char *p = store_path(c, name), *r = plat_read_file(p);
     free(p);
-    return r;
+    return amx__store_decode(c, name, r);
 }
 
 int amx__write_store(AmxClient *c, const char *name, const char *data)
 {
-    char *p = store_path(c, name);
-    int r = plat_write_file(p, data);
+    char *p, *enc;
+    int r;
+    if (amx_store_locked(c)) return amx__fail(c, "store is locked (passphrase not given)");
+    p = store_path(c, name);
+    enc = amx__store_encode(c, name, data);
+    r = plat_write_file(p, enc ? enc : data);
+    if (enc) { memset(enc, 0, strlen(enc)); free(enc); }
     if (r) amx__fail(c, "cannot write %s", p);
     free(p);
     return r;
@@ -260,6 +265,7 @@ static int load_saved_login(AmxClient *c)
 
 int amx_login(AmxClient *c, const char *user, const char *password)
 {
+    if (amx_store_locked(c)) return amx__fail(c, "store is locked: amx_store_unlock() first");
     if (load_saved_login(c)) {
         LOG(c, "using saved login %s, device %s", c->user_id, c->device_id);
     } else {
@@ -309,7 +315,7 @@ int amx_logout(AmxClient *c)
 {
     static const char *files[] = { "login.json", "account", "keys_uploaded", "olm_sessions",
                                    "megolm_sessions", "megolm_out.json", "since", "rooms.json",
-                                   "direct.json", "backup.json", NULL };
+                                   "direct.json", "backup.json", "store.json", NULL };
     cJSON *body = cJSON_CreateObject(), *r = amx__api_ok(c, "POST", "/logout", body);
     int i;
     cJSON_Delete(body);
@@ -323,6 +329,8 @@ int amx_logout(AmxClient *c)
     }
     free(c->token);
     c->token = NULL;
+    memset(c->skey, 0, sizeof c->skey);
+    c->skey_set = 0;
     return 0;
 }
 

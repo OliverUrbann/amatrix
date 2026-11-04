@@ -14,7 +14,7 @@
  * Without arguments the last account is used (the login is kept in the
  * store, the password is never saved); the first time a login window opens.
  * ARexx port AMATRIX.1: OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
- * CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, QUIT (see rexx_cmds below) - used by the emulator tests.
+ * CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS, QUIT (see rexx_cmds below) - used by the emulator tests.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,10 +51,10 @@ static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.20
 
 enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
-    ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO
+    ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO, ID_UNLOCK_GO, ID_STOREPASS, ID_STOREPASS_SET, ID_STOREPASS_DEL
 };
 enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TAG_AVATAR,
-       TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY };
+       TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY, TAG_UNLOCK, TAG_STOREPASS };
 
 /* ------------------------------------------------------------------ state */
 
@@ -99,8 +99,13 @@ static Object *win_newchat, *str_chatuser;
 static Object *win_newroom, *str_roomname, *chk_enc, *chk_pub;
 static Object *win_invite, *str_inviteuser, *txt_inviteroom;
 static char *invite_room;          /* room the invite window is for */
+static char *pending_password;     /* login password while the store is being unlocked */
 static Object *win_recovery, *str_recovery, *txt_recovery, *b_recovery;
 static int verified;               /* this device signed (this session) */
+static Object *win_unlock, *str_unlock, *txt_unlock, *b_unlock;
+static Object *win_storepass, *str_sp1, *str_sp2, *txt_sp, *b_sp_set, *b_sp_del;
+static int store_protected;        /* the store has a passphrase */
+static int store_protected_removing;
 static Object *win_join, *str_search, *lst_pub;
 static Room *rooms;
 static int n_rooms;
@@ -872,8 +877,58 @@ static void do_login(const char *server, const char *user, const char *password)
         if (GetVar((STRPTR)"AMX_VERBOSE", (STRPTR)v, sizeof v, 0) > 0) amx_async_set_verbose(A, atoi(v));
         if (debug) amx_async_set_verbose(A, 2);
     }
+    store_protected = 0;
+    {   /* a protected store needs its passphrase before the login */
+        char sj[320];
+        BPTR l;
+        snprintf(sj, sizeof sj, "%s/store.json", dir);
+        if ((l = Lock((STRPTR)sj, ACCESS_READ)) != 0) {
+            UnLock(l);
+            store_protected = 1;
+            free(pending_password);
+            pending_password = xstrdup(password);
+            set_status("Passwort für die Amatrix-Daten nötig", NULL, NULL);
+            set(txt_unlock, MUIA_Text_Contents, "");
+            set(b_unlock, MUIA_Disabled, FALSE);
+            set(win_unlock, MUIA_Window_Open, TRUE);
+            set(win_unlock, MUIA_Window_ActiveObject, str_unlock);
+            return;
+        }
+    }
     set_status("Anmelden als %s ...", user, NULL);
     amx_async_login(A, user, password ? password : "", TAG_LOGIN);
+}
+
+static void unlock_go(const char *typed)
+{
+    char *t = (char *)(typed ? typed : (const char *)xget(str_unlock, MUIA_String_Contents)), *u;
+    if (!t || !A) return;
+    u = amx_from_local(t);
+    amx_async_store_unlock(A, u, TAG_UNLOCK);
+    memset(u, 0, strlen(u));
+    free(u);
+    set(str_unlock, MUIA_String_Contents, "");
+    set(txt_unlock, MUIA_Text_Contents, "Wird geprüft ...");
+    set(b_unlock, MUIA_Disabled, TRUE);
+}
+
+static void storepass_go(int remove_it, const char *typed)
+{
+    char *p1 = (char *)(typed ? typed : (const char *)xget(str_sp1, MUIA_String_Contents));
+    char *p2 = (char *)(typed ? typed : (const char *)xget(str_sp2, MUIA_String_Contents)), *u;
+    if (!A || !my_user) return;
+    if (!remove_it) {
+        if (!p1 || strlen(p1) < 4) { set(txt_sp, MUIA_Text_Contents, "Bitte mindestens 4 Zeichen."); return; }
+        if (strcmp(p1, p2)) { set(txt_sp, MUIA_Text_Contents, "Die beiden Eingaben sind verschieden."); return; }
+    }
+    store_protected_removing = remove_it;
+    u = remove_it ? strdup("") : amx_from_local(p1);
+    amx_async_store_passphrase(A, u, TAG_STOREPASS);
+    memset(u, 0, strlen(u));
+    free(u);
+    set(str_sp1, MUIA_String_Contents, "");
+    set(str_sp2, MUIA_String_Contents, "");
+    set(txt_sp, MUIA_Text_Contents, "Daten werden umgeschlüsselt ...");
 }
 
 static void login_from_window(void)
@@ -1038,6 +1093,7 @@ static void handle_result(const AmxMsg *m)
         set_status("Verbinde als %s ...", my_user, NULL);
         break;
     case TAG_LOGOUT:
+        store_protected = 0;
         free(my_user); my_user = NULL;
         while (chats) close_chat(chats);
         show_login("Abgemeldet.");
@@ -1054,6 +1110,26 @@ static void handle_result(const AmxMsg *m)
         pending_open = strdup(m->result);
         if (room_by_id(pending_open)) { char *id = pending_open; pending_open = NULL; open_chat(id); free(id); }
         set_status("Online - %s", my_user, NULL);
+        break;
+    case TAG_UNLOCK:
+        set(b_unlock, MUIA_Disabled, FALSE);
+        if (m->status) {
+            set(txt_unlock, MUIA_Text_Contents, m->error && strstr(m->error, "wrong")
+                ? "Falsches Passwort." : (m->error ? m->error : "Fehler"));
+            break;
+        }
+        set(win_unlock, MUIA_Window_Open, FALSE);
+        set_status("Anmelden als %s ...", cfg_user, NULL);
+        amx_async_login(A, cfg_user, pending_password ? pending_password : "", TAG_LOGIN);
+        if (pending_password) { memset(pending_password, 0, strlen(pending_password)); free(pending_password); }
+        pending_password = NULL;
+        break;
+    case TAG_STOREPASS:
+        if (m->status) { set(txt_sp, MUIA_Text_Contents, m->error ? m->error : "Fehler"); break; }
+        store_protected = !store_protected_removing;
+        set(txt_sp, MUIA_Text_Contents, store_protected
+            ? "\33bDie Amatrix-Daten sind jetzt mit dem Passwort geschützt.\33n\nBeim Start fragt Amatrix danach."
+            : "\33bDer Passwortschutz ist entfernt.\33n");
         break;
     case TAG_RECOVERY: {
         ChatWin *w;
@@ -1308,6 +1384,24 @@ HOOKPROTONH(rx_recovery_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_recovery_hook, rx_recovery_func);
 
+HOOKPROTONH(rx_unlock_func, LONG, Object *obj, ULONG *arg)
+{
+    (void)obj;
+    if (!A || !xget(win_unlock, MUIA_Window_Open)) return 5;
+    unlock_go((char *)arg[0]);
+    return 0;
+}
+MakeStaticHook(rx_unlock_hook, rx_unlock_func);
+
+HOOKPROTONH(rx_storepass_func, LONG, Object *obj, ULONG *arg)
+{
+    (void)obj;
+    if (!A || !my_user) return 10;
+    storepass_go(!arg[0] || !*(char *)arg[0], (char *)arg[0]);
+    return 0;
+}
+MakeStaticHook(rx_storepass_hook, rx_storepass_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
@@ -1322,6 +1416,8 @@ static struct MUI_Command rexx_cmds[] = {
     { "UNREAD",    "ROOM/F",          1, &rx_unreadcount_hook, { 0 } },
     { "ROOMLINE",  "ROOM/F",          1, &rx_roomline_hook, { 0 } },
     { "RECOVERY",  "KEY/F",           1, &rx_recovery_hook, { 0 } },
+    { "UNLOCK",    "PASS/F",          1, &rx_unlock_hook,   { 0 } },
+    { "STOREPASS", "PASS/F",          1, &rx_storepass_hook, { 0 } },
     { "FIRSTLINE", "ROOM/F",          1, &rx_first_hook,    { 0 } },
     { NULL,        NULL,              0, NULL,              { 0 } }
 };
@@ -1335,6 +1431,7 @@ static struct NewMenu menu[] = {
     { NM_ITEM,  (STRPTR)"Neuer Raum ...",    NULL, 0, 0, (APTR)ID_NEWROOM },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Sicherheitsschlüssel eingeben ...", (STRPTR)"S", 0, 0, (APTR)ID_RECOVERY },
+    { NM_ITEM,  (STRPTR)"Passwort für Amatrix-Daten ...", (STRPTR)"P", 0, 0, (APTR)ID_STOREPASS },
     { NM_ITEM,  (STRPTR)"Abmelden",          NULL, 0, 0, (APTR)ID_LOGOUT },
     { NM_ITEM,  (STRPTR)"Über Amatrix ...",  (STRPTR)"?", 0, 0, (APTR)ID_ABOUT },
     { NM_ITEM,  (STRPTR)"Beenden",           (STRPTR)"Q", 0, 0, (APTR)MUIV_Application_ReturnID_Quit },
@@ -1446,6 +1543,41 @@ static Object *build_app(void)
                 Child, b_join = SimpleButton("_Betreten"),
             End,
         End,
+        SubWindow, win_unlock = WindowObject,
+            MUIA_Window_Title, "Amatrix - Passwort",
+            MUIA_Window_ID, MAKE_ID('A','M','X','U'),
+            WindowContents, VGroup,
+                Child, TextObject, MUIA_Text_Contents,
+                    "Die Amatrix-Daten (Anmeldung, Schlüssel) sind\nmit einem Passwort geschützt.", End,
+                Child, str_unlock = StringObject, StringFrame, MUIA_String_Secret, TRUE,
+                                    MUIA_CycleChain, TRUE, End,
+                Child, txt_unlock = TextObject, MUIA_Text_Contents, "", End,
+                Child, b_unlock = SimpleButton("_Entsperren"),
+            End,
+        End,
+
+        SubWindow, win_storepass = WindowObject,
+            MUIA_Window_Title, "Passwort für Amatrix-Daten",
+            MUIA_Window_ID, MAKE_ID('A','M','X','P'),
+            WindowContents, VGroup,
+                Child, TextObject, MUIA_Text_Contents,
+                    "Schützt Anmeldung, Schlüssel und Sitzungen in der\n"
+                    "Schublade neben dem Programm.  Ohne das Passwort sind\n"
+                    "sie nicht zu gebrauchen - es lässt sich nicht wiederherstellen.", End,
+                Child, ColGroup(2),
+                    Child, Label2("Passwort:"),
+                    Child, str_sp1 = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
+                    Child, Label2("Noch einmal:"),
+                    Child, str_sp2 = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
+                End,
+                Child, txt_sp = TextObject, MUIA_Text_Contents, "", End,
+                Child, HGroup,
+                    Child, b_sp_set = SimpleButton("_Festlegen"),
+                    Child, b_sp_del = SimpleButton("Schutz _entfernen"),
+                End,
+            End,
+        End,
+
         SubWindow, win_recovery = WindowObject,
             MUIA_Window_Title, "Sicherheitsschlüssel",
             MUIA_Window_ID, MAKE_ID('A','M','X','K'),
@@ -1475,6 +1607,17 @@ static Object *build_app(void)
     if (!a) return NULL;
     DoMethod(b_invite, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INVITE_GO);
     DoMethod(b_recovery, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_RECOVERY_GO);
+    DoMethod(b_unlock, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_UNLOCK_GO);
+    DoMethod(str_unlock, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2,
+             MUIM_Application_ReturnID, ID_UNLOCK_GO);
+    DoMethod(win_unlock, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, a, 2,
+             MUIM_Application_ReturnID, MUIV_Application_ReturnID_Quit);
+    DoMethod(b_sp_set, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_STOREPASS_SET);
+    DoMethod(str_sp2, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2,
+             MUIM_Application_ReturnID, ID_STOREPASS_SET);
+    DoMethod(b_sp_del, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_STOREPASS_DEL);
+    DoMethod(win_storepass, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_storepass, 3,
+             MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(str_recovery, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2,
              MUIM_Application_ReturnID, ID_RECOVERY_GO);
     DoMethod(win_recovery, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_recovery, 3,
@@ -1579,6 +1722,23 @@ static void handle_id(ULONG id)
     case ID_RECOVERY_GO:
         recovery_go(NULL);
         break;
+    case ID_UNLOCK_GO:
+        unlock_go(NULL);
+        break;
+    case ID_STOREPASS:
+        if (!my_user) break;
+        set(txt_sp, MUIA_Text_Contents, store_protected ? "Zurzeit mit Passwort geschützt." : "Zurzeit ohne Passwort.");
+        set(b_sp_del, MUIA_Disabled, !store_protected);
+        set(win_storepass, MUIA_Window_Open, TRUE);
+        set(win_storepass, MUIA_Window_ActiveObject, str_sp1);
+        break;
+    case ID_STOREPASS_SET:
+        storepass_go(0, NULL);
+        break;
+    case ID_STOREPASS_DEL:
+        storepass_go(1, NULL);
+        set(b_sp_del, MUIA_Disabled, TRUE);
+        break;
     case ID_JOIN_GO:
         join_selected();
         set(win_join, MUIA_Window_Open, FALSE);
@@ -1624,7 +1784,10 @@ int main(int argc, char **argv)
     if (args[1]) { free(cfg_user); cfg_user = strdup((char *)args[1]); }
 
     make_placeholders();
-    if (!(app = build_app())) {
+    /* right after another Amatrix quit, MUI may still be closing its classes:
+     * try again for a moment before giving up */
+    for (i = 0; i < 3 && !(app = build_app()); i++) Delay(100);
+    if (!app) {
         printf("Amatrix: MUI-Oberfläche konnte nicht erstellt werden (NList, BetterString installiert?)\n");
         CloseLibrary(MUIMasterBase);
         return 20;
@@ -1656,7 +1819,7 @@ int main(int argc, char **argv)
     free(imgs);
     free_rooms(rooms, n_rooms);
     amx_free_public_rooms(pub, n_pub);
-    free(my_user); free(cfg_server); free(cfg_user); free(pending_open); free(invite_room);
+    free(my_user); free(cfg_server); free(cfg_user); free(pending_open); free(invite_room); free(pending_password);
     if (rda) FreeArgs(rda);
     CloseLibrary(MUIMasterBase);
     return 0;

@@ -23,6 +23,7 @@ private Synapse started by the tests.
 | async | ✔ | ✔ | ✔ |
 | avatars | ✔ | ✔ | ✔ |
 | recovery | ✔ | ✔ | ✔ |
+| store_crypt | ✔ | ✔ | ✔ |
 
 ## Layout
 

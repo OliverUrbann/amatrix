@@ -84,6 +84,12 @@ class Amiga:
                 result = line[7:].strip()
         return rc, result
 
+    async def rexx_raw(self, lines, secs=60):
+        """Runs an ARexx script as written (e.g. 'address command ...')."""
+        with open(os.path.join(self.extra, "c.rexx"), "w", encoding="latin-1") as f:
+            f.write("/* */\n" + "\n".join(lines) + "\n")
+        return await self.go(secs)
+
     async def shot(self, name):
         """Screenshot of the Amiga screen, taken by the host (works even if the Amiga hangs)."""
         await asyncio.sleep(2)
@@ -122,6 +128,56 @@ async def upload(p, data, name):
     return r.content_uri
 
 
+async def store_part(ctx, amiga, online):
+    check = ctx.check
+    # passphrase for the Amatrix data: set it, restart, unlock
+    rc, _ = await amiga.rexx("STOREPASS Tresor 42")
+    check(rc == "0", "store passphrase command")
+    import glob
+
+    def encrypted():
+        f = glob.glob(os.path.join(amiga.extra, "Amatrix-*", "login.json"))
+        return f and open(f[0], encoding="latin-1").read().startswith("AMXE1 ")
+    end = time.time() + 120
+    while time.time() < end and not encrypted():
+        await asyncio.sleep(2)
+    check(encrypted(), "login.json in the drawer is encrypted")
+    await amiga.rexx_raw(["address command 'Avail >Extra:avail-before.txt'"])
+    await amiga.rexx("QUIT")
+    for _ in range(30):                      # until the old instance is really gone
+        await amiga.rexx_raw(["address command 'Status >Extra:status-now.txt'"])
+        pth = os.path.join(amiga.extra, "status-now.txt")
+        if os.path.exists(pth) and "Amatrix" not in open(pth, encoding="latin-1").read():
+            break
+        await asyncio.sleep(2)
+    await asyncio.sleep(3)
+    await amiga.rexx_raw(["address command 'Avail >Extra:avail-after.txt'",
+                          "address command 'Status >Extra:status-after.txt'",
+                          "if show('P', 'AMATRIX.1') then say 'port still there'"])
+    for f in ("avail-before.txt", "avail-after.txt", "status-after.txt", "res.txt"):
+        pth = os.path.join(amiga.extra, f)
+        if os.path.exists(pth):
+            for line in open(pth, encoding="latin-1").read().splitlines():
+                ctx.diag(f"{f}: {line}")
+    await amiga.rexx_raw(["address command 'Run >NIL: Extra:Amatrix >SYS:gui-out2.txt'"])
+    await asyncio.sleep(25)
+    await amiga.shot("12-unlock-window")
+    rc, st = await amiga.rexx("STATUS")
+    check("Passwort" in st, f"after a restart Amatrix asks for the passphrase ({st!r})")
+    rc, _ = await amiga.rexx("UNLOCK falsch")
+
+    async def wrong_done():
+        rc, r = await amiga.rexx("STATUS")
+        return r.startswith("Passwort") and r
+    await asyncio.sleep(20)
+    rc, st = await amiga.rexx("STATUS")
+    check(not st.startswith("Online"), "wrong passphrase: still locked")
+    rc, _ = await amiga.rexx("UNLOCK Tresor 42")
+    st = await amiga.until(online, 300)
+    check(st, f"right passphrase: online again with the saved login ({st})")
+
+
+
 async def scenario(ctx, amiga, srv, me):
     from nio import RoomCreateResponse
     check = ctx.check
@@ -136,6 +192,9 @@ async def scenario(ctx, amiga, srv, me):
     await amiga.shot("00-start")
     st = await amiga.until(online, 300)
     check(st, f"client online ({st})")
+    if os.environ.get("AMX_GUI_ONLY") == "store":
+        await store_part(ctx, amiga, online)
+        return
     await amiga.shot("01-online")
 
     # a direct chat and an encrypted group room with a picture, both invitations
@@ -356,6 +415,8 @@ async def scenario(ctx, amiga, srv, me):
         check(v, f"room list preview decrypted too ({v!r})")
         await amiga.shot("11-after-key")
         check(await rec.wait_signed(ctx, info, 120), "Element would show the Amiga device as verified")
+
+    await store_part(ctx, amiga, online)
 
     rc, _ = await amiga.rexx("NEWCHAT " + ctx.peer_user.user_id)
     check(rc == "0", "new chat with an existing partner opens the existing chat")
