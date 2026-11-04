@@ -159,6 +159,22 @@ int amx_mark_read(AmxClient *c, const char *room_id, const char *event_id);
 /* Sends m.text; encrypted if the room is.  event_id_out may be NULL. */
 int amx_send_text(AmxClient *c, const char *room_id, const char *body, char **event_id_out);
 
+/* ------------------------------------------------------------ recovery */
+
+/* The security key from Element ("EsTc 9xYz ...", spaces optional) or the
+ * security passphrase opens secret storage on the server.  With it we
+ *   - sign this device with the self-signing key: Element shows it as
+ *     verified (*verified = 1),
+ *   - keep the key backup's private key in the store (*backup = 1); from
+ *     then on amx_load_history() fetches the room's old keys from the backup.
+ * 0 if the key was right (even if one of the two was not possible), else -1. */
+int amx_recovery_unlock(AmxClient *c, const char *key_or_passphrase, int *verified, int *backup);
+
+/* Imports the backed-up keys of one room (and retries undecryptable events).
+ * Number of new keys, 0 if none or no backup key, -1 on error. */
+int amx_backup_room(AmxClient *c, const char *room_id);
+int amx_backup_available(AmxClient *c);
+
 /* ------------------------------------------------------------------ media */
 
 /* A picture (e.g. AmxRoomInfo.avatar_url) as size x size pixels, 0xAARRGGBB,

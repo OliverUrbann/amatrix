@@ -22,6 +22,7 @@ private Synapse started by the tests.
 | history | ✔ | ✔ | ✔ |
 | async | ✔ | ✔ | ✔ |
 | avatars | ✔ | ✔ | ✔ |
+| recovery | ✔ | ✔ | ✔ |
 
 ## Layout
 

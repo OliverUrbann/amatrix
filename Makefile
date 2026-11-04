@@ -15,7 +15,7 @@ AMISSL := third_party/amissl-sdk
 
 OLM_DEFS := -DOLMLIB_VERSION_MAJOR=3 -DOLMLIB_VERSION_MINOR=2 -DOLMLIB_VERSION_PATCH=16 -DOLM_STATIC_DEFINE
 INC      := -Icore/include -Icore/src -I$(CJSON) -I$(OLM)/include -Itests
-CORE_SRC := client.c async.c media.c keys.c crypto_recv.c crypto_send.c sync.c rooms.c roomstate.c messages.c \
+CORE_SRC := client.c async.c media.c recovery.c keys.c crypto_recv.c crypto_send.c sync.c rooms.c roomstate.c messages.c \
             canonjson.c http_sock.c net.c
 
 ifeq ($(TARGET),amiga)

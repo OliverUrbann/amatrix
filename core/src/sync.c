@@ -120,6 +120,13 @@ int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newe
         if (at_start) *at_start = 1;
         return 0;
     }
+    /* once per room and run: the room's keys from the key backup, so the
+     * history below can be decrypted */
+    if (amx_backup_available(c) && !cJSON_GetObjectItemCaseSensitive(c->bk_done, room_id)) {
+        if (!c->bk_done) c->bk_done = cJSON_CreateObject();
+        cJSON_AddTrueToObject(c->bk_done, room_id);
+        amx_backup_room(c, room_id);
+    }
     path = amx__malloc(strlen(esc) + (fesc ? strlen(fesc) : 0) + 80);
     sprintf(path, "/rooms/%s/messages?dir=b&limit=%d%s%s", esc, limit > 0 ? limit : 20,
             fesc ? "&from=" : "", fesc ? fesc : "");

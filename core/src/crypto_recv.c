@@ -34,7 +34,7 @@ void amx__add_group_session(AmxClient *c, const char *room, const char *sid, con
     g->s = s;
 }
 
-static GroupSess *find_group(AmxClient *c, const char *room_id, const char *session_id)
+GroupSess *amx__find_group(AmxClient *c, const char *room_id, const char *session_id)
 {
     int i;
     for (i = 0; i < c->n_grp; i++)
@@ -226,7 +226,7 @@ static void handle_room_key(AmxClient *c, const cJSON *payload, const char *send
         LOG(c, "m.room_key: unsupported or incomplete");
         return;
     }
-    if (find_group(c, room, sid)) { LOG(c, "m.room_key: already known"); return; }
+    if (amx__find_group(c, room, sid)) { LOG(c, "m.room_key: already known"); return; }
     s = amx__new_group_session();
     k = amx__strdup(key);
     if (olm_init_inbound_group_session(s, (uint8_t *)k, strlen(k)) == olm_error()) {
@@ -360,7 +360,7 @@ static int try_megolm(AmxClient *c, const char *room_id, const cJSON *ev, int re
         if (report) emit_undecryptable(c, room_id, ev, "unsupported algorithm", history);
         return 1;
     }
-    g = find_group(c, room_id, sid);
+    g = amx__find_group(c, room_id, sid);
     if (!g) {
         if (report) emit_undecryptable(c, room_id, ev, "no key", history);
         return 0;
