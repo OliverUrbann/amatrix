@@ -65,7 +65,8 @@ typedef struct {
     int count;                    /* LOAD_HISTORY: events delivered */
     int online;                   /* AMX_MSG_STATE */
     unsigned long *pixels;        /* AVATAR: size x size, 0xAARRGGBB (freed with the message) */
-    int verified, backup;         /* RECOVERY: device signed / backup key taken over */
+    int verified, backup;         /* RECOVERY: device signed / backup key taken
+                                     over; LOGIN: device verified */
     int size;
 } AmxMsg;
 

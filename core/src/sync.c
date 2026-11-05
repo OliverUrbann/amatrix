@@ -120,13 +120,6 @@ int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newe
         if (at_start) *at_start = 1;
         return 0;
     }
-    /* once per room and run: the room's keys from the key backup, so the
-     * history below can be decrypted */
-    if (amx_backup_available(c) && !cJSON_GetObjectItemCaseSensitive(c->bk_done, room_id)) {
-        if (!c->bk_done) c->bk_done = cJSON_CreateObject();
-        cJSON_AddTrueToObject(c->bk_done, room_id);
-        amx_backup_room(c, room_id);
-    }
     path = amx__malloc(strlen(esc) + (fesc ? strlen(fesc) : 0) + 80);
     sprintf(path, "/rooms/%s/messages?dir=b&limit=%d%s%s", esc, limit > 0 ? limit : 20,
             fesc ? "&from=" : "", fesc ? fesc : "");
@@ -136,6 +129,8 @@ int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newe
     free(path);
     if (st != 200 || !r) { cJSON_Delete(r); return -1; }
     LOG(c, "history %s: %d events", room_id, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(r, "chunk")));
+    /* keys we lack for this page: only those sessions from the key backup */
+    if (amx_backup_available(c)) amx__backup_for_events(c, room_id, cJSON_GetObjectItemCaseSensitive(r, "chunk"));
     cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(r, "chunk")) {
         LOG2(c, "  history event %s %s", amx__jstr(x, "type") ? amx__jstr(x, "type") : "?",
              amx__jstr(x, "event_id") ? amx__jstr(x, "event_id") : "?");

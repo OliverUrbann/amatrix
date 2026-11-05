@@ -319,7 +319,20 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
             a->backoff = 0;
             a->online = -1;               /* report the state after the first sync */
         }
-        post_result(a, c, r, r ? NULL : amx_user_id(a->c));
+        {
+            Out *o = new_out(AMX_MSG_RESULT);
+            if (o) {
+                o->m.cmd = AMX_CMD_LOGIN;
+                o->m.tag = c->tag;
+                o->m.status = r;
+                if (r) o->m.error = own(o, amx_error(a->c));
+                else {
+                    o->m.result = own(o, amx_user_id(a->c));
+                    o->m.verified = amx_device_verified(a->c) == 1;
+                }
+                put_out(a, o);
+            }
+        }
         if (!r) post_rooms(a, 1);        /* the saved list, before the first sync */
         return;
     case AMX_CMD_LOGOUT:

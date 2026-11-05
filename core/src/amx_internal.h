@@ -89,6 +89,7 @@ int   amx__save_olm_sessions(AmxClient *c);
 int   amx__save_group_sessions(AmxClient *c);
 char *amx__store_decode(AmxClient *c, const char *name, char *file);
 char *amx__store_encode(AmxClient *c, const char *name, const char *data);
+int   amx__backup_for_events(AmxClient *c, const char *room_id, const cJSON *events);
 GroupSess *amx__find_group(AmxClient *c, const char *room_id, const char *session_id);
 OlmSession *amx__new_olm_session(void);
 OlmInboundGroupSession *amx__new_group_session(void);

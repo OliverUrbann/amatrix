@@ -39,6 +39,7 @@ int main(int argc, char **argv)
     if (a.n_extra < 2) { printf("need RECOVERYKEY PASSPHRASE\n"); return 10; }
     c = mxt_client(&a);
     MXT_OK(amx_backup_available(c) == 0, "no backup key before unlocking");
+    MXT_OK(amx_device_verified(c) == 0, "not verified before unlocking");
     MXT_OK(mxt_sync_until(c, have_room, c, 300), "room of the other device visible");
 
     /* the peer sets secret storage up last; until then: "no secret storage" */
@@ -49,6 +50,7 @@ int main(int argc, char **argv)
     }
     MXT_OK(r == 0, "unlocked with the recovery key (%s)", r ? amx_error(c) : "ok");
     MXT_OK(verified, "own device signed (verified)");
+    MXT_OK(amx_device_verified(c) == 1, "server confirms the signature (amx_device_verified)");
     MXT_OK(backup && amx_backup_available(c), "backup key taken over");
 
     MXT_OK(amx_recovery_unlock(c, "EsTc 1111 2222 3333 4444 5555 6666 7777 8888 9999 aaaa bbbb", NULL, NULL) == -1 &&
@@ -87,6 +89,7 @@ int main(int argc, char **argv)
     amx_load_history(c, room, 20, 1, NULL);
     MXT_OK(mxt_find(AMX_EV_MESSAGE, room, NULL, msgs[0]) != NULL, "after a restart still readable");
     MXT_OK(amx_backup_available(c), "backup key kept in the store");
+    MXT_OK(amx_device_verified(c) == 1, "still verified after a restart");
 
     free(room);
     amx_client_free(c);

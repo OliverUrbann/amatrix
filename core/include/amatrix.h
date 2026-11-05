@@ -183,6 +183,11 @@ int amx_send_text(AmxClient *c, const char *room_id, const char *body, char **ev
  * 0 if the key was right (even if one of the two was not possible), else -1. */
 int amx_recovery_unlock(AmxClient *c, const char *key_or_passphrase, int *verified, int *backup);
 
+/* 1 = this device carries a valid signature of our self-signing key
+ * (verified, as after amx_recovery_unlock), 0 = not, -1 = error.  Asks the
+ * server, so it survives restarts. */
+int amx_device_verified(AmxClient *c);
+
 /* Imports the backed-up keys of one room (and retries undecryptable events).
  * Number of new keys, 0 if none or no backup key, -1 on error. */
 int amx_backup_room(AmxClient *c, const char *room_id);

@@ -128,7 +128,7 @@ async def upload(p, data, name):
     return r.content_uri
 
 
-async def store_part(ctx, amiga, online):
+async def store_part(ctx, amiga, online, was_verified=False):
     check = ctx.check
     # passphrase for the Amatrix data: set it, restart, unlock
     rc, _ = await amiga.rexx("STOREPASS Tresor 42")
@@ -175,6 +175,8 @@ async def store_part(ctx, amiga, online):
     rc, _ = await amiga.rexx("UNLOCK Tresor 42")
     st = await amiga.until(online, 300)
     check(st, f"right passphrase: online again with the saved login ({st})")
+    if was_verified:
+        check("verifiziert" in (st or ""), f"after a restart still verified ({st!r})")
 
 
 
@@ -251,6 +253,35 @@ async def scenario(ctx, amiga, srv, me):
     check(v, f"room list, second line of Alice: newest message ({v!r})")
     v = await preview("Kaffeeklatsch", "Alice: Wer hat Kuchen mitgebracht?")
     check(v, f"second line of a group: sender and message ({v!r})")
+
+    # a long message (wrapped over several lines), then close and reopen the
+    # window a few times: freeing the lines must not crash (seen on the Vampire)
+    long_msg = ("Das ist eine absichtlich sehr lange Nachricht, damit NList sie über mehrere "
+                "Zeilen umbricht - genau dabei wurde beim Schließen des Fensters Speicher doppelt "
+                "freigegeben. Noch ein paar Worte mehr, damit es auch im breiten Fenster umbricht.")
+    n_before = await lines_dm()
+    await p.send(dm, long_msg)
+
+    async def got_long():
+        v = await lines_dm()
+        return v and n_before and v > n_before
+    check(await amiga.until(got_long, 120), "long message shown (wrapped)")
+    await amiga.shot("04b-long-message")
+    ok = True
+    for _ in range(3):
+        rc1, _ = await amiga.rexx("CLOSECHAT Alice")
+        await asyncio.sleep(4)
+        rc2, _ = await amiga.rexx("OPENCHAT Alice")
+        await asyncio.sleep(10)
+        ok &= rc1 == "0" and rc2 == "0"
+    rc, st = await amiga.rexx("STATUS")
+    check(ok and st.startswith("Online"), f"closed and reopened the chat 3 times, still running ({st!r})")
+
+    async def idle_status():
+        rc, r = await amiga.rexx("CHATSTATUS Alice")
+        return r == "Ende-zu-Ende-verschlüsselt" and r
+    v = await amiga.until(idle_status, 60)
+    check(v, f"status line of the chat window when idle ({v!r})")
     await amiga.shot("04-chat-reply")
 
     rc, _ = await amiga.rexx("OPENCHAT Kaffeeklatsch")
@@ -416,7 +447,7 @@ async def scenario(ctx, amiga, srv, me):
         await amiga.shot("11-after-key")
         check(await rec.wait_signed(ctx, info, 120), "Element would show the Amiga device as verified")
 
-    await store_part(ctx, amiga, online)
+    await store_part(ctx, amiga, online, bool(info))
 
     rc, _ = await amiga.rexx("NEWCHAT " + ctx.peer_user.user_id)
     check(rc == "0", "new chat with an existing partner opens the existing chat")

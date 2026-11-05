@@ -292,6 +292,38 @@ out:
 }
 
 /* the key backup: version on the server and its public key */
+/* 1 if the server has a signature of our self-signing key on this device's
+ * keys (i.e. we are verified, also after a restart), 0 if not, -1 on error. */
+int amx_device_verified(AmxClient *c)
+{
+    cJSON *req, *res;
+    const cJSON *ssk, *dev;
+    char kid[96];
+    long st;
+    int r = 0;
+
+    if (!c->user_id || !c->device_id) return -1;
+    req = cJSON_CreateObject();
+    cJSON_AddArrayToObject(cJSON_AddObjectToObject(req, "device_keys"), c->user_id);
+    res = amx__api(c, "POST", "/keys/query", req, 60, &st);
+    cJSON_Delete(req);
+    if (st != 200 || !res) { cJSON_Delete(res); return -1; }
+    ssk = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(
+              cJSON_GetObjectItemCaseSensitive(res, "self_signing_keys"), c->user_id), "keys");
+    dev = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(
+              cJSON_GetObjectItemCaseSensitive(res, "device_keys"), c->user_id), c->device_id);
+    if (ssk && ssk->child && cJSON_IsString(ssk->child) && dev
+        && strlen(ssk->child->valuestring) < sizeof kid - 10) {
+        cJSON *d = cJSON_Duplicate(dev, 1);
+        cJSON_DeleteItemFromObjectCaseSensitive(d, "unsigned");
+        sprintf(kid, "ed25519:%s", ssk->child->valuestring);
+        r = amx__verify_signed(c, d, c->user_id, kid, ssk->child->valuestring);
+        cJSON_Delete(d);
+    }
+    cJSON_Delete(res);
+    return r;
+}
+
 static cJSON *backup_version(AmxClient *c)
 {
     long st;
@@ -462,6 +494,80 @@ static int import_one(AmxClient *c, OlmPkDecryption *d, const char *room, const 
                            amx__jstr(cJSON_GetObjectItemCaseSensitive(p, "sender_claimed_keys"), "ed25519"), s);
     cJSON_Delete(p);
     return 1;
+}
+
+/* a PkDecryption for the backup key, or NULL (error set) */
+static OlmPkDecryption *backup_decryption(AmxClient *c)
+{
+    unsigned char priv[40];
+    OlmPkDecryption *d;
+    char *pub;
+    if (load_backup(c)) return NULL;
+    if (!amx__jstr(c->backup, "version") ||
+        b64dec(amx__jstr(c->backup, "key") ? amx__jstr(c->backup, "key") : "", priv, sizeof priv) != 32) {
+        amx__fail(c, "backup.json damaged");
+        return NULL;
+    }
+    d = olm_pk_decryption(amx__malloc(olm_pk_decryption_size()));
+    pub = amx__malloc(olm_pk_key_length() + 1);
+    if (olm_pk_key_from_private(d, pub, olm_pk_key_length(), priv, 32) == olm_error()) {
+        olm_clear_pk_decryption(d); free(d); d = NULL;
+        amx__fail(c, "backup key unusable");
+    }
+    OPENSSL_cleanse(priv, sizeof priv);
+    free(pub);
+    return d;
+}
+
+/* The sessions the encrypted events in `events` need and we do not have:
+ * fetched one by one from the backup (a room can have thousands of backed-up
+ * keys; a page of history needs a few).  Each session is asked for once per
+ * run.  Number imported. */
+int amx__backup_for_events(AmxClient *c, const char *room_id, const cJSON *events)
+{
+    OlmPkDecryption *d = NULL;
+    const cJSON *e;
+    char *resc = NULL, *vesc = NULL;
+    int n = 0, asked = 0;
+
+    cJSON_ArrayForEach(e, events) {
+        const cJSON *ct = cJSON_GetObjectItemCaseSensitive(e, "content");
+        const char *sid = amx__jstr(ct, "session_id"), *typ = amx__jstr(e, "type");
+        char *key, *sesc, *path;
+        cJSON *r;
+        long st;
+        if (!typ || strcmp(typ, "m.room.encrypted") || !sid || amx__find_group(c, room_id, sid)) continue;
+        key = amx__malloc(strlen(room_id) + strlen(sid) + 2);
+        sprintf(key, "%s|%s", room_id, sid);
+        if (cJSON_GetObjectItemCaseSensitive(c->bk_done, key)) { free(key); continue; }
+        if (!c->bk_done) c->bk_done = cJSON_CreateObject();
+        cJSON_AddTrueToObject(c->bk_done, key);
+        free(key);
+        if (!d) {
+            if (!(d = backup_decryption(c))) return -1;
+            resc = http_escape(room_id);
+            vesc = http_escape(amx__jstr(c->backup, "version"));
+        }
+        sesc = http_escape(sid);
+        path = amx__malloc(strlen(resc) + strlen(sesc) + strlen(vesc) + 40);
+        sprintf(path, "/room_keys/keys/%s/%s?version=%s", resc, sesc, vesc);
+        r = amx__api(c, "GET", path, NULL, 60, &st);
+        free(path);
+        free(sesc);
+        asked++;
+        if (st == 200 && r && import_one(c, d, room_id, sid, cJSON_GetObjectItemCaseSensitive(r, "session_data")) == 1)
+            n++;
+        cJSON_Delete(r);
+    }
+    if (d) { olm_clear_pk_decryption(d); free(d); }
+    free(resc);
+    free(vesc);
+    if (n) {
+        amx__save_group_sessions(c);
+        amx__retry_pending(c);
+    }
+    if (asked) LOG(c, "backup: %d of %d missing room keys found for %s", n, asked, room_id);
+    return n;
 }
 
 int amx_backup_room(AmxClient *c, const char *room_id)

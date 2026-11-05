@@ -14,7 +14,8 @@
  * Without arguments the last account is used (the login is kept in the
  * store, the password is never saved); the first time a login window opens.
  * ARexx port AMATRIX.1: OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
- * CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS, QUIT (see rexx_cmds below) - used by the emulator tests.
+ * CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS,
+ * CHATSTATUS, CLOSECHAT, QUIT (see rexx_cmds below) - used by the emulator tests.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,6 +79,13 @@ typedef struct ChatWin {
     char *marked;                 /* event the read marker was last sent for */
     int mark_pending;             /* marker sent, room list not refreshed since */
     char *title;
+    void **all;                   /* every Line we created, each once: NList returns
+                                     the same entry for each wrapped part, so the
+                                     list itself cannot tell us what to free */
+    int n_all, cap_all;
+    Object *busy;                 /* status text in the toolbar */
+    int sending, inviting, loading_older;
+    char err[160];                /* last error, shown until the next action */
 } ChatWin;
 
 /* a picture for the room list: raw ARGB that MUI 5 draws itself (ESC A) */
@@ -175,6 +183,45 @@ static ChatWin *chat_by_room(const char *id)
     ChatWin *w;
     for (w = chats; w; w = w->next) if (!strcmp(w->room_id, id)) return w;
     return NULL;
+}
+
+/* the status text in a chat window's toolbar, and the busy pointer while
+ * something runs (the window stays usable) */
+static void update_status(ChatWin *w)
+{
+    static char t[200];
+    const Room *r = room_by_id(w->room_id);
+    struct Window *iw;
+    int busy = w->loading || w->sending || w->inviting;
+    if (w->loading) snprintf(t, sizeof t, w->loading_older ? "Lade ältere Nachrichten ..." : "Lade Verlauf ...");
+    else if (w->sending) snprintf(t, sizeof t, w->sending > 1 ? "Sende %d Nachrichten ..." : "Sende ...", w->sending);
+    else if (w->inviting) snprintf(t, sizeof t, "Lade ein ...");
+    else if (w->err[0]) snprintf(t, sizeof t, "\33b%s", w->err);
+    else snprintf(t, sizeof t, "%s", !r ? "" : r->encrypted ? "Ende-zu-Ende-verschlüsselt" : "nicht verschlüsselt");
+    set(w->busy, MUIA_Text_Contents, t);
+    if ((iw = (struct Window *)xget(w->win, MUIA_Window_Window)) != NULL)
+        SetWindowPointer(iw, WA_BusyPointer, busy, WA_PointerDelay, busy, TAG_DONE);
+}
+
+/* results come back in the order the commands were sent: which room each
+ * pending send/invite belongs to */
+static char *fifo_send[64], *fifo_invite[16];
+static int n_send, n_invite;
+
+static void fifo_push(char **q, int *n, int max, const char *room)
+{
+    if (*n < max) q[(*n)++] = strdup(room);
+}
+
+static char *fifo_pop(char **q, int *n)
+{
+    char *r;
+    int i;
+    if (!*n) return NULL;
+    r = q[0];
+    for (i = 1; i < *n; i++) q[i - 1] = q[i];
+    (*n)--;
+    return r;
 }
 
 /* config: PROGDIR:Amatrix.prefs, two lines (server, user) */
@@ -461,7 +508,7 @@ static void update_rooms(const AmxMsg *m)
     set(lst_rooms, MUIA_List_Quiet, FALSE);
     free(active);
     request_avatars();
-    for (w = chats; w; w = w->next) w->mark_pending = 0;
+    for (w = chats; w; w = w->next) { w->mark_pending = 0; update_status(w); }
     for (w = chats; w; w = w->next) {      /* window titles follow renames */
         Room *r = room_by_id(w->room_id);
         if (r && (!w->title || strcmp(w->title, r->name))) {
@@ -528,6 +575,10 @@ static void chat_send(ChatWin *w)
     if (!text || !*text) return;
     u = amx_from_local(text);
     amx_async_send_text(A, w->room_id, u, TAG_SEND);
+    fifo_push(fifo_send, &n_send, 64, w->room_id);
+    w->sending++;
+    w->err[0] = 0;
+    update_status(w);
     free(u);
     set(w->input, MUIA_String_Contents, "");
     set(w->win, MUIA_Window_ActiveObject, w->input);
@@ -547,8 +598,11 @@ HOOKPROTONH(chat_older_func, LONG, Object *obj, ULONG *param)
     (void)obj;
     if (!w->loading && !w->at_start) {
         w->loading = 1;
+        w->loading_older = 1;
+        w->err[0] = 0;
         set(w->older, MUIA_Disabled, TRUE);
         amx_async_load_history(A, w->room_id, OLDER_PAGE, 0, TAG_HIST);
+        update_status(w);
     }
     return 0;
 }
@@ -624,7 +678,11 @@ static void open_chat(const char *room_id)
             Child, HGroup,                          /* toolbar */
                 Child, w->older = icon_button(&icon_up, OLDER_HELP),
                 Child, w->invite = icon_button(&icon_invite, INVITE_HELP),
-                Child, HSpace(0),
+                Child, w->busy = TextObject,
+                    MUIA_Text_Contents, "",
+                    MUIA_Text_PreParse, "\33l",
+                    MUIA_Weight, 100,
+                End,
             End,
             Child, NListviewObject,
                 MUIA_NListview_NList, w->list = NListObject,
@@ -659,6 +717,7 @@ static void open_chat(const char *room_id)
     w->loading = 1;
     set(w->older, MUIA_Disabled, TRUE);
     amx_async_load_history(A, room_id, FIRST_PAGE, 1, TAG_HIST);
+    update_status(w);
 }
 
 static void close_chat(ChatWin *w)
@@ -667,17 +726,11 @@ static void close_chat(ChatWin *w)
     int i;
     for (p = &chats; *p; p = &(*p)->next) if (*p == w) { *p = w->next; break; }
     set(w->win, MUIA_Window_Open, FALSE);
-    {   /* our entries: take them out of the list, then free them */
-        LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k;
-        for (k = 0; k < n; k++) {
-            void *l = NULL;
-            DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
-            free_line(l);
-        }
-        DoMethod(w->list, MUIM_NList_Clear);
-    }
+    DoMethod(w->list, MUIM_NList_Clear);
     DoMethod(app, OM_REMMEMBER, w->win);
     MUI_DisposeObject(w->win);
+    for (i = 0; i < w->n_all; i++) free_line(w->all[i]);    /* each exactly once */
+    free(w->all);
     for (i = 0; i < w->n_seen; i++) free(w->seen[i]);
     free(w->seen);
     free(w->room_id); free(w->last_event); free(w->marked); free(w->title);
@@ -753,6 +806,17 @@ static char *format_event(const AmxEvent *e)
 
 
 /* inserts text (split at line breaks) at pos (entry index, or Top/Bottom) */
+static void remember_line(ChatWin *w, void *l)
+{
+    if (w->n_all == w->cap_all) {
+        void **t = realloc(w->all, sizeof *t * (w->cap_all ? w->cap_all * 2 : 128));
+        if (!t) return;
+        w->all = t;
+        w->cap_all = w->cap_all ? w->cap_all * 2 : 128;
+    }
+    w->all[w->n_all++] = l;
+}
+
 static void insert_text(ChatWin *w, const char *eid, const char *text, LONG pos, int undec)
 {
     const char *p = text, *nl;
@@ -765,6 +829,7 @@ static void insert_text(ChatWin *w, const char *eid, const char *text, LONG pos,
     } while (p);
     for (i = 0; i < n; i++) {
         if (!ls[i]) continue;
+        remember_line(w, ls[i]);
         DoMethod(w->list, MUIM_NList_InsertSingleWrap, ls[i],
                  pos == MUIV_NList_Insert_Bottom ? pos : pos == MUIV_NList_Insert_Top ? i : pos + i,
                  WRAPCOL0, ALIGN_LEFT);
@@ -780,13 +845,18 @@ static int replace_undecryptable(ChatWin *w, const AmxEvent *e, const char *text
     LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k;
     for (k = 0; k < n; k++) {
         Line *l = NULL;
+        char *t, *q;
         DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
         if (!l || !l->undec || !l->eid || strcmp(l->eid, e->event_id)) continue;
-        DoMethod(w->list, MUIM_NList_Remove, k);
-        free_line(l);
-        w->lines--;
+        /* change the entry in place (nothing is freed while NList uses it);
+         * line breaks become "  " in this one entry */
+        if (!(t = strdup(text))) return 0;
+        for (q = t; *q; q++) if (*q == '\n') *q = ' ';
+        free(l->text);
+        l->text = t;
+        l->undec = 0;
         w->n_undec--;
-        insert_text(w, e->event_id, text, k, 0);
+        DoMethod(w->list, MUIM_NList_ReplaceSingle, l, k, WRAPCOL0, ALIGN_LEFT);
         return 1;
     }
     return 0;
@@ -850,6 +920,9 @@ static void history_done(const AmxMsg *m)
             m->at_start);
     if (!w) return;
     w->loading = 0;
+    w->loading_older = 0;
+    if (m->status) snprintf(w->err, sizeof w->err, "Verlauf: %.140s", m->error ? m->error : "Fehler");
+    update_status(w);
     w->at_start = m->status == 0 && m->at_start;
     set(w->older, MUIA_Disabled, w->at_start);
     if (w->at_start) set(w->older, MUIA_ShortHelp, OLDER_HELP_END);
@@ -1017,6 +1090,11 @@ static void invite_go(void)
     if (!t || !*t || !invite_room || !A) return;
     uid = full_user_id(t);
     amx_async_invite(A, invite_room, uid, TAG_INVITE);
+    fifo_push(fifo_invite, &n_invite, 16, invite_room);
+    {
+        ChatWin *w = chat_by_room(invite_room);
+        if (w) { w->inviting++; w->err[0] = 0; update_status(w); }
+    }
     set_status("%s wird eingeladen ...", uid, NULL);
     free(uid);
     set(win_invite, MUIA_Window_Open, FALSE);
@@ -1088,6 +1166,7 @@ static void handle_result(const AmxMsg *m)
         }
         free(my_user);
         my_user = strdup(m->result);
+        verified = m->verified;
         save_prefs();
         set(win_login, MUIA_Window_Open, FALSE);
         set_status("Verbinde als %s ...", my_user, NULL);
@@ -1095,6 +1174,7 @@ static void handle_result(const AmxMsg *m)
     case TAG_LOGOUT:
         store_protected = 0;
         free(my_user); my_user = NULL;
+        verified = 0;
         while (chats) close_chat(chats);
         show_login("Abgemeldet.");
         set_status("Abgemeldet", NULL, NULL);
@@ -1155,17 +1235,33 @@ static void handle_result(const AmxMsg *m)
         for (w = chats; w; w = w->next) amx_async_load_history(A, w->room_id, FIRST_PAGE, 1, TAG_HIST);
         break;
     }
-    case TAG_INVITE:
-        if (m->status)
+    case TAG_INVITE: {
+        char *room = fifo_pop(fifo_invite, &n_invite);
+        ChatWin *w = room ? chat_by_room(room) : NULL;
+        if (w) {
+            if (w->inviting) w->inviting--;
+            if (m->status) snprintf(w->err, sizeof w->err, "Einladen fehlgeschlagen: %.120s", m->error ? m->error : "");
+            update_status(w);
+        } else if (m->status)
             MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
                         (STRPTR)"Einladen hat nicht geklappt:\n%s", (ULONG)(m->error ? m->error : ""));
-        set_status("Online - %s", my_user, NULL);
+        free(room);
+        set_status(verified ? "Online - %s (verifiziert)" : "Online - %s", my_user, NULL);
         break;
-    case TAG_SEND:
-        if (m->status)
+    }
+    case TAG_SEND: {
+        char *room = fifo_pop(fifo_send, &n_send);
+        ChatWin *w = room ? chat_by_room(room) : NULL;
+        if (w) {
+            if (w->sending) w->sending--;
+            if (m->status) snprintf(w->err, sizeof w->err, "Senden fehlgeschlagen: %.120s", m->error ? m->error : "");
+            update_status(w);
+        } else if (m->status)
             MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
                         (STRPTR)"Nachricht nicht gesendet:\n%s", (ULONG)(m->error ? m->error : ""));
+        free(room);
         break;
+    }
     case TAG_HIST:
         history_done(m);
         break;
@@ -1402,6 +1498,28 @@ HOOKPROTONH(rx_storepass_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_storepass_hook, rx_storepass_func);
 
+HOOKPROTONH(rx_chatstatus_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    rexx_result((char *)xget(w->busy, MUIA_Text_Contents));
+    return 0;
+}
+MakeStaticHook(rx_chatstatus_hook, rx_chatstatus_func);
+
+HOOKPROTONH(rx_closechat_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    w->close_req = 1;              /* as the close gadget does */
+    return 0;
+}
+MakeStaticHook(rx_closechat_hook, rx_closechat_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
@@ -1417,6 +1535,8 @@ static struct MUI_Command rexx_cmds[] = {
     { "ROOMLINE",  "ROOM/F",          1, &rx_roomline_hook, { 0 } },
     { "RECOVERY",  "KEY/F",           1, &rx_recovery_hook, { 0 } },
     { "UNLOCK",    "PASS/F",          1, &rx_unlock_hook,   { 0 } },
+    { "CHATSTATUS","ROOM/F",          1, &rx_chatstatus_hook, { 0 } },
+    { "CLOSECHAT", "ROOM/F",          1, &rx_closechat_hook, { 0 } },
     { "STOREPASS", "PASS/F",          1, &rx_storepass_hook, { 0 } },
     { "FIRSTLINE", "ROOM/F",          1, &rx_first_hook,    { 0 } },
     { NULL,        NULL,              0, NULL,              { 0 } }
