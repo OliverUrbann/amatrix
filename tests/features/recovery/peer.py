@@ -13,6 +13,8 @@ PASSPHRASE = "Amiga rockt seit 1985"
 SALT = "amatrix-test-salt"
 ITERATIONS = 20000          # Element uses 500000; kept small for the emulated 68030
 MESSAGES = [f"aus der Zeit vor Amatrix {i}" for i in range(1, 6)]
+LIVE = ["live vom anderen Geraet", "live vom anderen Geraet, neuer Raum",
+        "nur mit Schluesselanfrage lesbar"]
 
 B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -190,7 +192,7 @@ async def element_device(ctx, me, room_name="Vor meiner Zeit"):
     ctx.check(ok, "secret storage written (key, 4 secrets, default key)")
     ctx.diag(f"recovery key {RECOVERY_KEY}")
 
-    return {"api": api, "me": me, "client_dev": client_dev, "room": room,
+    return {"api": api, "me": me, "client_dev": client_dev, "room": room, "p": p,
             "ssk_pub": signers["self_signing"].public_key}
 
 
@@ -222,3 +224,25 @@ async def peer(ctx):
     if info:
         ctx.check(await wait_signed(ctx, info, 240 * ctx.scale),
                   "client device signed by the self-signing key (verified, as Element sees it)")
+        # like the phone after verification: new messages of our other device,
+        # with the key shared normally (old room and a new one)
+        p = info["p"]
+        # first one the client gets no key for: it has to ask us (key request)
+        room3 = await p.create_room(encrypted=True, name="Nur auf Anfrage")
+        await p.send(room3, LIVE[2])
+        p.c.unblacklist_device(info["client_dev"])
+        p.c.verify_device(info["client_dev"])
+        await p.send(info["room"], LIVE[0])
+        room2 = await p.create_room(encrypted=True, name="Vom Handy")
+        await p.send(room2, LIVE[1])
+        ctx.check(True, "live messages of the other device sent")
+        # keep syncing, so key requests of the client are answered (nio shares
+        # with our own verified devices, like Element)
+        end = time.time() + 90 * ctx.scale
+        while time.time() < end:
+            await p.c.sync(timeout=1000)
+            if p.c.should_query_keys:
+                await p.c.keys_query()
+            if p.c.should_claim_keys:
+                await p.c.keys_claim(p.c.get_users_for_key_claiming())
+            await p.c.send_to_device_messages()

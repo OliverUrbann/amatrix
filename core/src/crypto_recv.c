@@ -249,6 +249,57 @@ static void handle_room_key(AmxClient *c, const cJSON *payload, const char *send
     amx__emit(c, &ev);
 }
 
+/* m.forwarded_room_key: a room key one of OUR other devices sends on our
+ * request (Element does this for its own verified devices).  Accepted only
+ * from our own user and only for sessions we asked for. */
+static void handle_forwarded_key(AmxClient *c, const cJSON *payload, const char *sender)
+{
+    const cJSON *ct = cJSON_GetObjectItemCaseSensitive(payload, "content");
+    const char *alg = amx__jstr(ct, "algorithm"), *room = amx__jstr(ct, "room_id"),
+               *sid = amx__jstr(ct, "session_id"), *key = amx__jstr(ct, "session_key"),
+               *orig = amx__jstr(ct, "sender_key");
+    OlmInboundGroupSession *s;
+    char *k, idbuf[128], *rk;
+    size_t n;
+    int asked;
+    AmxEvent ev;
+
+    if (!sender || !c->user_id || strcmp(sender, c->user_id)) {
+        LOG(c, "forwarded room key from another user, ignored");
+        return;
+    }
+    if (!alg || strcmp(alg, MEGOLM_ALG) || !room || !sid || !key || !orig) {
+        LOG(c, "forwarded room key: unsupported or incomplete");
+        return;
+    }
+    rk = amx__malloc(strlen(room) + strlen(sid) + 2);
+    sprintf(rk, "%s|%s", room, sid);
+    asked = cJSON_GetObjectItemCaseSensitive(c->kreq, rk) != NULL;
+    free(rk);
+    if (!asked) { LOG(c, "forwarded room key we did not ask for, ignored"); return; }
+    if (amx__find_group(c, room, sid)) return;
+    s = amx__new_group_session();
+    k = amx__strdup(key);
+    if (olm_import_inbound_group_session(s, (uint8_t *)k, strlen(k)) == olm_error()) {
+        LOG(c, "forwarded room key: %s", olm_inbound_group_session_last_error(s));
+        free(k); free(s);
+        return;
+    }
+    free(k);
+    n = olm_inbound_group_session_id(s, (uint8_t *)idbuf, sizeof idbuf - 1);
+    idbuf[n == olm_error() ? 0 : n] = 0;
+    if (strcmp(idbuf, sid)) { LOG(c, "forwarded room key: session id mismatch"); free(s); return; }
+    amx__add_group_session(c, room, sid, orig, amx__jstr(ct, "sender_claimed_ed25519_key"), s);
+    amx__save_group_sessions(c);
+    LOG(c, "got forwarded room key for %s (session %.12s...)", room, sid);
+    memset(&ev, 0, sizeof ev);
+    ev.type = AMX_EV_ROOM_KEY;
+    ev.room_id = room;
+    ev.sender = sender;
+    ev.encrypted = 1;
+    amx__emit(c, &ev);
+}
+
 void amx__handle_to_device(AmxClient *c, const cJSON *ev)
 {
     const char *type = amx__jstr(ev, "type"), *sender = amx__jstr(ev, "sender");
@@ -285,6 +336,8 @@ void amx__handle_to_device(AmxClient *c, const cJSON *ev)
     if (ptype && !strcmp(ptype, "m.room_key"))
         handle_room_key(c, payload, sender, sk,
                         amx__jstr(cJSON_GetObjectItemCaseSensitive(payload, "keys"), "ed25519"));
+    else if (ptype && !strcmp(ptype, "m.forwarded_room_key"))
+        handle_forwarded_key(c, payload, sender);
     cJSON_Delete(payload);
 }
 
@@ -454,4 +507,72 @@ void amx__retry_pending(AmxClient *c)
             cJSON_Delete(cJSON_DetachItemViaPointer(c->pending, e));
         e = next;
     }
+}
+
+/* Sends m.room_key_request for one session to all our other devices. */
+static int request_key(AmxClient *c, const char *room, const char *sid, const char *sender_key)
+{
+    cJSON *req, *ct, *body, *res;
+    char *txn, *path, rid[40];
+    sprintf(rid, "amxkr%lu", ++c->txn);
+    ct = cJSON_CreateObject();
+    cJSON_AddStringToObject(ct, "action", "request");
+    cJSON_AddStringToObject(ct, "request_id", rid);
+    cJSON_AddStringToObject(ct, "requesting_device_id", c->device_id);
+    body = cJSON_AddObjectToObject(ct, "body");
+    cJSON_AddStringToObject(body, "algorithm", MEGOLM_ALG);
+    cJSON_AddStringToObject(body, "room_id", room);
+    cJSON_AddStringToObject(body, "session_id", sid);
+    if (sender_key) cJSON_AddStringToObject(body, "sender_key", sender_key);
+    req = cJSON_CreateObject();
+    cJSON_AddItemToObject(cJSON_AddObjectToObject(cJSON_AddObjectToObject(req, "messages"), c->user_id), "*", ct);
+    txn = amx__txn(c);
+    path = amx__malloc(strlen(txn) + 48);
+    sprintf(path, "/sendToDevice/m.room_key_request/%s", txn);
+    res = amx__api_ok(c, "PUT", path, req);
+    cJSON_Delete(req);
+    free(path); free(txn);
+    if (!res) return -1;
+    cJSON_Delete(res);
+    LOG(c, "asked our other devices for room key %s (session %.12s...)", room, sid);
+    return 0;
+}
+
+void amx__fetch_missing_keys(AmxClient *c)
+{
+    cJSON *copy, *e, *byroom, *r;
+    int sent = 0;
+    if (!c->pending || !cJSON_GetArraySize(c->pending) || !c->device_id) return;
+    copy = cJSON_Duplicate(c->pending, 1);
+
+    /* the key backup first (no other device needed) */
+    if (amx_backup_available(c)) {
+        byroom = cJSON_CreateObject();
+        cJSON_ArrayForEach(e, copy) {
+            const char *room = amx__jstr(e, "_room_id");
+            cJSON *arr;
+            if (!room) continue;
+            if (!(arr = cJSON_GetObjectItemCaseSensitive(byroom, room))) arr = cJSON_AddArrayToObject(byroom, room);
+            cJSON_AddItemReferenceToArray(arr, e);
+        }
+        cJSON_ArrayForEach(r, byroom) amx__backup_for_events(c, r->string, r);
+        cJSON_Delete(byroom);
+    }
+
+    /* then our other devices (Element answers its own verified devices) */
+    if (!c->kreq) c->kreq = cJSON_CreateObject();
+    cJSON_ArrayForEach(e, copy) {
+        const cJSON *ct = cJSON_GetObjectItemCaseSensitive(e, "content");
+        const char *room = amx__jstr(e, "_room_id"), *sid = amx__jstr(ct, "session_id");
+        char *k;
+        if (!room || !sid || amx__find_group(c, room, sid) || sent >= 20) continue;
+        k = amx__malloc(strlen(room) + strlen(sid) + 2);
+        sprintf(k, "%s|%s", room, sid);
+        if (!cJSON_GetObjectItemCaseSensitive(c->kreq, k)) {
+            cJSON_AddTrueToObject(c->kreq, k);
+            if (request_key(c, room, sid, amx__jstr(ct, "sender_key")) == 0) sent++;
+        }
+        free(k);
+    }
+    cJSON_Delete(copy);
 }

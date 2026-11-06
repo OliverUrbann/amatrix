@@ -161,10 +161,15 @@ void amx__room_note_message(AmxClient *c, const AmxEvent *ev)
     char body[124];
     const char *b;
     size_t n;
-    if (ev->history || !ev->room_id || (ev->type != AMX_EV_MESSAGE && ev->type != AMX_EV_UNDECRYPTABLE)) return;
+    if (!ev->room_id || (ev->type != AMX_EV_MESSAGE && ev->type != AMX_EV_UNDECRYPTABLE)) return;
     if (!(r = cJSON_GetObjectItemCaseSensitive(c->rooms, ev->room_id))) return;
     l = cJSON_GetObjectItemCaseSensitive(r, "last");
     if (l && get_num(l, "ts") > ev->timestamp) return;
+    /* from the history only the newest message itself, now decrypted (its key
+     * came from the backup or another device), or a first preview */
+    if (ev->history && (ev->type == AMX_EV_UNDECRYPTABLE ? l != NULL :
+        l && !(ev->event_id && amx__jstr(l, "id") && !strcmp(amx__jstr(l, "id"), ev->event_id))))
+        return;
     b = ev->type == AMX_EV_MESSAGE ? (ev->body ? ev->body : "") : "(verschl\xc3\xbcsselt)";
     if (ev->type == AMX_EV_MESSAGE && ev->msgtype && strcmp(ev->msgtype, "m.text") && strcmp(ev->msgtype, "m.notice")
         && strcmp(ev->msgtype, "m.emote"))

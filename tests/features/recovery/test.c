@@ -15,6 +15,19 @@ static const char *const msgs[] = {
 
 static char *room;
 
+static int live_req(void *arg)
+{
+    (void)arg;
+    return mxt_find(AMX_EV_MESSAGE, NULL, NULL, "nur mit Schluesselanfrage lesbar") != NULL;
+}
+
+static int live_both(void *arg)
+{
+    (void)arg;
+    return mxt_find(AMX_EV_MESSAGE, NULL, NULL, "live vom anderen Geraet") != NULL
+        && mxt_find(AMX_EV_MESSAGE, NULL, NULL, "live vom anderen Geraet, neuer Raum") != NULL;
+}
+
 static int have_room(void *arg)
 {
     AmxClient *c = arg;
@@ -41,6 +54,19 @@ int main(int argc, char **argv)
     MXT_OK(amx_backup_available(c) == 0, "no backup key before unlocking");
     MXT_OK(amx_device_verified(c) == 0, "not verified before unlocking");
     MXT_OK(mxt_sync_until(c, have_room, c, 300), "room of the other device visible");
+    /* restart once: the preview "(verschluesselt)" is saved, the list of
+     * undecrypted events is gone - the history must still fix the preview */
+    for (end = time(NULL) + 120; time(NULL) < end && mxt_count(AMX_EV_UNDECRYPTABLE, room, NULL) < 5; )
+        amx_sync(c, 3000);
+    amx_client_free(c);
+    c = mxt_client(&a);
+    {
+        AmxRoomInfo *l;
+        int n = amx_rooms(c, &l), k;
+        for (k = 0; k < n; k++)
+            if (!strcmp(l[k].room_id, room)) mxt_diag("preview after restart: %s", l[k].last_body ? l[k].last_body : "-");
+        amx_free_rooms(l, n);
+    }
 
     /* the peer sets secret storage up last; until then: "no secret storage" */
     for (end = time(NULL) + 360; time(NULL) < end; ) {
@@ -90,6 +116,20 @@ int main(int argc, char **argv)
     MXT_OK(mxt_find(AMX_EV_MESSAGE, room, NULL, msgs[0]) != NULL, "after a restart still readable");
     MXT_OK(amx_backup_available(c), "backup key kept in the store");
     MXT_OK(amx_device_verified(c) == 1, "still verified after a restart");
+
+    /* new messages of our other device (like the phone) are readable live */
+    MXT_OK(mxt_sync_until(c, live_both, NULL, 300), "live messages of the other device decrypted");
+    MXT_OK(mxt_sync_until(c, live_req, NULL, 300),
+           "message without a shared key: key requested from our other device and decrypted");
+    {
+        AmxRoomInfo *l;
+        int n = amx_rooms(c, &l), k, ok2 = 0;
+        for (k = 0; k < n; k++)
+            if (l[k].name && !strcmp(l[k].name, "Nur auf Anfrage") && l[k].last_body
+                && !strcmp(l[k].last_body, "nur mit Schluesselanfrage lesbar")) ok2 = 1;
+        amx_free_rooms(l, n);
+        MXT_OK(ok2, "its room list preview shows the decrypted text");
+    }
 
     free(room);
     amx_client_free(c);

@@ -19,6 +19,7 @@
  * network process), Curve25519/Ed25519 from libolm.
  */
 #include "amx_internal.h"
+#include <time.h>
 
 #ifdef AMX_AMISSL
 #include <libraries/amisslmaster.h>
@@ -523,6 +524,28 @@ static OlmPkDecryption *backup_decryption(AmxClient *c)
  * fetched one by one from the backup (a room can have thousands of backed-up
  * keys; a page of history needs a few).  Each session is asked for once per
  * run.  Number imported. */
+/* The backup may get a key later than we see the message (the other device
+ * uploads it after sending): try a session again after 20 s, 1, 5 and 30 min. */
+static int backup_due(AmxClient *c, const char *key)
+{
+    static const long delay[] = { 20, 60, 300, 1800 };
+    cJSON *e;
+    long now = (long)time(NULL);
+    int n;
+    if (!c->bk_done) c->bk_done = cJSON_CreateObject();
+    e = cJSON_GetObjectItemCaseSensitive(c->bk_done, key);
+    if (!e) {
+        e = cJSON_AddObjectToObject(c->bk_done, key);
+        cJSON_AddNumberToObject(e, "n", 0);
+        cJSON_AddNumberToObject(e, "t", 0);
+    }
+    n = cJSON_GetObjectItemCaseSensitive(e, "n")->valueint;
+    if (n > 4 || now < (long)cJSON_GetObjectItemCaseSensitive(e, "t")->valuedouble) return 0;
+    cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(e, "n"), n + 1);
+    cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(e, "t"), (double)(now + (n < 4 ? delay[n] : 0)));
+    return 1;
+}
+
 int amx__backup_for_events(AmxClient *c, const char *room_id, const cJSON *events)
 {
     OlmPkDecryption *d = NULL;
@@ -539,9 +562,7 @@ int amx__backup_for_events(AmxClient *c, const char *room_id, const cJSON *event
         if (!typ || strcmp(typ, "m.room.encrypted") || !sid || amx__find_group(c, room_id, sid)) continue;
         key = amx__malloc(strlen(room_id) + strlen(sid) + 2);
         sprintf(key, "%s|%s", room_id, sid);
-        if (cJSON_GetObjectItemCaseSensitive(c->bk_done, key)) { free(key); continue; }
-        if (!c->bk_done) c->bk_done = cJSON_CreateObject();
-        cJSON_AddTrueToObject(c->bk_done, key);
+        if (!backup_due(c, key)) { free(key); continue; }
         free(key);
         if (!d) {
             if (!(d = backup_decryption(c))) return -1;

@@ -85,6 +85,7 @@ int amx_sync(AmxClient *c, long timeout_ms)
             amx__handle_room_event(c, room->string, x, 0);
     }
     amx__rooms_save(c);
+    amx__fetch_missing_keys(c);           /* keys still missing: backup, our other devices */
 
     x = cJSON_GetObjectItemCaseSensitive(
             cJSON_GetObjectItemCaseSensitive(r, "device_one_time_keys_count"), "signed_curve25519");
@@ -137,6 +138,7 @@ int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newe
         amx__handle_room_event(c, room_id, x, 1);
         n++;
     }
+    amx__fetch_missing_keys(c);           /* still missing: ask our other devices */
     LOG(c, "history %s: done", room_id);
     cJSON_DeleteItemFromObjectCaseSensitive(c->hist, room_id);
     if (amx__jstr(r, "end") && n > 0) {

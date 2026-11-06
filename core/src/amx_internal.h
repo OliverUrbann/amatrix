@@ -44,7 +44,8 @@ struct AmxClient {
     cJSON *direct;                 /* m.direct account data: user -> [room ids] */
     cJSON *hist;                   /* room -> pagination token for amx_load_history */
     cJSON *backup;                 /* backup.json: key backup version + private key */
-    cJSON *bk_done;                /* rooms whose backed-up keys were fetched (this run) */
+    cJSON *bk_done;                /* "room|session" -> {n: tries, t: next try} for the backup */
+    cJSON *kreq;                   /* "room|session" -> key request sent to our devices (this run) */
     unsigned char skey[32];        /* store key (passphrase), if skey_set */
     int skey_set;
     OlmUtility *util;
@@ -99,6 +100,7 @@ void  amx__add_group_session(AmxClient *c, const char *room, const char *sid, co
 void  amx__handle_to_device(AmxClient *c, const cJSON *ev);
 void  amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev, int history);
 void  amx__retry_pending(AmxClient *c);
+void  amx__fetch_missing_keys(AmxClient *c);   /* backup + key requests for pending events */
 
 /* crypto_send.c */
 int   amx__load_send_state(AmxClient *c);
