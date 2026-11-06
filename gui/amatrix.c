@@ -55,7 +55,8 @@ enum {
     ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO, ID_UNLOCK_GO, ID_STOREPASS, ID_STOREPASS_SET, ID_STOREPASS_DEL
 };
 enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TAG_AVATAR,
-       TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY, TAG_UNLOCK, TAG_STOREPASS };
+       TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY, TAG_UNLOCK, TAG_STOREPASS,
+       TAG_REACT };
 
 /* ------------------------------------------------------------------ state */
 
@@ -65,6 +66,13 @@ typedef struct {
     int invited, unread, highlights, direct, encrypted, members, last_own;
     double last_ts;
 } Room;
+
+#define N_EMO_MAX 16
+
+typedef struct React {
+    char *id, *target, *key, *sender;   /* key: UTF-8 */
+    int own;
+} React;
 
 typedef struct ChatWin {
     struct ChatWin *next;
@@ -84,6 +92,9 @@ typedef struct ChatWin {
                                      list itself cannot tell us what to free */
     int n_all, cap_all;
     Object *busy;                 /* status text in the toolbar */
+    struct React *react;          /* reactions seen in this room */
+    int n_react, cap_react;
+    Object *emo[N_EMO_MAX];       /* the reaction pictures, as NList images (ESC o[n]) */
     int sending, inviting, loading_older;
     char err[160];                /* last error, shown until the next action */
 } ChatWin;
@@ -309,6 +320,13 @@ static ULONG wb_colour(char ch)
     case 'g': return 0xff959595UL;            /* MagicWB grey */
     case 'f': return 0xffffa997UL;            /* skin */
     case 'e': return 0xffd2826eUL;            /* skin, shadow side */
+    case 'y': return 0xffffd648UL;            /* face yellow */
+    case 'Y': return 0xffd6961eUL;            /* its shadow side */
+    case 'r': return 0xffe22828UL;            /* red */
+    case 'R': return 0xff961010UL;            /* dark red */
+    case 'G': return 0xff5aaa5aUL;            /* green */
+    case 'p': return 0xffff78aaUL;            /* pink */
+    case 'c': return 0xff6ebef0UL;            /* light blue (tears, confetti) */
     default:  return 0;
     }
 }
@@ -319,6 +337,182 @@ static void make_icon(Alpha *a, const char *const *art)
     a->ad.width = a->ad.height = IC;
     for (y = 0; y < IC; y++)
         for (x = 0; x < IC; x++) a->px[y * IC + x] = wb_colour(art[y][x]);
+}
+
+/* reactions: the common ones as 12x12 pictures in the same style (Element's
+ * quick reactions plus "tears of joy"); keys are UTF-8 */
+#define EM 12
+enum { EMO_THUMBSUP, EMO_THUMBSDOWN, EMO_HEART, EMO_SMILE, EMO_JOY, EMO_CONFUSED, EMO_EYES, EMO_TADA, EMO_ROCKET, N_EMO };
+static Alpha emo_img[N_EMO];
+static const char *const emo_art[N_EMO][EM] = {
+    { /* thumbsup */
+      "............",
+      ".....kk.....",
+      "....kffk....",
+      "....kfek....",
+      "...kffek....",
+      ".kkkffffkkk.",
+      "kwkkfffffffk",
+      "kbkkffffffek",
+      "kbkkffffffek",
+      "kbkkfffffeek",
+      "kBkkkeeeeek.",
+      ".kk.kkkkkk.." },
+    { /* thumbsdown */
+      ".kk.kkkkkk..",
+      "kBkkkeeeeek.",
+      "kbkkfffffeek",
+      "kbkkffffffek",
+      "kbkkffffffek",
+      "kwkkfffffffk",
+      ".kkkffffkkk.",
+      "...kffek....",
+      "....kfek....",
+      "....kffk....",
+      ".....kk.....",
+      "............" },
+    { /* heart */
+      "............",
+      ".kkk...kkk..",
+      "krwrk.krrrk.",
+      "kwrrrkrrrrRk",
+      "krrrrrrrrrRk",
+      "krrrrrrrrrRk",
+      ".krrrrrrrRk.",
+      "..krrrrrRk..",
+      "...krrrRk...",
+      "....krRk....",
+      ".....kk.....",
+      "............" },
+    { /* smile */
+      "....kkkk....",
+      "..kkyyyykk..",
+      ".kyyyyyyyYk.",
+      ".kyykyykyYk.",
+      "kyyykyykyyYk",
+      "kyyyyyyyyyYk",
+      "kyykyyyykyYk",
+      "kyyykkkkyyYk",
+      ".kyyyyyyyYk.",
+      ".kYyyyyyYYk.",
+      "..kkYYYYkk..",
+      "....kkkk...." },
+    { /* joy */
+      "....kkkk....",
+      "..kkyyyykk..",
+      ".kyyyyyyyYk.",
+      ".kykkyykkyYk",
+      "kcyyyyyyyycY",
+      "kcyyyyyyyycY",
+      "kyykkkkkkyYk",
+      "kyykwwwwkyYk",
+      ".kyykrrkyYk.",
+      ".kYyykkyYYk.",
+      "..kkYYYYkk..",
+      "....kkkk...." },
+    { /* confused */
+      "....kkkk....",
+      "..kkyyyykk..",
+      ".kyyyyyyyYk.",
+      ".kyykyykyYk.",
+      "kyyykyykyyYk",
+      "kyyyyyyyyyYk",
+      "kyyyyyykkyYk",
+      "kyykkkkyyyYk",
+      ".kyyyyyyyYk.",
+      ".kYyyyyyYYk.",
+      "..kkYYYYkk..",
+      "....kkkk...." },
+    { /* eyes */
+      "............",
+      "............",
+      ".kkkk..kkkk.",
+      "kwwwwkkwwwwk",
+      "kwwkkwkwwkkw",
+      "kwwkkwkwwkkw",
+      "kwwwwkkwwwwk",
+      ".kkkk..kkkk.",
+      "............",
+      "............",
+      "............",
+      "............" },
+    { /* tada */
+      "..r...c..p..",
+      "......k.....",
+      ".p..y.....G.",
+      "......c..r..",
+      "..kk.....c..",
+      "..kYk..y....",
+      "..kyYk....p.",
+      ".kyyyYk.....",
+      ".kyyyyYk..G.",
+      "kyyyyyyYk...",
+      "kYyyyyyyYk..",
+      "kkkkkkkkkkk." },
+    { /* rocket */
+      "........kkkk",
+      ".......kwwck",
+      "......kwwcBk",
+      ".....kwwwBk.",
+      "..kkkwwwBk..",
+      ".krkwwwBkk..",
+      "..kwwwBkrk..",
+      ".kkwwBk.k...",
+      "kyrkBk......",
+      "kyrkk.......",
+      ".kyk........",
+      "............" },
+};
+/* key (without variation selector / skin tone) -> picture */
+static const struct { const char *key; int img; } emo_keys[] = {
+    { "\xf0\x9f\x91\x8d", EMO_THUMBSUP },   { "\xf0\x9f\x91\x8e", EMO_THUMBSDOWN },
+    { "\xe2\x9d\xa4", EMO_HEART },           { "\xf0\x9f\x98\x84", EMO_SMILE },
+    { "\xf0\x9f\x98\x80", EMO_SMILE },      { "\xf0\x9f\x98\x83", EMO_SMILE },
+    { "\xf0\x9f\x99\x82", EMO_SMILE },      { "\xf0\x9f\x98\x8a", EMO_SMILE },
+    { "\xf0\x9f\x98\x82", EMO_JOY },        { "\xf0\x9f\xa4\xa3", EMO_JOY },
+    { "\xf0\x9f\x98\x95", EMO_CONFUSED },   { "\xf0\x9f\x91\x80", EMO_EYES },
+    { "\xf0\x9f\x8e\x89", EMO_TADA },       { "\xf0\x9f\x9a\x80", EMO_ROCKET },
+};
+
+/* the key without variation selector and skin tone: same picture, same group */
+static void norm_key(const char *key, char *k, size_t size)
+{
+    size_t n = 0;
+    const unsigned char *p = (const unsigned char *)key;
+    while (*p && n < size - 1) {
+        if (p[0] == 0xef && p[1] == 0xb8 && p[2] == 0x8f) { p += 3; continue; }      /* U+FE0F */
+        if (p[0] == 0xf0 && p[1] == 0x9f && p[2] == 0x8f && p[3] >= 0xbb && p[3] <= 0xbf) { p += 4; continue; }
+        k[n++] = (char)*p++;
+    }
+    k[n] = 0;
+}
+
+static int same_key(const char *a, const char *b)
+{
+    char x[64], y[64];
+    norm_key(a, x, sizeof x);
+    norm_key(b, y, sizeof y);
+    return !strcmp(x, y);
+}
+
+static int emo_index(const char *key)
+{
+    char k[64];
+    unsigned i;
+    norm_key(key, k, sizeof k);
+    for (i = 0; i < sizeof emo_keys / sizeof emo_keys[0]; i++)
+        if (!strcmp(emo_keys[i].key, k)) return emo_keys[i].img;
+    return -1;
+}
+
+static void make_emoji(void)
+{
+    int i, x, y;
+    for (i = 0; i < N_EMO; i++) {
+        emo_img[i].ad.width = emo_img[i].ad.height = EM;
+        for (y = 0; y < EM; y++)
+            for (x = 0; x < EM; x++) emo_img[i].px[y * EM + x] = wb_colour(emo_art[i][y][x]);
+    }
 }
 
 /* a toolbar button: icon only, the text as bubble help */
@@ -533,6 +727,8 @@ typedef struct {
     char *eid;
     char *text;
     int undec;                    /* placeholder for a message we cannot decrypt (yet) */
+    int react;                    /* the reactions line under the message eid */
+    int own;                      /* our own message */
 } Line;
 
 static Line *new_line(const char *eid, const char *text, size_t n, int undec)
@@ -698,6 +894,16 @@ static void open_chat(const char *room_id)
             End,
         End,
     End;
+    if (w->win) {
+        int k;
+        for (k = 0; k < N_EMO; k++) {
+            static char spec[N_EMO][24];
+            snprintf(spec[k], sizeof spec[k], "\33A[%08lx]", (unsigned long)&emo_img[k].ad);
+            w->emo[k] = TextObject, MUIA_Text_Contents, spec[k], MUIA_Text_SetMax, TRUE,
+                        MUIA_InnerLeft, 0, MUIA_InnerRight, 0, MUIA_InnerTop, 0, MUIA_InnerBottom, 0, End;
+            if (w->emo[k]) DoMethod(w->list, MUIM_NList_UseImage, w->emo[k], k, 0);
+        }
+    }
     if (!w->win) { free(w->room_id); free(w->title); free(w); return; }
     DoMethod(app, OM_ADDMEMBER, w->win);
     DoMethod(w->win, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, MUIV_Notify_Application, 3,
@@ -727,8 +933,14 @@ static void close_chat(ChatWin *w)
     for (p = &chats; *p; p = &(*p)->next) if (*p == w) { *p = w->next; break; }
     set(w->win, MUIA_Window_Open, FALSE);
     DoMethod(w->list, MUIM_NList_Clear);
+    DoMethod(w->list, MUIM_NList_UseImage, NULL, MUIV_NList_UseImage_All, 0);
     DoMethod(app, OM_REMMEMBER, w->win);
     MUI_DisposeObject(w->win);
+    for (i = 0; i < N_EMO; i++) if (w->emo[i]) MUI_DisposeObject(w->emo[i]);
+    for (i = 0; i < w->n_react; i++) {
+        free(w->react[i].id); free(w->react[i].target); free(w->react[i].key); free(w->react[i].sender);
+    }
+    free(w->react);
     for (i = 0; i < w->n_all; i++) free_line(w->all[i]);    /* each exactly once */
     free(w->all);
     for (i = 0; i < w->n_seen; i++) free(w->seen[i]);
@@ -820,7 +1032,7 @@ static void remember_line(ChatWin *w, void *l)
     w->all[w->n_all++] = l;
 }
 
-static void insert_text(ChatWin *w, const char *eid, const char *text, LONG pos, int undec)
+static void insert_text(ChatWin *w, const char *eid, const char *text, LONG pos, int undec, int own)
 {
     const char *p = text, *nl;
     Line *ls[64];
@@ -832,6 +1044,7 @@ static void insert_text(ChatWin *w, const char *eid, const char *text, LONG pos,
     } while (p);
     for (i = 0; i < n; i++) {
         if (!ls[i]) continue;
+        ls[i]->own = own;
         remember_line(w, ls[i]);
         DoMethod(w->list, MUIM_NList_InsertSingleWrap, ls[i],
                  pos == MUIV_NList_Insert_Bottom ? pos : pos == MUIV_NList_Insert_Top ? i : pos + i,
@@ -890,6 +1103,136 @@ static void send_read_markers(void)
     }
 }
 
+/* ---------------------------------------------------------------- reactions */
+
+/* the reactions line for target: "<picture> 2   <picture> 1", grouped by key in
+ * the order they came; our own count in bold.  "" if none. */
+static void reaction_text(ChatWin *w, const char *target, char *buf, size_t n)
+{
+    int i, j, any = 0;
+    size_t len;
+    snprintf(buf, n, "      ");
+    for (i = 0; i < w->n_react; i++) {
+        const React *r = &w->react[i];
+        int count = 0, own = 0, img;
+        if (strcmp(r->target, target)) continue;
+        for (j = 0; j < i; j++)                      /* this key counted already? */
+            if (!strcmp(w->react[j].target, target) && same_key(w->react[j].key, r->key)) break;
+        if (j < i) continue;
+        for (j = i; j < w->n_react; j++)
+            if (!strcmp(w->react[j].target, target) && same_key(w->react[j].key, r->key)) {
+                count++;
+                own |= w->react[j].own;
+            }
+        len = strlen(buf);
+        if (len + 64 >= n) break;
+        any = 1;
+        if ((img = emo_index(r->key)) >= 0)
+            snprintf(buf + len, n - len, "\33o[%d] %s%d%s   ", img, own ? "\33b" : "", count, own ? "\33n" : "");
+        else {
+            char *l = local(r->key);
+            snprintf(buf + len, n - len, "%.12s %s%d%s   ", l, own ? "\33b" : "", count, own ? "\33n" : "");
+            free(l);
+        }
+    }
+    if (!any) buf[0] = 0;
+}
+
+/* shows, updates or removes the reactions line under the message target
+ * (if the message is in the list) */
+static void refresh_reactions(ChatWin *w, const char *target)
+{
+    char text[600];
+    LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k, last = -1, rl = -1;
+    Line *rline = NULL;
+    for (k = 0; k < n; k++) {
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (!l || !l->eid || strcmp(l->eid, target)) continue;
+        if (l->react) { rl = k; rline = l; }
+        else last = k;
+    }
+    if (last < 0) return;                       /* the message is not shown (yet) */
+    reaction_text(w, target, text, sizeof text);
+    if (!text[0]) {
+        if (rl >= 0) { DoMethod(w->list, MUIM_NList_Remove, rl); w->lines--; }
+        return;
+    }
+    if (rline) {
+        char *t = strdup(text);
+        if (!t) return;
+        free(rline->text);
+        rline->text = t;
+        DoMethod(w->list, MUIM_NList_ReplaceSingle, rline, rl, NOWRAP, ALIGN_LEFT);
+    } else {
+        Line *l = new_line(target, text, strlen(text), 0);
+        if (!l) return;
+        l->react = 1;
+        remember_line(w, l);
+        DoMethod(w->list, MUIM_NList_InsertSingle, l, last + 1);
+        w->lines++;
+    }
+}
+
+static int has_reactions(ChatWin *w, const char *target)
+{
+    int i;
+    for (i = 0; target && i < w->n_react; i++) if (!strcmp(w->react[i].target, target)) return 1;
+    return 0;
+}
+
+/* a placeholder line whose event turned out to be a reaction: away with it */
+static void remove_placeholder(ChatWin *w, const char *eid)
+{
+    LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k;
+    for (k = n - 1; k >= 0; k--) {
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (l && l->undec && l->eid && !strcmp(l->eid, eid)) {
+            DoMethod(w->list, MUIM_NList_Remove, k);
+            l->undec = 0;
+            w->n_undec--;
+            w->lines--;
+        }
+    }
+}
+
+static void reaction_event(ChatWin *w, const AmxEvent *e)
+{
+    int i;
+    if (e->type == AMX_EV_REDACTION) {
+        for (i = 0; i < w->n_react; i++) {
+            React *r = &w->react[i];
+            char *target;
+            if (strcmp(r->id, e->relates_to)) continue;
+            target = r->target;
+            free(r->id); free(r->key); free(r->sender);
+            memmove(r, r + 1, sizeof *r * (w->n_react - i - 1));
+            w->n_react--;
+            refresh_reactions(w, target);
+            free(target);
+            return;
+        }
+        return;
+    }
+    if (!e->event_id || !e->relates_to || !e->body) return;
+    if (w->n_undec) remove_placeholder(w, e->event_id);
+    for (i = 0; i < w->n_react; i++) if (!strcmp(w->react[i].id, e->event_id)) return;   /* history + live */
+    if (w->n_react == w->cap_react) {
+        React *t = realloc(w->react, sizeof *t * (w->cap_react ? w->cap_react * 2 : 32));
+        if (!t) return;
+        w->react = t;
+        w->cap_react = w->cap_react ? w->cap_react * 2 : 32;
+    }
+    w->react[w->n_react].id = strdup(e->event_id);
+    w->react[w->n_react].target = strdup(e->relates_to);
+    w->react[w->n_react].key = strdup(e->body);
+    w->react[w->n_react].sender = strdup(e->sender ? e->sender : "");
+    w->react[w->n_react].own = e->own;
+    w->n_react++;
+    refresh_reactions(w, e->relates_to);
+}
+
 static void chat_event(const AmxEvent *e)
 {
     ChatWin *w = e->room_id ? chat_by_room(e->room_id) : NULL;
@@ -897,6 +1240,10 @@ static void chat_event(const AmxEvent *e)
     if (!w) return;
     amx_log("chat_event type %d %s hist %d body %ld", (int)e->type, e->event_id ? e->event_id : "-", e->history,
             (long)(e->body ? strlen(e->body) : -1));
+    if (e->type == AMX_EV_REACTION || e->type == AMX_EV_REDACTION) {
+        reaction_event(w, e);
+        return;
+    }
     if (e->type == AMX_EV_MESSAGE && e->event_id && w->n_undec) {
         if ((text = format_event(e)) != NULL && replace_undecryptable(w, e, text)) {
             free(text);
@@ -909,9 +1256,10 @@ static void chat_event(const AmxEvent *e)
     if (e->type == AMX_EV_MEMBERSHIP && e->history) return;     /* keep old history quiet */
     if (!(text = format_event(e))) return;
     insert_text(w, e->event_id, text, e->history ? MUIV_NList_Insert_Top : MUIV_NList_Insert_Bottom,
-                e->type == AMX_EV_UNDECRYPTABLE && e->event_id);
+                e->type == AMX_EV_UNDECRYPTABLE && e->event_id, e->own);
     amx_log("  inserted (%ld lines)", (long)w->lines);
     free(text);
+    if (has_reactions(w, e->event_id)) refresh_reactions(w, e->event_id);   /* came first (history) */
     if (!e->history) DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
     note_newest(w, e);
 }
@@ -1265,6 +1613,9 @@ static void handle_result(const AmxMsg *m)
         free(room);
         break;
     }
+    case TAG_REACT:
+        if (m->status) amx_log("reaction failed: %s", m->error ? m->error : "-");
+        break;
     case TAG_HIST:
         history_done(m);
         break;
@@ -1523,6 +1874,73 @@ HOOKPROTONH(rx_closechat_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_closechat_hook, rx_closechat_func);
 
+/* REACT room name: our reaction (thumbsup, heart, ...) to the newest message
+ * of someone else; REACTIONS room: the reaction lines, "name count[*]" */
+static const char *const emo_names[N_EMO] = { "thumbsup", "thumbsdown", "heart", "smile", "joy",
+                                               "confused", "eyes", "tada", "rocket" };
+
+HOOKPROTONH(rx_react_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    LONG n, k;
+    unsigned i;
+    int img = -1;
+    (void)obj;
+    if (!w) return 5;
+    for (i = 0; i < N_EMO; i++) if (!strcmp(emo_names[i], (char *)arg[1])) img = (int)i;
+    if (img < 0) return 10;
+    n = (LONG)xget(w->list, MUIA_NList_Entries);
+    for (k = n - 1; k >= 0; k--) {
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (!l || l->react || l->undec || !l->eid || l->own || !strstr(l->text, ":\33n")) continue;
+        for (i = 0; i < sizeof emo_keys / sizeof emo_keys[0]; i++)
+            if (emo_keys[i].img == img) break;
+        amx_async_react(A, w->room_id, l->eid, emo_keys[i].key, TAG_REACT);
+        return 0;
+    }
+    return 10;
+}
+MakeStaticHook(rx_react_hook, rx_react_func);
+
+HOOKPROTONH(rx_reactions_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    char b[1024] = "";
+    LONG n, k;
+    (void)obj;
+    if (!w) return 5;
+    n = (LONG)xget(w->list, MUIA_NList_Entries);
+    for (k = 0; k < n; k++) {
+        Line *l = NULL;
+        int i, j;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (!l || !l->react) continue;
+        if (b[0]) strncat(b, " | ", sizeof b - strlen(b) - 1);
+        for (i = 0; i < w->n_react; i++) {
+            int count = 0, own = 0, img;
+            char one[48];
+            if (strcmp(w->react[i].target, l->eid)) continue;
+            for (j = 0; j < i; j++)
+                if (!strcmp(w->react[j].target, l->eid) && same_key(w->react[j].key, w->react[i].key)) break;
+            if (j < i) continue;
+            for (j = i; j < w->n_react; j++)
+                if (!strcmp(w->react[j].target, l->eid) && same_key(w->react[j].key, w->react[i].key)) {
+                    count++; own |= w->react[j].own;
+                }
+            img = emo_index(w->react[i].key);
+            snprintf(one, sizeof one, "%s%s %d%s", strlen(b) && b[strlen(b) - 1] != ' ' ? " " : "",
+                     img >= 0 ? emo_names[img] : "other", count, own ? "*" : "");
+            strncat(b, one, sizeof b - strlen(b) - 1);
+        }
+    }
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_reactions_hook, rx_reactions_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
@@ -1536,6 +1954,8 @@ static struct MUI_Command rexx_cmds[] = {
     { "OLDER",     "ROOM/F",          1, &rx_older_hook,    { 0 } },
     { "UNREAD",    "ROOM/F",          1, &rx_unreadcount_hook, { 0 } },
     { "ROOMLINE",  "ROOM/F",          1, &rx_roomline_hook, { 0 } },
+    { "REACT",     "ROOM/A,NAME/A",   2, &rx_react_hook,    { 0 } },
+    { "REACTIONS", "ROOM/F",          1, &rx_reactions_hook, { 0 } },
     { "RECOVERY",  "KEY/F",           1, &rx_recovery_hook, { 0 } },
     { "UNLOCK",    "PASS/F",          1, &rx_unlock_hook,   { 0 } },
     { "CHATSTATUS","ROOM/F",          1, &rx_chatstatus_hook, { 0 } },
@@ -1888,6 +2308,7 @@ int main(int argc, char **argv)
 
     make_icon(&icon_up, art_up);
     make_icon(&icon_invite, art_invite);
+    make_emoji();
     if (!(MUIMasterBase = OpenLibrary((STRPTR)"muimaster.library", 20))) {
         printf("Amatrix braucht MUI 5 (muimaster.library V20).\n");
         return 20;

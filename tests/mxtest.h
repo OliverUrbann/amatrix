@@ -93,7 +93,7 @@ MXT_FN void mxt_args(int argc, char **argv, MxtArgs *a)
 
 typedef struct {
     AmxEventType type;
-    char *room_id, *event_id, *sender, *body, *reason, *state_key;
+    char *room_id, *event_id, *sender, *body, *reason, *state_key, *relates_to;
     int encrypted, own, history;
     double timestamp;
 } MxtEvent;
@@ -117,6 +117,7 @@ MXT_FN void mxt_record(AmxClient *c, const AmxEvent *e, void *ud)
     m->body = mxt_dup(e->body);
     m->reason = mxt_dup(e->reason);
     m->state_key = mxt_dup(e->state_key);
+    m->relates_to = mxt_dup(e->relates_to);
     m->encrypted = e->encrypted;
     m->own = e->own;
     m->history = e->history;
@@ -136,6 +137,14 @@ MXT_FN void mxt_record(AmxClient *c, const AmxEvent *e, void *ud)
         mxt_diag("event room key %s from %s", e->room_id, e->sender);
     } else if (e->type == AMX_EV_MEMBERSHIP) {
         mxt_diag("event member %s %s %s", e->room_id, e->state_key ? e->state_key : "?", e->body ? e->body : "?");
+    } else if (e->type == AMX_EV_REACTION) {
+        mxt_diag("event reaction %s from %s to %s: %d bytes%s%s", e->event_id ? e->event_id : "?",
+                 e->sender ? e->sender : "?", e->relates_to ? e->relates_to : "?",
+                 e->body ? (int)strlen(e->body) : -1, e->encrypted ? " (encrypted)" : "",
+                 e->history ? " (history)" : "");
+    } else if (e->type == AMX_EV_REDACTION) {
+        mxt_diag("event redaction %s from %s of %s", e->event_id ? e->event_id : "?",
+                 e->sender ? e->sender : "?", e->relates_to ? e->relates_to : "?");
     }
 }
 

@@ -12,7 +12,9 @@ static int send_event(AmxClient *c, const char *room_id, const char *type, const
     if (event_id_out) *event_id_out = NULL;
     if (enc < 0) return -1;
     if (enc) {
+        const cJSON *rel = cJSON_GetObjectItemCaseSensitive(content, "m.relates_to");
         if (amx__encrypt_room_event(c, room_id, type, content, &body)) return -1;
+        if (rel) cJSON_AddItemToObject(body, "m.relates_to", cJSON_Duplicate(rel, 1));
         send_type = "m.room.encrypted";
     }
     esc = http_escape(room_id);
@@ -53,5 +55,34 @@ int amx_mark_read(AmxClient *c, const char *room_id, const char *event_id)
     free(er);
     if (!r) return -1;
     cJSON_Delete(r);
+    return 0;
+}
+
+int amx_send_reaction(AmxClient *c, const char *room_id, const char *event_id, const char *key,
+                      char **event_id_out)
+{
+    cJSON *ct = cJSON_CreateObject(), *rel = cJSON_AddObjectToObject(ct, "m.relates_to");
+    int r;
+    cJSON_AddStringToObject(rel, "rel_type", "m.annotation");
+    cJSON_AddStringToObject(rel, "event_id", event_id);
+    cJSON_AddStringToObject(rel, "key", key);
+    r = send_event(c, room_id, "m.reaction", ct, event_id_out);
+    cJSON_Delete(ct);
+    return r;
+}
+
+int amx_redact(AmxClient *c, const char *room_id, const char *event_id, const char *reason)
+{
+    cJSON *b = cJSON_CreateObject(), *r;
+    char *er = http_escape(room_id), *ee = http_escape(event_id), *txn = amx__txn(c), *path;
+    path = amx__malloc(strlen(er) + strlen(ee) + strlen(txn) + 40);
+    sprintf(path, "/rooms/%s/redact/%s/%s", er, ee, txn);
+    if (reason) cJSON_AddStringToObject(b, "reason", reason);
+    r = amx__api_ok(c, "PUT", path, b);
+    cJSON_Delete(b);
+    free(path); free(er); free(ee); free(txn);
+    if (!r) return -1;
+    cJSON_Delete(r);
+    LOG(c, "redacted %s in %s", event_id, room_id);
     return 0;
 }

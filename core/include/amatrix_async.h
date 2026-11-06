@@ -38,7 +38,8 @@ typedef struct AmxAsync AmxAsync;
 typedef enum {
     AMX_CMD_LOGIN = 1, AMX_CMD_LOGOUT, AMX_CMD_SEND_TEXT, AMX_CMD_JOIN, AMX_CMD_LEAVE,
     AMX_CMD_INVITE, AMX_CMD_CREATE_ROOM, AMX_CMD_LOAD_HISTORY, AMX_CMD_PUBLIC_ROOMS,
-    AMX_CMD_AVATAR, AMX_CMD_MARK_READ, AMX_CMD_RECOVERY, AMX_CMD_STORE_UNLOCK, AMX_CMD_STORE_PASS
+    AMX_CMD_AVATAR, AMX_CMD_MARK_READ, AMX_CMD_RECOVERY, AMX_CMD_STORE_UNLOCK, AMX_CMD_STORE_PASS,
+    AMX_CMD_REACT, AMX_CMD_REDACT
 } AmxCmd;
 
 typedef enum {
@@ -58,7 +59,8 @@ typedef struct {
     unsigned long tag;
     int status;                   /* 0 ok, -1 error (see error) */
     const char *result;           /* LOGIN: user ID, SEND_TEXT: event ID,
-                                     JOIN/CREATE_ROOM: room ID, AVATAR: the
+                                     JOIN/CREATE_ROOM: room ID, REACT: the
+                                     reaction's event ID, AVATAR: the
                                      mxc URL; else NULL */
     const char *error;            /* RESULT/STATE: reason, or NULL */
     int at_start;                 /* LOAD_HISTORY: beginning of the room reached */
@@ -107,6 +109,8 @@ int amx_async_recovery(AmxAsync *a, const char *key_or_passphrase, unsigned long
 /* the store passphrase (amx_store_unlock before login / amx_store_set_passphrase) */
 int amx_async_store_unlock(AmxAsync *a, const char *passphrase, unsigned long tag);
 int amx_async_store_passphrase(AmxAsync *a, const char *passphrase, unsigned long tag);
+int amx_async_react(AmxAsync *a, const char *room_id, const char *event_id, const char *key, unsigned long tag);
+int amx_async_redact(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag);
 
 #ifdef __cplusplus
 }

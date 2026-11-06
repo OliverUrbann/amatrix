@@ -26,7 +26,11 @@ typedef enum {
     AMX_EV_UNDECRYPTABLE,   /* encrypted event we cannot (yet) read: room_id, event_id, sender, reason */
     AMX_EV_INVITE,          /* we were invited: room_id, sender */
     AMX_EV_ROOM_KEY,        /* a room key arrived: room_id, sender */
-    AMX_EV_MEMBERSHIP       /* m.room.member in a joined room: room_id, sender, state_key=user, membership in body */
+    AMX_EV_MEMBERSHIP,      /* m.room.member in a joined room: room_id, sender, state_key=user, membership in body */
+    AMX_EV_REACTION,        /* m.reaction (m.annotation): room_id, event_id, sender, relates_to = the
+                               message reacted to, body = the key (an emoji, UTF-8) */
+    AMX_EV_REDACTION        /* m.room.redaction: room_id, event_id, sender, relates_to = the event
+                               removed (a message or a reaction) */
 } AmxEventType;
 
 typedef struct {
@@ -44,6 +48,7 @@ typedef struct {
     double timestamp;        /* origin_server_ts in ms */
     const char *sender_name; /* display name of the sender in this room (or the
                                 localpart of the user ID if none is known) */
+    const char *relates_to;  /* AMX_EV_REACTION / AMX_EV_REDACTION: the event concerned */
 } AmxEvent;
 
 typedef void (*AmxEventFn)(AmxClient *c, const AmxEvent *ev, void *userdata);
@@ -164,6 +169,14 @@ void amx_free_public_rooms(AmxPublicRoom *list, int n);
 int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newest, int *at_start);
 
 /* ---------------------------------------------------------------- messages */
+
+/* Reacts to a message with key (an emoji, UTF-8; encrypted in encrypted
+ * rooms).  event_id_out (may be NULL) gets the reaction's ID: it is what
+ * amx_redact() needs to take the reaction back.  Caller frees. */
+int amx_send_reaction(AmxClient *c, const char *room_id, const char *event_id, const char *key,
+                      char **event_id_out);
+/* Removes an event (a message or a reaction of ours); reason may be NULL. */
+int amx_redact(AmxClient *c, const char *room_id, const char *event_id, const char *reason);
 
 /* Marks the room as read up to event_id (read receipt + fully-read marker);
  * the server's unread count for the room drops to 0. */

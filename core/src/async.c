@@ -234,6 +234,7 @@ static void on_event(AmxClient *c, const AmxEvent *ev, void *ud)
     o->m.ev.state_key = own(o, ev->state_key);
     o->m.ev.reason = own(o, ev->reason);
     o->m.ev.sender_name = own(o, ev->sender_name);
+    o->m.ev.relates_to = own(o, ev->relates_to);
     put_out(a, o);
 }
 
@@ -355,6 +356,12 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
         break;
     case AMX_CMD_MARK_READ:
         r = amx_mark_read(a->c, c->s1, c->s2);
+        break;
+    case AMX_CMD_REACT:
+        r = amx_send_reaction(a->c, c->s1, c->s2, c->s3, &out);
+        break;
+    case AMX_CMD_REDACT:
+        r = amx_redact(a->c, c->s1, c->s2, NULL);
         break;
     case AMX_CMD_STORE_UNLOCK:
         r = amx_store_unlock(a->c, c->s1 ? c->s1 : "");
@@ -707,3 +714,19 @@ int amx_async_create_room(AmxAsync *a, const AmxRoomOptions *opt, unsigned long 
     put_cmd(a, c);
     return 0;
 }
+
+int amx_async_react(AmxAsync *a, const char *room_id, const char *event_id, const char *key, unsigned long tag)
+{
+    Cmd *c = calloc(1, sizeof *c);
+    if (!c) return -1;
+    c->cmd = AMX_CMD_REACT;
+    c->tag = tag;
+    c->s1 = dup0(room_id);
+    c->s2 = dup0(event_id);
+    c->s3 = dup0(key);
+    put_cmd(a, c);
+    return 0;
+}
+
+int amx_async_redact(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag)
+{ return cmd(a, AMX_CMD_REDACT, tag, room_id, event_id, 0, 0); }

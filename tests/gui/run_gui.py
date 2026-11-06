@@ -289,6 +289,50 @@ async def scenario(ctx, amiga, srv, me):
     await asyncio.sleep(10)
     await amiga.shot("05-group")
 
+    # reactions (under the message, grouped, with a count): Bob joins the
+    # group; Alice and Bob react, so do we; Bob takes one back
+    bob = await ctx.peer(ctx.bob)
+    await bob.c.set_displayname("Bob")
+    await p.invite(room, ctx.bob.user_id)
+    rb = await bob.wait_invite(120)
+    check(rb == room, "Bob joined the group")
+    await p.wait_member(room, ctx.bob.user_id, 60)
+    for x in (p, bob):
+        await x.refresh_devices(me.user_id)
+        await x.refresh_devices(ctx.bob.user_id if x is p else ctx.peer_user.user_id)
+    kuchen = p.ids.get((room, ctx.peer_user.user_id, "Wer hat Kuchen mitgebracht?"))
+    m2 = await bob.send(room, "Ich! Käsekuchen.")
+
+    async def react(who, ev, key):
+        r = await who.c.room_send(room, "m.reaction",
+                                  {"m.relates_to": {"rel_type": "m.annotation", "event_id": ev, "key": key}},
+                                  ignore_unverified_devices=True)
+        return getattr(r, "event_id", None)
+    await react(p, kuchen, "\U0001F44D")
+    await react(bob, kuchen, "\U0001F44D\U0001F3FD")         # skin tone: same picture
+    joy = await react(bob, kuchen, "\U0001F602")
+    await react(p, m2, "\u2764\ufe0f")
+    await react(p, m2, "\U0001F389")
+    await react(p, m2, "\U0001F404")                          # no picture: shown as text
+
+    async def reactions(want):
+        async def f():
+            rc, r = await amiga.rexx("REACTIONS Kaffeeklatsch")
+            return want(r) and r
+        return await amiga.until(f, 120)
+    v = await reactions(lambda r: "thumbsup 2" in r and "joy 1" in r and "heart 1" in r and "tada 1" in r
+                        and "other 1" in r)
+    check(v, f"reactions under the messages, grouped and counted ({v!r})")
+    rc, _ = await amiga.rexx("REACT Kaffeeklatsch heart")
+    check(rc == "0", "our own reaction (newest message of someone else)")
+    v = await reactions(lambda r: "heart 2*" in r)
+    check(v, f"our heart counted and marked as ours ({v!r})")
+    await asyncio.sleep(5)
+    await amiga.shot("05c-reactions")
+    await bob.c.room_redact(room, joy)
+    v = await reactions(lambda r: "joy" not in r and "thumbsup 2" in r)
+    check(v, f"Bob took his reaction back ({v!r})")
+
     rc, _ = await amiga.rexx("NEWROOM Amiga-Runde")
     check(rc == "0", "new room command (no invitations in that window any more)")
     await asyncio.sleep(10)
@@ -487,7 +531,7 @@ async def main():
             print("MUI missing in the emulator: run tests/emu/setup-emu-mui.sh")
             return 2
         shutil.copy(srv.ca_pem, os.path.join(sysdir, "AmiSSL", "Certs", srv.ca_hash_name()))
-        me, other = srv.register("amiga"), srv.register("peer")
+        me, other, bob = srv.register("amiga"), srv.register("peer"), srv.register("bob")
         extra = tempfile.mkdtemp(prefix="amx-gui-")
         shutil.copy(os.path.join(TOP, "build", "amiga", "gui", "Amatrix"), os.path.join(extra, "Amatrix"))
         script = os.path.join(extra, ".autotest")
@@ -499,17 +543,18 @@ async def main():
             if os.path.exists(os.path.join(sysdir, fn)):
                 os.remove(os.path.join(sysdir, fn))
         emu = await asyncio.create_subprocess_exec(
-            os.path.join(TOP, "tests", "emu", "run-amiga-gui.sh"), script, "1500", extra, SHOTS,
+            os.path.join(TOP, "tests", "emu", "run-amiga-gui.sh"), script, "1800", extra, SHOTS,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
 
         from peerlib import Context
         workdir = tempfile.mkdtemp(prefix="amx-gui-peer-")
         ctx = Context(srv.http_url, other, me, workdir, log)
         ctx.scale = 3
+        ctx.bob = bob
         amiga = Amiga(extra, log)
         t0 = time.time()
         try:
-            await asyncio.wait_for(scenario(ctx, amiga, srv, me), 1300)
+            await asyncio.wait_for(scenario(ctx, amiga, srv, me), 1600)
         except asyncio.TimeoutError:
             ctx.check(False, "scenario finished in time")
         except Exception as e:

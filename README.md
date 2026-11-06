@@ -16,6 +16,7 @@ private Synapse started by the tests.
 | rooms | ✔ | ✔ | ✔ |
 | e2ee_receive | ✔ | ✔ | ✔ |
 | e2ee_send | ✔ | ✔ | ✔ |
+| reactions | ✔ | ✔ | ✔ |
 | tls_verify | ✔ | ✔ | ✔ |
 | room_list | ✔ | ✔ | ✔ |
 | directory | ✔ | ✔ | ✔ |

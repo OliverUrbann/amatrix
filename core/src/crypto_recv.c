@@ -355,14 +355,33 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
 {
     AmxEvent e;
     const char *sender = amx__jstr(ev, "sender");
-    if (strcmp(type, "m.room.message")) return;        /* other types: later features */
-    memset(&e, 0, sizeof e);
-    e.type = AMX_EV_MESSAGE;
+    if (!strcmp(type, "m.reaction")) {
+        const cJSON *rel = cJSON_GetObjectItemCaseSensitive(content, "m.relates_to");
+        if (!rel) rel = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(ev, "content"),
+                                                         "m.relates_to");
+        if (!amx__jstr(rel, "rel_type") || strcmp(amx__jstr(rel, "rel_type"), "m.annotation")
+            || !amx__jstr(rel, "event_id") || !amx__jstr(rel, "key"))
+            return;                                     /* redacted or not an annotation */
+        memset(&e, 0, sizeof e);
+        e.type = AMX_EV_REACTION;
+        e.relates_to = amx__jstr(rel, "event_id");
+        e.body = amx__jstr(rel, "key");
+    } else if (!strcmp(type, "m.room.redaction")) {
+        memset(&e, 0, sizeof e);
+        e.type = AMX_EV_REDACTION;
+        e.relates_to = amx__jstr(ev, "redacts") ? amx__jstr(ev, "redacts") : amx__jstr(content, "redacts");
+        if (!e.relates_to) return;
+    } else if (strcmp(type, "m.room.message")) {
+        return;                                         /* other types: later features */
+    } else {
+        memset(&e, 0, sizeof e);
+        e.type = AMX_EV_MESSAGE;
+        e.msgtype = amx__jstr(content, "msgtype");
+        e.body = amx__jstr(content, "body") ? amx__jstr(content, "body") : "";
+    }
     e.room_id = room_id;
     e.event_id = amx__jstr(ev, "event_id");
     e.sender = sender;
-    e.msgtype = amx__jstr(content, "msgtype");
-    e.body = amx__jstr(content, "body") ? amx__jstr(content, "body") : "";
     e.encrypted = encrypted;
     e.own = sender && c->user_id && !strcmp(sender, c->user_id);
     stamp(&e, ev, history);
@@ -470,6 +489,9 @@ void amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev, 
     const cJSON *ct = cJSON_GetObjectItemCaseSensitive(ev, "content");
     if (!type) return;
     if (!strcmp(type, "m.room.encrypted")) {
+        if (cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(ev, "unsigned"), "redacted_because")
+            && !amx__jstr(ct, "ciphertext"))
+            return;                       /* removed: nothing left to show or decrypt */
         if (!try_megolm(c, room_id, ev, 1, history)) {
             /* the key may still come (to-device): try again after each sync,
              * also for history; once per event */
