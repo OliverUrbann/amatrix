@@ -311,7 +311,9 @@ async def scenario(ctx, amiga, srv, me):
     await react(p, kuchen, "\U0001F44D")
     await react(bob, kuchen, "\U0001F44D\U0001F3FD")         # skin tone: same picture
     joy = await react(bob, kuchen, "\U0001F602")
+    await react(p, kuchen, "\U0001F606")                      # another laughing face: same group
     await react(p, m2, "\u2764\ufe0f")
+    await react(p, m2, "\U0001F618")                          # kiss: Alice again -> still 1 heart
     await react(p, m2, "\U0001F389")
     await react(p, m2, "\U0001F404")                          # no picture: shown as text
 
@@ -320,7 +322,7 @@ async def scenario(ctx, amiga, srv, me):
             rc, r = await amiga.rexx("REACTIONS Kaffeeklatsch")
             return want(r) and r
         return await amiga.until(f, 120)
-    v = await reactions(lambda r: "thumbsup 2" in r and "joy 1" in r and "heart 1" in r and "tada 1" in r
+    v = await reactions(lambda r: "thumbsup 2" in r and "joy 2" in r and "heart 1" in r and "tada 1" in r
                         and "other 1" in r)
     check(v, f"reactions under the messages, grouped and counted ({v!r})")
     rc, _ = await amiga.rexx("REACT Kaffeeklatsch heart")
@@ -330,7 +332,7 @@ async def scenario(ctx, amiga, srv, me):
     await asyncio.sleep(5)
     await amiga.shot("05c-reactions")
     await bob.c.room_redact(room, joy)
-    v = await reactions(lambda r: "joy" not in r and "thumbsup 2" in r)
+    v = await reactions(lambda r: "joy 1" in r and "thumbsup 2" in r)
     check(v, f"Bob took his reaction back ({v!r})")
 
     rc, _ = await amiga.rexx("NEWROOM Amiga-Runde")

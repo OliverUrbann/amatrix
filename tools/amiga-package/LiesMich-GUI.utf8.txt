@@ -47,11 +47,17 @@ Bedienung
                 Pfeil nach oben  = 20 ältere Nachrichten laden
                 Person mit Plus  = jemanden in diesen Raum einladen
               Unten tippen, Return sendet.
+              Reaktionen stehen unter der Nachricht, mit Anzahl (Personen);
+              ähnliche Emojis zählen zusammen (alle Lach-Smileys, alle
+              Herzen/Kussmünder).  Deine eigene Anzahl ist fett.  Selbst
+              reagieren geht bisher nur per ARexx: REACT <Raum> heart
+              (thumbsup, thumbsdown, heart, smile, joy, confused, eyes,
+              tada, rocket) - reagiert auf die neueste fremde Nachricht.
 
 ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
 CHATLINES, UNREADABLE, OLDER,
-FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS,
-QUIT).
+FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS, CHATSTATUS,
+CLOSECHAT, REACT, REACTIONS, QUIT).
 
 Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
 schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem

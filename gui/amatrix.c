@@ -463,15 +463,74 @@ static const char *const emo_art[N_EMO][EM] = {
       ".kyk........",
       "............" },
 };
-/* key (without variation selector / skin tone) -> picture */
+/* key (without variation selector / skin tone) -> picture; similar emoji
+ * share a picture and are counted together (all laughing faces, all hearts...).
+ * The first key of a picture is the one we send. */
 static const struct { const char *key; int img; } emo_keys[] = {
-    { "\xf0\x9f\x91\x8d", EMO_THUMBSUP },   { "\xf0\x9f\x91\x8e", EMO_THUMBSDOWN },
-    { "\xe2\x9d\xa4", EMO_HEART },           { "\xf0\x9f\x98\x84", EMO_SMILE },
-    { "\xf0\x9f\x98\x80", EMO_SMILE },      { "\xf0\x9f\x98\x83", EMO_SMILE },
-    { "\xf0\x9f\x99\x82", EMO_SMILE },      { "\xf0\x9f\x98\x8a", EMO_SMILE },
-    { "\xf0\x9f\x98\x82", EMO_JOY },        { "\xf0\x9f\xa4\xa3", EMO_JOY },
-    { "\xf0\x9f\x98\x95", EMO_CONFUSED },   { "\xf0\x9f\x91\x80", EMO_EYES },
-    { "\xf0\x9f\x8e\x89", EMO_TADA },       { "\xf0\x9f\x9a\x80", EMO_ROCKET },
+    { "\xf0\x9f\x91\x8d", EMO_THUMBSUP },   /* U+1F44D */
+    { "\xf0\x9f\x91\x8c", EMO_THUMBSUP },   /* U+1F44C */
+    { "\xe2\x9c\x85", EMO_THUMBSUP },   /* U+2705 */
+    { "\xe2\x9c\x94", EMO_THUMBSUP },   /* U+2714 */
+    { "\xf0\x9f\x86\x97", EMO_THUMBSUP },   /* U+1F197 */
+    { "\xf0\x9f\x91\x8e", EMO_THUMBSDOWN },   /* U+1F44E */
+    { "\xe2\x9d\xa4", EMO_HEART },   /* U+2764 */
+    { "\xe2\x99\xa5", EMO_HEART },   /* U+2665 */
+    { "\xf0\x9f\x92\x95", EMO_HEART },   /* U+1F495 */
+    { "\xf0\x9f\x92\x96", EMO_HEART },   /* U+1F496 */
+    { "\xf0\x9f\x92\x97", EMO_HEART },   /* U+1F497 */
+    { "\xf0\x9f\x92\x93", EMO_HEART },   /* U+1F493 */
+    { "\xf0\x9f\x92\x9e", EMO_HEART },   /* U+1F49E */
+    { "\xf0\x9f\x92\x98", EMO_HEART },   /* U+1F498 */
+    { "\xf0\x9f\x92\x9d", EMO_HEART },   /* U+1F49D */
+    { "\xf0\x9f\xa7\xa1", EMO_HEART },   /* U+1F9E1 */
+    { "\xf0\x9f\x92\x9b", EMO_HEART },   /* U+1F49B */
+    { "\xf0\x9f\x92\x9a", EMO_HEART },   /* U+1F49A */
+    { "\xf0\x9f\x92\x99", EMO_HEART },   /* U+1F499 */
+    { "\xf0\x9f\x92\x9c", EMO_HEART },   /* U+1F49C */
+    { "\xf0\x9f\x96\xa4", EMO_HEART },   /* U+1F5A4 */
+    { "\xf0\x9f\xa4\x8d", EMO_HEART },   /* U+1F90D */
+    { "\xf0\x9f\xa4\x8e", EMO_HEART },   /* U+1F90E */
+    { "\xf0\x9f\x98\x8d", EMO_HEART },   /* U+1F60D */
+    { "\xf0\x9f\xa5\xb0", EMO_HEART },   /* U+1F970 */
+    { "\xf0\x9f\x98\xbb", EMO_HEART },   /* U+1F63B */
+    { "\xf0\x9f\x98\x98", EMO_HEART },   /* U+1F618 */
+    { "\xf0\x9f\x98\x97", EMO_HEART },   /* U+1F617 */
+    { "\xf0\x9f\x98\x99", EMO_HEART },   /* U+1F619 */
+    { "\xf0\x9f\x98\x9a", EMO_HEART },   /* U+1F61A */
+    { "\xf0\x9f\x92\x8b", EMO_HEART },   /* U+1F48B */
+    { "\xf0\x9f\x98\xbd", EMO_HEART },   /* U+1F63D */
+    { "\xe2\x9d\xa3", EMO_HEART },   /* U+2763 */
+    { "\xf0\x9f\x92\x9f", EMO_HEART },   /* U+1F49F */
+    { "\xf0\x9f\xab\xb6", EMO_HEART },   /* U+1FAF6 */
+    { "\xf0\x9f\x98\x84", EMO_SMILE },   /* U+1F604 */
+    { "\xf0\x9f\x98\x80", EMO_SMILE },   /* U+1F600 */
+    { "\xf0\x9f\x98\x83", EMO_SMILE },   /* U+1F603 */
+    { "\xf0\x9f\x98\x81", EMO_SMILE },   /* U+1F601 */
+    { "\xf0\x9f\x99\x82", EMO_SMILE },   /* U+1F642 */
+    { "\xf0\x9f\x98\x8a", EMO_SMILE },   /* U+1F60A */
+    { "\xe2\x98\xba", EMO_SMILE },   /* U+263A */
+    { "\xf0\x9f\x98\xba", EMO_SMILE },   /* U+1F63A */
+    { "\xf0\x9f\x98\xb8", EMO_SMILE },   /* U+1F638 */
+    { "\xf0\x9f\x98\x89", EMO_SMILE },   /* U+1F609 */
+    { "\xf0\x9f\x98\x8c", EMO_SMILE },   /* U+1F60C */
+    { "\xf0\x9f\x98\x82", EMO_JOY },   /* U+1F602 */
+    { "\xf0\x9f\xa4\xa3", EMO_JOY },   /* U+1F923 */
+    { "\xf0\x9f\x98\x86", EMO_JOY },   /* U+1F606 */
+    { "\xf0\x9f\x98\xb9", EMO_JOY },   /* U+1F639 */
+    { "\xf0\x9f\x98\x85", EMO_JOY },   /* U+1F605 */
+    { "\xf0\x9f\x98\x95", EMO_CONFUSED },   /* U+1F615 */
+    { "\xf0\x9f\x98\x9f", EMO_CONFUSED },   /* U+1F61F */
+    { "\xf0\x9f\x99\x81", EMO_CONFUSED },   /* U+1F641 */
+    { "\xe2\x98\xb9", EMO_CONFUSED },   /* U+2639 */
+    { "\xf0\x9f\x98\x90", EMO_CONFUSED },   /* U+1F610 */
+    { "\xf0\x9f\xa4\x94", EMO_CONFUSED },   /* U+1F914 */
+    { "\xf0\x9f\xab\xa4", EMO_CONFUSED },   /* U+1FAE4 */
+    { "\xf0\x9f\x91\x80", EMO_EYES },   /* U+1F440 */
+    { "\xf0\x9f\x91\x81", EMO_EYES },   /* U+1F441 */
+    { "\xf0\x9f\x8e\x89", EMO_TADA },   /* U+1F389 */
+    { "\xf0\x9f\x8e\x8a", EMO_TADA },   /* U+1F38A */
+    { "\xf0\x9f\xa5\xb3", EMO_TADA },   /* U+1F973 */
+    { "\xf0\x9f\x9a\x80", EMO_ROCKET },   /* U+1F680 */
 };
 
 /* the key without variation selector and skin tone: same picture, same group */
@@ -487,9 +546,14 @@ static void norm_key(const char *key, char *k, size_t size)
     k[n] = 0;
 }
 
+static int emo_index(const char *key);
+
+/* one group: the same picture, or (no picture) the same emoji */
 static int same_key(const char *a, const char *b)
 {
     char x[64], y[64];
+    int ia = emo_index(a), ib = emo_index(b);
+    if (ia >= 0 || ib >= 0) return ia == ib;
     norm_key(a, x, sizeof x);
     norm_key(b, y, sizeof y);
     return !strcmp(x, y);
@@ -1107,6 +1171,24 @@ static void send_read_markers(void)
 
 /* the reactions line for target: "<picture> 2   <picture> 1", grouped by key in
  * the order they came; our own count in bold.  "" if none. */
+/* reactions to target in the group of reaction i: how many people (one
+ * person with a heart and a kiss counts once), and whether we are one */
+static int group_count(ChatWin *w, const char *target, int i, int *own)
+{
+    int j, k, count = 0;
+    *own = 0;
+    for (j = i; j < w->n_react; j++) {
+        if (strcmp(w->react[j].target, target) || !same_key(w->react[j].key, w->react[i].key)) continue;
+        for (k = i; k < j; k++)
+            if (!strcmp(w->react[k].target, target) && same_key(w->react[k].key, w->react[i].key)
+                && !strcmp(w->react[k].sender, w->react[j].sender)) break;
+        if (k < j) continue;
+        count++;
+        *own |= w->react[j].own;
+    }
+    return count;
+}
+
 static void reaction_text(ChatWin *w, const char *target, char *buf, size_t n)
 {
     int i, j, any = 0;
@@ -1119,11 +1201,7 @@ static void reaction_text(ChatWin *w, const char *target, char *buf, size_t n)
         for (j = 0; j < i; j++)                      /* this key counted already? */
             if (!strcmp(w->react[j].target, target) && same_key(w->react[j].key, r->key)) break;
         if (j < i) continue;
-        for (j = i; j < w->n_react; j++)
-            if (!strcmp(w->react[j].target, target) && same_key(w->react[j].key, r->key)) {
-                count++;
-                own |= w->react[j].own;
-            }
+        count = group_count(w, target, i, &own);
         len = strlen(buf);
         if (len + 64 >= n) break;
         any = 1;
@@ -1897,7 +1975,8 @@ HOOKPROTONH(rx_react_func, LONG, Object *obj, ULONG *arg)
         if (!l || l->react || l->undec || !l->eid || l->own || !strstr(l->text, ":\33n")) continue;
         for (i = 0; i < sizeof emo_keys / sizeof emo_keys[0]; i++)
             if (emo_keys[i].img == img) break;
-        amx_async_react(A, w->room_id, l->eid, emo_keys[i].key, TAG_REACT);
+        amx_async_react(A, w->room_id, l->eid,
+                        img == EMO_HEART ? "\xe2\x9d\xa4\xef\xb8\x8f" : emo_keys[i].key, TAG_REACT);
         return 0;
     }
     return 10;
@@ -1926,10 +2005,7 @@ HOOKPROTONH(rx_reactions_func, LONG, Object *obj, ULONG *arg)
             for (j = 0; j < i; j++)
                 if (!strcmp(w->react[j].target, l->eid) && same_key(w->react[j].key, w->react[i].key)) break;
             if (j < i) continue;
-            for (j = i; j < w->n_react; j++)
-                if (!strcmp(w->react[j].target, l->eid) && same_key(w->react[j].key, w->react[i].key)) {
-                    count++; own |= w->react[j].own;
-                }
+            count = group_count(w, l->eid, i, &own);
             img = emo_index(w->react[i].key);
             snprintf(one, sizeof one, "%s%s %d%s", strlen(b) && b[strlen(b) - 1] != ' ' ? " " : "",
                      img >= 0 ? emo_names[img] : "other", count, own ? "*" : "");
