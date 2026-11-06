@@ -782,9 +782,12 @@ static char *format_event(const AmxEvent *e)
         free(body);
         break;
     case AMX_EV_UNDECRYPTABLE:
-        n = strlen(name) + 96;
+        n = strlen(name) + 96 + (e->reason ? strlen(e->reason) : 0);
         out = malloc(n);
-        snprintf(out, n, "%s\33b%s:\33n \33i(verschlüsselt, kein Schlüssel auf diesem Gerät)", tbuf, name);
+        if (!e->reason || !strcmp(e->reason, "no key"))
+            snprintf(out, n, "%s\33b%s:\33n \33i(verschlüsselt, kein Schlüssel auf diesem Gerät)", tbuf, name);
+        else
+            snprintf(out, n, "%s\33b%s:\33n \33i(verschlüsselt, nicht lesbar: %s)", tbuf, name, e->reason);
         break;
     case AMX_EV_MEMBERSHIP: {
         const char *what = e->body ? e->body : "";

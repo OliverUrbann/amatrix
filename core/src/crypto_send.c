@@ -195,6 +195,9 @@ static cJSON *new_outbound(AmxClient *c, const char *room_id)
     repickle_out(entry, o);
     cJSON_AddObjectToObject(entry, "shared");
     cJSON_AddNumberToObject(entry, "count", 0);
+    cJSON_AddStringToObject(entry, "sid", sid);
+    LOG(c, "Megolm: new outbound session %.16s... for %s (own copy %s)", sid, room_id,
+        amx__find_group(c, room_id, sid) ? "stored" : "MISSING");
     olm_clear_outbound_group_session(o);
     free(o);
     cJSON_DeleteItemFromObjectCaseSensitive(c->outbound, room_id);
@@ -360,6 +363,9 @@ int amx__encrypt_room_event(AmxClient *c, const char *room_id, const char *type,
         cJSON_AddStringToObject(x, "ciphertext", (char *)ct);
         cJSON_AddStringToObject(x, "session_id", sid);
         cJSON_AddStringToObject(x, "device_id", c->device_id);
+        LOG(c, "Megolm: encrypted for %s with session %.16s... index %lu (own copy %s)", room_id, sid,
+            (unsigned long)olm_outbound_group_session_message_index(o) - 1,
+            amx__find_group(c, room_id, sid) ? "present" : "MISSING");
         free(ct);
     }
     free(plain);

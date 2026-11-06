@@ -380,6 +380,15 @@ static void emit_undecryptable(AmxClient *c, const char *room_id, const cJSON *e
     e.reason = reason;
     e.encrypted = 1;
     e.own = e.sender && c->user_id && !strcmp(e.sender, c->user_id);
+    {
+        const cJSON *ct = cJSON_GetObjectItemCaseSensitive(ev, "content");
+        const char *sid = amx__jstr(ct, "session_id"), *dev = amx__jstr(ct, "device_id");
+        const char *osid = amx__jstr(cJSON_GetObjectItemCaseSensitive(c->outbound, room_id), "sid");
+        LOG(c, "undecryptable %s in %s from %s device %s session %.16s...: %s%s%s",
+            e.event_id ? e.event_id : "-", room_id, e.sender ? e.sender : "-", dev ? dev : "-",
+            sid ? sid : "-", reason, dev && c->device_id && !strcmp(dev, c->device_id) ? " (THIS device)" : "",
+            osid && sid && !strcmp(osid, sid) ? " (our current outbound session)" : "");
+    }
     stamp(&e, ev, history);
     amx__emit(c, &e);
 }
