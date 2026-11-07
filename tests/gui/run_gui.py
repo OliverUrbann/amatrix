@@ -244,6 +244,7 @@ async def scenario(ctx, amiga, srv, me):
         return v and n0 and v > n0
     check(await amiga.until(more, 120), "reply shows up live")
 
+
     async def preview(name, want):
         async def f():
             rc, r = await amiga.rexx("ROOMLINE " + name)
@@ -253,6 +254,18 @@ async def scenario(ctx, amiga, srv, me):
     check(v, f"room list, second line of Alice: newest message ({v!r})")
     v = await preview("Kaffeeklatsch", "Alice: Wer hat Kuchen mitgebracht?")
     check(v, f"second line of a group: sender and message ({v!r})")
+
+    # emoji in the text: our pictures, unknown ones the yellow "?" face
+    await p.send(dm, "Prima \U0001F602 und \U0001F984 und \u2764\ufe0f")
+
+    async def emoji_line():
+        rc, r = await amiga.rexx("LASTLINE Alice")
+        return "Prima" in r and r
+    v = await amiga.until(emoji_line, 120)
+    check(v and "^o[4]" in v and "^o[9]" in v and "^o[2]" in v and "?" not in v.split(":", 1)[-1],
+          f"emoji in a message shown as pictures ({v!r})")
+    v = await preview("Alice", "Prima ")
+    check(v and "?" not in v and v.count("\x1bA[") == 3, f"room list preview: emoji as pictures too ({v!r})")
 
     # a long message (wrapped over several lines), then close and reopen the
     # window a few times: freeing the lines must not crash (seen on the Vampire)
@@ -359,6 +372,7 @@ async def scenario(ctx, amiga, srv, me):
             rc, r = await amiga.rexx("UNREADABLE " + name)
             return r == "0"
         check(await amiga.until(readable, 120), f"{name}: every message decrypted (late keys replace the placeholder)")
+
 
     # a room with a long, mixed history from before we joined (like a real
     # account on a new device): nothing of it is decryptable for us
@@ -499,6 +513,17 @@ async def scenario(ctx, amiga, srv, me):
     check(rc == "0", "new chat with an existing partner opens the existing chat")
     await asyncio.sleep(5)
     await amiga.shot("07-end")
+
+    # leave the room created in the GUI for good: window closes, room gone
+    if new:
+        rc, _ = await amiga.rexx("LEAVE Amiga-Runde")
+        check(rc == "0", "left Amiga-Runde (toolbar door / menu, without the question)")
+        check(await p.wait_left(new, me.user_id, 120), "peer sees us leave")
+
+        async def gone():
+            rc, r = await amiga.rexx("ROOMLINE Amiga-Runde")
+            return rc != "0"
+        check(await amiga.until(gone, 60), "Amiga-Runde is no longer in the room list")
 
 
 async def main():

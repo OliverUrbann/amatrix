@@ -46,6 +46,11 @@ Bedienung
               Werkzeugleiste oben (Maus darüber zeigt die Erklärung):
                 Pfeil nach oben  = 20 ältere Nachrichten laden
                 Person mit Plus  = jemanden in diesen Raum einladen
+                Tür mit Pfeil    = Raum endgültig verlassen (mit Rückfrage);
+                                   auch im Menü "Raum verlassen ..." für
+                                   den in der Liste gewählten Raum
+              Emojis im Text erscheinen als kleine Bilder; unbekannte als
+              gelbes Gesicht mit Fragezeichen.
               Unten tippen, Return sendet.
               Reaktionen stehen unter der Nachricht, mit Anzahl (Personen);
               ähnliche Emojis zählen zusammen (alle Lach-Smileys, alle
@@ -57,7 +62,7 @@ Bedienung
 ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
 CHATLINES, UNREADABLE, OLDER,
 FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS, CHATSTATUS,
-CLOSECHAT, REACT, REACTIONS, QUIT).
+CLOSECHAT, REACT, REACTIONS, LEAVE, LASTLINE, QUIT).
 
 Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
 schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem

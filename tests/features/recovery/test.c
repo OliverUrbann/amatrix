@@ -15,6 +15,13 @@ static const char *const msgs[] = {
 
 static char *room;
 
+static int part_both(void *arg)
+{
+    (void)arg;
+    return mxt_find(AMX_EV_MESSAGE, NULL, NULL, "vor dem Teilschluessel") != NULL
+        && mxt_find(AMX_EV_MESSAGE, NULL, NULL, "nach dem Teilschluessel") != NULL;
+}
+
 static int live_req(void *arg)
 {
     (void)arg;
@@ -119,6 +126,8 @@ int main(int argc, char **argv)
 
     /* new messages of our other device (like the phone) are readable live */
     MXT_OK(mxt_sync_until(c, live_both, NULL, 300), "live messages of the other device decrypted");
+    MXT_OK(mxt_sync_until(c, part_both, NULL, 300),
+           "a session known only from a later message: the earlier one decrypted after all (fuller key)");
     MXT_OK(mxt_sync_until(c, live_req, NULL, 300),
            "message without a shared key: key requested from our other device and decrypted");
     {

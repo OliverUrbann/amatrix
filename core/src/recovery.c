@@ -458,7 +458,6 @@ static int import_one(AmxClient *c, OlmPkDecryption *d, const char *room, const 
     OlmInboundGroupSession *s;
     const char *alg, *key, *sender;
 
-    if (amx__find_group(c, room, sid)) return 0;
     if (!eph || !mac || !ct) return -1;
     ctb = amx__strdup(ct);
     max = olm_pk_max_plaintext_length(d, strlen(ctb));
@@ -491,10 +490,10 @@ static int import_one(AmxClient *c, OlmPkDecryption *d, const char *room, const 
     n = olm_inbound_group_session_id(s, (uint8_t *)idbuf, sizeof idbuf - 1);
     idbuf[n == olm_error() ? 0 : n] = 0;
     if (strcmp(idbuf, sid)) { LOG(c, "backup: session id mismatch"); free(s); cJSON_Delete(p); return -1; }
-    amx__add_group_session(c, room, sid, sender,
-                           amx__jstr(cJSON_GetObjectItemCaseSensitive(p, "sender_claimed_keys"), "ed25519"), s);
+    n = amx__put_group_session(c, room, sid, sender,
+                               amx__jstr(cJSON_GetObjectItemCaseSensitive(p, "sender_claimed_keys"), "ed25519"), s);
     cJSON_Delete(p);
-    return 1;
+    return (int)n;
 }
 
 /* a PkDecryption for the backup key, or NULL (error set) */
@@ -546,7 +545,7 @@ static int backup_due(AmxClient *c, const char *key)
     return 1;
 }
 
-int amx__backup_for_events(AmxClient *c, const char *room_id, const cJSON *events)
+int amx__backup_for_events(AmxClient *c, const char *room_id, const cJSON *events, int only_missing)
 {
     OlmPkDecryption *d = NULL;
     const cJSON *e;
@@ -559,7 +558,8 @@ int amx__backup_for_events(AmxClient *c, const char *room_id, const cJSON *event
         char *key, *sesc, *path;
         cJSON *r;
         long st;
-        if (!typ || strcmp(typ, "m.room.encrypted") || !sid || amx__find_group(c, room_id, sid)) continue;
+        if (!typ || strcmp(typ, "m.room.encrypted") || !sid || (only_missing && amx__find_group(c, room_id, sid)))
+            continue;
         key = amx__malloc(strlen(room_id) + strlen(sid) + 2);
         sprintf(key, "%s|%s", room_id, sid);
         if (!backup_due(c, key)) { free(key); continue; }

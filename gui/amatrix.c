@@ -49,10 +49,11 @@ static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.20
 #define OLDER_HELP "20 ältere Nachrichten laden"
 #define OLDER_HELP_END "Anfang des Chats - keine älteren Nachrichten"
 #define INVITE_HELP "Jemanden in diesen Raum einladen"
+#define LEAVE_HELP "Diesen Raum verlassen"
 
 enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
-    ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO, ID_UNLOCK_GO, ID_STOREPASS, ID_STOREPASS_SET, ID_STOREPASS_DEL
+    ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO, ID_UNLOCK_GO, ID_STOREPASS, ID_STOREPASS_SET, ID_STOREPASS_DEL, ID_LEAVE
 };
 enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TAG_AVATAR,
        TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY, TAG_UNLOCK, TAG_STOREPASS,
@@ -77,7 +78,7 @@ typedef struct React {
 typedef struct ChatWin {
     struct ChatWin *next;
     char *room_id;
-    Object *win, *list, *input, *older, *invite;
+    Object *win, *list, *input, *older, *invite, *leave;
     char **seen;                  /* event IDs shown (history and live overlap) */
     int n_seen, cap_seen;
     int n_undec;                  /* placeholder lines for undecryptable messages */
@@ -172,6 +173,12 @@ static void set_status(const char *fmt, const char *a, const char *b)
 {
     snprintf(status_buf, sizeof status_buf, fmt, a ? a : "", b ? b : "");
     set(txt_status, MUIA_Text_Contents, status_buf);
+}
+
+/* "Online - user (verifiziert)": the one place for it, so no path forgets the suffix */
+static void set_online(void)
+{
+    set_status(verified ? "Online - %s (verifiziert)" : "Online - %s", my_user, NULL);
 }
 
 static Room *room_by_id(const char *id)
@@ -272,7 +279,7 @@ static void store_dir(char *buf, size_t n, const char *server, const char *user)
  * blue for the shadow side, light from the top left, black outlines and a
  * drop shadow.  '.' = transparent */
 #define IC 16
-static Alpha icon_up, icon_invite;
+static Alpha icon_up, icon_invite, icon_leave;
 static const char *const art_up[IC] = {
     "................",
     ".......kk.......",
@@ -308,6 +315,24 @@ static const char *const art_invite[IC] = {
     "kBBBBBBBBBBBkd..",
     "kkkkkkkkkkkkkd.." };
 
+static const char *const art_leave[IC] = {
+    "kkkkkkkkk.......",
+    "kwwwwwwwk.......",
+    "kwkkkkkwk.......",
+    "kwknnnnkk.......",
+    "kwknnnnNk...k...",
+    "kwknnnnNk...kk..",
+    "kwknnnnNkkkkkrk.",
+    "kwknnnkNkrrrrrRk",
+    "kwknnnnNkrrrrRkd",
+    "kwknnnnNkkkkkRkd",
+    "kwknnnnNk.ddkkdd",
+    "kwknnnnNk...kdd.",
+    "kwkNNNNNk....d..",
+    "kwkkkkkkk.......",
+    "kkkkkkkkkd......",
+    ".ddddddddd......" };
+
 static ULONG wb_colour(char ch)
 {
     switch (ch) {
@@ -320,6 +345,8 @@ static ULONG wb_colour(char ch)
     case 'g': return 0xff959595UL;            /* MagicWB grey */
     case 'f': return 0xffffa997UL;            /* skin */
     case 'e': return 0xffd2826eUL;            /* skin, shadow side */
+    case 'n': return 0xffaa907cUL;            /* MagicWB beige (door) */
+    case 'N': return 0xff786050UL;            /* its shadow side */
     case 'y': return 0xffffd648UL;            /* face yellow */
     case 'Y': return 0xffd6961eUL;            /* its shadow side */
     case 'r': return 0xffe22828UL;            /* red */
@@ -342,7 +369,7 @@ static void make_icon(Alpha *a, const char *const *art)
 /* reactions: the common ones as 12x12 pictures in the same style (Element's
  * quick reactions plus "tears of joy"); keys are UTF-8 */
 #define EM 12
-enum { EMO_THUMBSUP, EMO_THUMBSDOWN, EMO_HEART, EMO_SMILE, EMO_JOY, EMO_CONFUSED, EMO_EYES, EMO_TADA, EMO_ROCKET, N_EMO };
+enum { EMO_THUMBSUP, EMO_THUMBSDOWN, EMO_HEART, EMO_SMILE, EMO_JOY, EMO_CONFUSED, EMO_EYES, EMO_TADA, EMO_ROCKET, EMO_UNKNOWN, N_EMO };
 static Alpha emo_img[N_EMO];
 static const char *const emo_art[N_EMO][EM] = {
     { /* thumbsup */
@@ -462,6 +489,19 @@ static const char *const emo_art[N_EMO][EM] = {
       "kyrkk.......",
       ".kyk........",
       "............" },
+    { /* unknown: an emoji we have no picture for */
+      "....kkkk....",
+      "..kkyyyykk..",
+      ".kyywyyyyYk.",
+      ".kywkkkyyYk.",
+      "kyyyyyykyyYk",
+      "kyyyyyykyyYk",
+      "kyyyykkyyyYk",
+      "kyyyykyyyyYk",
+      ".kyyyyyyyYk.",
+      ".kYyykyyYYk.",
+      "..kkYYYYkk..",
+      "....kkkk...." },
 };
 /* key (without variation selector / skin tone) -> picture; similar emoji
  * share a picture and are counted together (all laughing faces, all hearts...).
@@ -577,6 +617,114 @@ static void make_emoji(void)
         for (y = 0; y < EM; y++)
             for (x = 0; x < EM; x++) emo_img[i].px[y * EM + x] = wb_colour(emo_art[i][y][x]);
     }
+}
+
+/* ---- emoji in message text: a picture (ESC o[n]) instead of "?" */
+
+static unsigned long utf8_cp(const unsigned char *p, int *len)
+{
+    if (p[0] < 0x80) { *len = 1; return p[0]; }
+    if ((p[0] & 0xe0) == 0xc0 && (p[1] & 0xc0) == 0x80) { *len = 2; return ((p[0] & 0x1fUL) << 6) | (p[1] & 0x3f); }
+    if ((p[0] & 0xf0) == 0xe0 && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80) {
+        *len = 3; return ((p[0] & 0x0fUL) << 12) | ((p[1] & 0x3fUL) << 6) | (p[2] & 0x3f);
+    }
+    if ((p[0] & 0xf8) == 0xf0 && (p[1] & 0xc0) == 0x80 && (p[2] & 0xc0) == 0x80 && (p[3] & 0xc0) == 0x80) {
+        *len = 4;
+        return ((p[0] & 0x07UL) << 18) | ((p[1] & 0x3fUL) << 12) | ((p[2] & 0x3fUL) << 6) | (p[3] & 0x3f);
+    }
+    *len = 1;
+    return 0xfffd;
+}
+
+static int is_emoji_cp(unsigned long cp)
+{
+    return (cp >= 0x1F000 && cp <= 0x1FAFF) || (cp >= 0x2600 && cp <= 0x27BF) ||
+           (cp >= 0x2300 && cp <= 0x23FF) || (cp >= 0x2B00 && cp <= 0x2BFF) ||
+           cp == 0x3030 || cp == 0x303D || cp == 0x3297 || cp == 0x3299;
+}
+
+static int is_emoji_mod(unsigned long cp)      /* belongs to the emoji before it */
+{
+    return cp == 0xFE0F || cp == 0xFE0E || (cp >= 0x1F3FB && cp <= 0x1F3FF) || cp == 0x20E3 ||
+           (cp >= 0xE0020 && cp <= 0xE007F);
+}
+
+static void sb_add(char **b, size_t *n, size_t *cap, const char *s, size_t len)
+{
+    if (*n + len + 1 > *cap) {
+        size_t nc = (*cap ? *cap * 2 : 128) + len;
+        char *t = realloc(*b, nc);
+        if (!t) return;
+        *b = t; *cap = nc;
+    }
+    memcpy(*b + *n, s, len);
+    *n += len;
+    (*b)[*n] = 0;
+}
+
+static void sb_local(char **b, size_t *n, size_t *cap, const char *from, const char *to)
+{
+    char *u, *l;
+    if (to <= from) return;
+    if (!(u = malloc((size_t)(to - from) + 1))) return;
+    memcpy(u, from, (size_t)(to - from));
+    u[to - from] = 0;
+    l = local(u);
+    sb_add(b, n, cap, l, strlen(l));
+    free(l); free(u);
+}
+
+/* like local(), but emoji become our pictures: a known one its own, any
+ * other the yellow "?" face (instead of a "?" that reads like a question) */
+static char *local_emoji_as(const char *utf8, int mui);
+
+static char *local_emoji(const char *utf8)
+{
+    return local_emoji_as(utf8, 0);
+}
+
+/* mui: for MUI's List (ESC A with the ARGB data) instead of NList (ESC o) */
+static char *local_emoji_as(const char *utf8, int mui)
+{
+    const unsigned char *p = (const unsigned char *)(utf8 ? utf8 : ""), *seg = p;
+    char *b = NULL;
+    size_t n = 0, cap = 0;
+    sb_add(&b, &n, &cap, "", 0);
+    while (*p) {
+        int len, l2;
+        unsigned long cp = utf8_cp(p, &len), c2;
+        if (is_emoji_cp(cp)) {
+            const unsigned char *q = p + len;
+            char key[8], esc[24];
+            int img;
+            sb_local(&b, &n, &cap, (const char *)seg, (const char *)p);
+            for (;;) {                                          /* modifiers, ZWJ sequences, flags */
+                if (!*q) break;
+                c2 = utf8_cp(q, &l2);
+                if (is_emoji_mod(c2)) { q += l2; continue; }
+                if (c2 == 0x200D && q[l2] && is_emoji_cp(utf8_cp(q + l2, &len))) { q += l2 + len; continue; }
+                if (cp >= 0x1F1E6 && cp <= 0x1F1FF && c2 >= 0x1F1E6 && c2 <= 0x1F1FF && q == p + 4) {
+                    q += l2; continue;
+                }
+                break;
+            }
+            utf8_cp(p, &len);
+            memcpy(key, p, (size_t)len);
+            key[len] = 0;
+            img = emo_index(key);
+            if (img < 0) img = EMO_UNKNOWN;
+            if (mui) snprintf(esc, sizeof esc, "\33A[%08lx]", (unsigned long)&emo_img[img].ad);
+            else snprintf(esc, sizeof esc, "\33o[%d]", img);
+            sb_add(&b, &n, &cap, esc, strlen(esc));
+            p = seg = q;
+        } else if (is_emoji_mod(cp) || cp == 0x200D) {        /* stray: e.g. a keycap's parts */
+            sb_local(&b, &n, &cap, (const char *)seg, (const char *)p);
+            p = seg = p + len;
+        } else
+            p += len;
+    }
+    sb_local(&b, &n, &cap, (const char *)seg, (const char *)p);
+    return b;
 }
 
 /* a toolbar button: icon only, the text as bubble help */
@@ -749,7 +897,7 @@ static void update_rooms(const AmxMsg *m)
         nl[i].members = ri->joined_members;
         nl[i].topic = ri->topic ? local(ri->topic) : NULL;
         nl[i].last_sender = ri->last_sender ? local(ri->last_sender) : NULL;
-        nl[i].last_body = ri->last_body ? local(ri->last_body) : NULL;
+        nl[i].last_body = ri->last_body ? local_emoji_as(ri->last_body, 1) : NULL;
         nl[i].last_own = ri->last_own;
         nl[i].last_ts = ri->last_activity;
     }
@@ -884,6 +1032,38 @@ static void show_invite(const char *room_id)
     set(win_invite, MUIA_Window_ActiveObject, str_inviteuser);
 }
 
+/* leaves a room for good (or declines an invitation); its chat window is
+ * closed.  ask: confirm first. */
+static void leave_room(const char *room_id, int ask)
+{
+    Room *r = room_by_id(room_id);
+    ChatWin *w = chat_by_room(room_id);
+    if (!A || !r) return;
+    if (ask) {
+        char *name = r->name ? r->name : r->id;
+        LONG ok = r->invited
+            ? MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_Ablehnen|_Abbrechen",
+                          (STRPTR)"Einladung in \33b%s\33n ablehnen?", (ULONG)name)
+            : MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_Verlassen|_Abbrechen",
+                          (STRPTR)"\33b%s\33n wirklich verlassen?\n\n"
+                          "Du bekommst dann keine Nachrichten mehr aus diesem Raum.\n"
+                          "Zurück geht es nur mit einer neuen Einladung\n"
+                          "(öffentliche Räume: über \"Raum betreten\").", (ULONG)name);
+        if (ok != 1) return;
+    }
+    amx_async_leave(A, room_id, TAG_LEAVE);
+    if (w) w->close_req = 1;             /* closed in the main loop, not inside its own button */
+    set_status("Verlasse %s ...", r->name ? r->name : r->id, NULL);
+}
+
+HOOKPROTONH(chat_leave_func, LONG, Object *obj, ULONG *param)
+{
+    (void)obj;
+    leave_room(((ChatWin *)param[0])->room_id, 1);
+    return 0;
+}
+MakeStaticHook(chat_leave_hook, chat_leave_func);
+
 HOOKPROTONH(chat_invite_func, LONG, Object *obj, ULONG *param)
 {
     (void)obj;
@@ -938,9 +1118,10 @@ static void open_chat(const char *room_id)
             Child, HGroup,                          /* toolbar */
                 Child, w->older = icon_button(&icon_up, OLDER_HELP),
                 Child, w->invite = icon_button(&icon_invite, INVITE_HELP),
+                Child, w->leave = icon_button(&icon_leave, LEAVE_HELP),
                 Child, w->busy = TextObject,
                     MUIA_Text_Contents, "",
-                    MUIA_Text_PreParse, "\33l",
+                    MUIA_Text_PreParse, "\33r",
                     MUIA_Weight, 100,
                 End,
             End,
@@ -978,6 +1159,8 @@ static void open_chat(const char *room_id)
              MUIM_CallHook, &chat_older_hook, w);
     DoMethod(w->invite, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
              MUIM_CallHook, &chat_invite_hook, w);
+    DoMethod(w->leave, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
+             MUIM_CallHook, &chat_leave_hook, w);
     set(w->win, MUIA_Window_ActiveObject, w->input);
     w->next = chats;
     chats = w;
@@ -1042,7 +1225,7 @@ static char *format_event(const AmxEvent *e)
     }
     switch (e->type) {
     case AMX_EV_MESSAGE:
-        body = local(e->body);
+        body = local_emoji(e->body);
         n = strlen(name) + strlen(body) + 64;
         out = malloc(n);
         if (!strcmp(mt, "m.emote"))
@@ -1060,7 +1243,9 @@ static char *format_event(const AmxEvent *e)
     case AMX_EV_UNDECRYPTABLE:
         n = strlen(name) + 96 + (e->reason ? strlen(e->reason) : 0);
         out = malloc(n);
-        if (!e->reason || !strcmp(e->reason, "no key"))
+        if (e->reason && !strcmp(e->reason, "UNKNOWN_MESSAGE_INDEX"))   /* key only from a later message on */
+            snprintf(out, n, "%s\33b%s:\33n \33i(verschlüsselt, Schlüssel gilt erst ab einer späteren Nachricht)", tbuf, name);
+        else if (!e->reason || !strcmp(e->reason, "no key"))
             snprintf(out, n, "%s\33b%s:\33n \33i(verschlüsselt, kein Schlüssel auf diesem Gerät)", tbuf, name);
         else
             snprintf(out, n, "%s\33b%s:\33n \33i(verschlüsselt, nicht lesbar: %s)", tbuf, name, e->reason);
@@ -1207,11 +1392,8 @@ static void reaction_text(ChatWin *w, const char *target, char *buf, size_t n)
         any = 1;
         if ((img = emo_index(r->key)) >= 0)
             snprintf(buf + len, n - len, "\33o[%d] %s%d%s   ", img, own ? "\33b" : "", count, own ? "\33n" : "");
-        else {
-            char *l = local(r->key);
-            snprintf(buf + len, n - len, "%.12s %s%d%s   ", l, own ? "\33b" : "", count, own ? "\33n" : "");
-            free(l);
-        }
+        else
+            snprintf(buf + len, n - len, "\33o[%d] %s%d%s   ", EMO_UNKNOWN, own ? "\33b" : "", count, own ? "\33n" : "");
     }
     if (!any) buf[0] = 0;
 }
@@ -1612,13 +1794,13 @@ static void handle_result(const AmxMsg *m)
         if (m->status) {
             MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK", (STRPTR)"%s",
                         (ULONG)(m->error ? m->error : "Fehler"));
-            set_status("Online - %s", my_user, NULL);
+            set_online();
             return;
         }
         free(pending_open);
         pending_open = strdup(m->result);
         if (room_by_id(pending_open)) { char *id = pending_open; pending_open = NULL; open_chat(id); free(id); }
-        set_status("Online - %s", my_user, NULL);
+        set_online();
         break;
     case TAG_UNLOCK:
         set(b_unlock, MUIA_Disabled, FALSE);
@@ -1646,7 +1828,7 @@ static void handle_result(const AmxMsg *m)
         if (m->status) {
             set(txt_recovery, MUIA_Text_Contents, m->error && strstr(m->error, "wrong")
                 ? "Falscher Schlüssel bzw. falsche Passphrase." : (m->error ? m->error : "Fehler"));
-            set_status(verified ? "Online - %s (verifiziert)" : "Online - %s", my_user, NULL);
+            set_online();
             break;
         }
         if (m->verified) verified = 1;
@@ -1659,7 +1841,7 @@ static void handle_result(const AmxMsg *m)
                                : "Auf dem Server gibt es keine Schlüsselsicherung.");
             set(txt_recovery, MUIA_Text_Contents, res);
         }
-        set_status(verified ? "Online - %s (verifiziert)" : "Online - %s", my_user, NULL);
+        set_online();
         /* open windows: reload, which fetches their keys from the backup */
         for (w = chats; w; w = w->next) amx_async_load_history(A, w->room_id, FIRST_PAGE, 1, TAG_HIST);
         break;
@@ -1675,7 +1857,7 @@ static void handle_result(const AmxMsg *m)
             MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
                         (STRPTR)"Einladen hat nicht geklappt:\n%s", (ULONG)(m->error ? m->error : ""));
         free(room);
-        set_status(verified ? "Online - %s (verifiziert)" : "Online - %s", my_user, NULL);
+        set_online();
         break;
     }
     case TAG_SEND: {
@@ -1691,6 +1873,12 @@ static void handle_result(const AmxMsg *m)
         free(room);
         break;
     }
+    case TAG_LEAVE:
+        if (m->status)
+            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
+                        (STRPTR)"Verlassen hat nicht geklappt:\n%s", (ULONG)(m->error ? m->error : ""));
+        set_online();
+        break;
     case TAG_REACT:
         if (m->status) amx_log("reaction failed: %s", m->error ? m->error : "-");
         break;
@@ -1733,7 +1921,7 @@ static void handle_net(void)
         case AMX_MSG_ROOMS:  update_rooms(m); break;
         case AMX_MSG_RESULT: handle_result(m); break;
         case AMX_MSG_STATE:
-            if (m->online) set_status(verified ? "Online - %s (verifiziert)" : "Online - %s", my_user, NULL);
+            if (m->online) set_online();
             else set_status("Offline: %s", m->error, NULL);
             break;
         }
@@ -1955,7 +2143,7 @@ MakeStaticHook(rx_closechat_hook, rx_closechat_func);
 /* REACT room name: our reaction (thumbsup, heart, ...) to the newest message
  * of someone else; REACTIONS room: the reaction lines, "name count[*]" */
 static const char *const emo_names[N_EMO] = { "thumbsup", "thumbsdown", "heart", "smile", "joy",
-                                               "confused", "eyes", "tada", "rocket" };
+                                               "confused", "eyes", "tada", "rocket", "unknown" };
 
 HOOKPROTONH(rx_react_func, LONG, Object *obj, ULONG *arg)
 {
@@ -2017,6 +2205,35 @@ HOOKPROTONH(rx_reactions_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_reactions_hook, rx_reactions_func);
 
+HOOKPROTONH(rx_leave_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    (void)obj;
+    if (!r) return 5;
+    leave_room(r->id, 0);
+    return 0;
+}
+MakeStaticHook(rx_leave_hook, rx_leave_func);
+
+/* LASTLINE room: the text of the newest chat line, ESC shown as "^" */
+HOOKPROTONH(rx_last_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    Line *l = NULL;
+    char b[500], *q;
+    LONG n;
+    (void)obj;
+    if (!w) return 5;
+    n = (LONG)xget(w->list, MUIA_NList_Entries);
+    if (n > 0) DoMethod(w->list, MUIM_NList_GetEntry, n - 1, &l);
+    snprintf(b, sizeof b, "%s", l && l->text ? l->text : "");
+    for (q = b; *q; q++) if (*q == 27) *q = '^';
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_last_hook, rx_last_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
@@ -2032,6 +2249,8 @@ static struct MUI_Command rexx_cmds[] = {
     { "ROOMLINE",  "ROOM/F",          1, &rx_roomline_hook, { 0 } },
     { "REACT",     "ROOM/A,NAME/A",   2, &rx_react_hook,    { 0 } },
     { "REACTIONS", "ROOM/F",          1, &rx_reactions_hook, { 0 } },
+    { "LEAVE",     "ROOM/F",          1, &rx_leave_hook,    { 0 } },
+    { "LASTLINE",  "ROOM/F",          1, &rx_last_hook,     { 0 } },
     { "RECOVERY",  "KEY/F",           1, &rx_recovery_hook, { 0 } },
     { "UNLOCK",    "PASS/F",          1, &rx_unlock_hook,   { 0 } },
     { "CHATSTATUS","ROOM/F",          1, &rx_chatstatus_hook, { 0 } },
@@ -2048,6 +2267,7 @@ static struct NewMenu menu[] = {
     { NM_ITEM,  (STRPTR)"Raum betreten ...", (STRPTR)"R", 0, 0, (APTR)ID_JOINWIN },
     { NM_ITEM,  (STRPTR)"Neuer Chat ...",    (STRPTR)"N", 0, 0, (APTR)ID_NEWCHAT },
     { NM_ITEM,  (STRPTR)"Neuer Raum ...",    NULL, 0, 0, (APTR)ID_NEWROOM },
+    { NM_ITEM,  (STRPTR)"Raum verlassen ...", (STRPTR)"L", 0, 0, (APTR)ID_LEAVE },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Sicherheitsschlüssel eingeben ...", (STRPTR)"S", 0, 0, (APTR)ID_RECOVERY },
     { NM_ITEM,  (STRPTR)"Passwort für Amatrix-Daten ...", (STRPTR)"P", 0, 0, (APTR)ID_STOREPASS },
@@ -2362,6 +2582,14 @@ static void handle_id(ULONG id)
         join_selected();
         set(win_join, MUIA_Window_Open, FALSE);
         break;
+    case ID_LEAVE: {
+        Room *r = NULL;
+        DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
+        if (r) leave_room(r->id, 1);
+        else MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
+                         (STRPTR)"Bitte erst einen Raum in der Liste auswählen.", 0);
+        break;
+    }
     case ID_LOGOUT:
         if (A && my_user && MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_Abmelden|_Nein",
                                         (STRPTR)"Abmelden? Dieses Gerät und seine Schlüssel\nwerden gelöscht.", 0) == 1)
@@ -2384,6 +2612,7 @@ int main(int argc, char **argv)
 
     make_icon(&icon_up, art_up);
     make_icon(&icon_invite, art_invite);
+    make_icon(&icon_leave, art_leave);
     make_emoji();
     if (!(MUIMasterBase = OpenLibrary((STRPTR)"muimaster.library", 20))) {
         printf("Amatrix braucht MUI 5 (muimaster.library V20).\n");

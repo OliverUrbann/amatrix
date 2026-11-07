@@ -131,7 +131,7 @@ int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newe
     if (st != 200 || !r) { cJSON_Delete(r); return -1; }
     LOG(c, "history %s: %d events", room_id, cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(r, "chunk")));
     /* keys we lack for this page: only those sessions from the key backup */
-    if (amx_backup_available(c)) amx__backup_for_events(c, room_id, cJSON_GetObjectItemCaseSensitive(r, "chunk"));
+    if (amx_backup_available(c)) amx__backup_for_events(c, room_id, cJSON_GetObjectItemCaseSensitive(r, "chunk"), 1);
     cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(r, "chunk")) {
         LOG2(c, "  history event %s %s", amx__jstr(x, "type") ? amx__jstr(x, "type") : "?",
              amx__jstr(x, "event_id") ? amx__jstr(x, "event_id") : "?");

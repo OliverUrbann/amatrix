@@ -1,6 +1,7 @@
 /* Receiving side of E2EE: Olm to-device (room keys), Megolm room events,
  * session storage, pending events.  Also dispatches plain room events. */
 #include "amx_internal.h"
+#include <time.h>
 
 /* ------------------------------------------------------------- sessions */
 
@@ -32,6 +33,29 @@ void amx__add_group_session(AmxClient *c, const char *room, const char *sid, con
     g->sender_key = amx__strdup(sender_key);
     g->ed25519 = amx__strdup(ed ? ed : "-");
     g->s = s;
+}
+
+/* A session we got again (backup, forwarded): kept if we had none, or if it
+ * reaches further back than ours (ours may start at a later message index,
+ * e.g. shared with us after some messages were sent).  1 = taken (s now
+ * belongs to the client), 0 = not better (s freed). */
+int amx__put_group_session(AmxClient *c, const char *room, const char *sid, const char *sender_key,
+                           const char *ed, OlmInboundGroupSession *s)
+{
+    GroupSess *g = amx__find_group(c, room, sid);
+    if (g) {
+        uint32_t have = olm_inbound_group_session_first_known_index(g->s),
+                 got = olm_inbound_group_session_first_known_index(s);
+        if (got >= have) { olm_clear_inbound_group_session(s); free(s); return 0; }
+        LOG(c, "Megolm: session %.12s... now known from index %lu (was %lu)", sid,
+            (unsigned long)got, (unsigned long)have);
+        olm_clear_inbound_group_session(g->s);
+        free(g->s);
+        g->s = s;
+        return 1;
+    }
+    amx__add_group_session(c, room, sid, sender_key, ed, s);
+    return 1;
 }
 
 GroupSess *amx__find_group(AmxClient *c, const char *room_id, const char *session_id)
@@ -277,7 +301,6 @@ static void handle_forwarded_key(AmxClient *c, const cJSON *payload, const char 
     asked = cJSON_GetObjectItemCaseSensitive(c->kreq, rk) != NULL;
     free(rk);
     if (!asked) { LOG(c, "forwarded room key we did not ask for, ignored"); return; }
-    if (amx__find_group(c, room, sid)) return;
     s = amx__new_group_session();
     k = amx__strdup(key);
     if (olm_import_inbound_group_session(s, (uint8_t *)k, strlen(k)) == olm_error()) {
@@ -289,7 +312,7 @@ static void handle_forwarded_key(AmxClient *c, const cJSON *payload, const char 
     n = olm_inbound_group_session_id(s, (uint8_t *)idbuf, sizeof idbuf - 1);
     idbuf[n == olm_error() ? 0 : n] = 0;
     if (strcmp(idbuf, sid)) { LOG(c, "forwarded room key: session id mismatch"); free(s); return; }
-    amx__add_group_session(c, room, sid, orig, amx__jstr(ct, "sender_claimed_ed25519_key"), s);
+    if (!amx__put_group_session(c, room, sid, orig, amx__jstr(ct, "sender_claimed_ed25519_key"), s)) return;
     amx__save_group_sessions(c);
     LOG(c, "got forwarded room key for %s (session %.12s...)", room, sid);
     memset(&ev, 0, sizeof ev);
@@ -459,10 +482,12 @@ static int try_megolm(AmxClient *c, const char *room_id, const cJSON *ev, int re
     n = olm_group_decrypt(g->s, tmp, len, plain, max, &idx);
     free(tmp);
     if (n == olm_error()) {
-        /* UNKNOWN_MESSAGE_INDEX: sent before we were given the key */
-        emit_undecryptable(c, room_id, ev, olm_inbound_group_session_last_error(g->s), history);
+        /* UNKNOWN_MESSAGE_INDEX: sent before the point our copy of the key
+         * starts at; a fuller copy may come (backup, our other devices) */
+        int later = !strcmp(olm_inbound_group_session_last_error(g->s), "UNKNOWN_MESSAGE_INDEX");
+        if (report || !later) emit_undecryptable(c, room_id, ev, olm_inbound_group_session_last_error(g->s), history);
         free(plain);
-        return 1;
+        return later ? 0 : 1;
     }
     plain[n] = 0;
     if (is_replay(c, sid, idx, amx__jstr(ev, "event_id"))) {
@@ -569,6 +594,26 @@ static int request_key(AmxClient *c, const char *room, const char *sid, const ch
     return 0;
 }
 
+/* Our other devices may be offline or not trust us yet: ask again after 1, 5
+ * and 30 minutes (each request is answered or dropped by the other side). */
+static int kreq_due(AmxClient *c, const char *key)
+{
+    static const long delay[] = { 60, 300, 1800 };
+    cJSON *e = cJSON_GetObjectItemCaseSensitive(c->kreq, key);
+    long now = (long)time(NULL);
+    int n;
+    if (!e) {
+        e = cJSON_AddObjectToObject(c->kreq, key);
+        cJSON_AddNumberToObject(e, "n", 0);
+        cJSON_AddNumberToObject(e, "t", 0);
+    }
+    n = cJSON_GetObjectItemCaseSensitive(e, "n")->valueint;
+    if (n > 3 || now < (long)cJSON_GetObjectItemCaseSensitive(e, "t")->valuedouble) return 0;
+    cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(e, "n"), n + 1);
+    cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(e, "t"), (double)(now + (n < 3 ? delay[n] : 0)));
+    return 1;
+}
+
 void amx__fetch_missing_keys(AmxClient *c)
 {
     cJSON *copy, *e, *byroom, *r;
@@ -586,7 +631,7 @@ void amx__fetch_missing_keys(AmxClient *c)
             if (!(arr = cJSON_GetObjectItemCaseSensitive(byroom, room))) arr = cJSON_AddArrayToObject(byroom, room);
             cJSON_AddItemReferenceToArray(arr, e);
         }
-        cJSON_ArrayForEach(r, byroom) amx__backup_for_events(c, r->string, r);
+        cJSON_ArrayForEach(r, byroom) amx__backup_for_events(c, r->string, r, 0);
         cJSON_Delete(byroom);
     }
 
@@ -596,13 +641,10 @@ void amx__fetch_missing_keys(AmxClient *c)
         const cJSON *ct = cJSON_GetObjectItemCaseSensitive(e, "content");
         const char *room = amx__jstr(e, "_room_id"), *sid = amx__jstr(ct, "session_id");
         char *k;
-        if (!room || !sid || amx__find_group(c, room, sid) || sent >= 20) continue;
+        if (!room || !sid || sent >= 20) continue;
         k = amx__malloc(strlen(room) + strlen(sid) + 2);
         sprintf(k, "%s|%s", room, sid);
-        if (!cJSON_GetObjectItemCaseSensitive(c->kreq, k)) {
-            cJSON_AddTrueToObject(c->kreq, k);
-            if (request_key(c, room, sid, amx__jstr(ct, "sender_key")) == 0) sent++;
-        }
+        if (kreq_due(c, k) && request_key(c, room, sid, amx__jstr(ct, "sender_key")) == 0) sent++;
         free(k);
     }
     cJSON_Delete(copy);

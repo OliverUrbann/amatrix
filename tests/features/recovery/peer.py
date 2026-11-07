@@ -15,6 +15,7 @@ ITERATIONS = 20000          # Element uses 500000; kept small for the emulated 6
 MESSAGES = [f"aus der Zeit vor Amatrix {i}" for i in range(1, 6)]
 LIVE = ["live vom anderen Geraet", "live vom anderen Geraet, neuer Raum",
         "nur mit Schluesselanfrage lesbar"]
+PART = ["vor dem Teilschluessel", "nach dem Teilschluessel"]
 
 B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -192,7 +193,8 @@ async def element_device(ctx, me, room_name="Vor meiner Zeit"):
     ctx.check(ok, "secret storage written (key, 4 secrets, default key)")
     ctx.diag(f"recovery key {RECOVERY_KEY}")
 
-    return {"api": api, "me": me, "client_dev": client_dev, "room": room, "p": p,
+    return {"api": api, "me": me, "client_dev": client_dev, "room": room, "p": p, "enc": enc,
+            "version": version, "ident": ident,
             "ssk_pub": signers["self_signing"].public_key}
 
 
@@ -230,9 +232,28 @@ async def peer(ctx):
         # first one the client gets no key for: it has to ask us (key request)
         room3 = await p.create_room(encrypted=True, name="Nur auf Anfrage")
         await p.send(room3, LIVE[2])
+        # a session we only get part of: the first message before we are
+        # shared the key (at index 1), the full key is in the backup
+        room4 = await p.create_room(encrypted=True, name="Teilweise")
+        await p.send(room4, PART[0])
+        await p.sync(500)
+        n_up = 0
+        for gs in [x for x in p.c.olm.inbound_group_store if x.room_id == room4]:
+            data = {"algorithm": "m.megolm.v1.aes-sha2", "sender_key": info["ident"]["curve25519"],
+                    "session_key": gs.export_session(gs.first_known_index),
+                    "sender_claimed_keys": {"ed25519": info["ident"]["ed25519"]},
+                    "forwarding_curve25519_key_chain": []}
+            m = info["enc"].encrypt(json.dumps(data))
+            body = {"first_message_index": gs.first_known_index, "forwarded_count": 0, "is_verified": True,
+                    "session_data": {"ephemeral": m.ephemeral_key, "ciphertext": m.ciphertext, "mac": m.mac}}
+            st, _ = await asyncio.get_event_loop().run_in_executor(None, info["api"].call, "PUT", f"/room_keys/keys/{urllib.parse.quote(room4)}/"
+                              f"{urllib.parse.quote(gs.id, safe='')}?version={info['version']}", body)
+            n_up += st == 200
+        ctx.check(n_up == 1, "full key of the 'Teilweise' session in the backup")
         p.c.unblacklist_device(info["client_dev"])
         p.c.verify_device(info["client_dev"])
         await p.send(info["room"], LIVE[0])
+        await p.send(room4, PART[1])                    # now shared with the client, from index 1
         room2 = await p.create_room(encrypted=True, name="Vom Handy")
         await p.send(room2, LIVE[1])
         ctx.check(True, "live messages of the other device sent")
