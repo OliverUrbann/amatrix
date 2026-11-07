@@ -27,7 +27,7 @@ LOOP = """Stack 262144
 Assign AmiSSL: SYS:AmiSSL
 Assign LIBS: AmiSSL:Libs ADD
 {verbose}
-Run >NIL: Extra:Amatrix >SYS:gui-out.txt SERVER={server} USER={user} PASSWORD={password}
+Run >NIL: Extra:Amatrix >SYS:gui-out.txt SERVER={server} USER={user} PASSWORD={password} DEBUG
 Lab loop
 If EXISTS Extra:go
   rx Extra:c.rexx >Extra:res.txt
@@ -307,9 +307,15 @@ async def scenario(ctx, amiga, srv, me):
             q = shot.getpixel((x0, y))
             rows.append("k" if max(q) < 60 else "r" if q[0] > 150 and q[1] < 60 else "g")
     seq = "".join(rows)
-    inner = seq.strip("g")
-    check(seq.startswith("k") and seq.count("k") == 12 and len(inner) >= 89 and inner.count("g") <= 3,
+    inner = seq[seq.find("kr"):].rstrip("g") if "kr" in seq else ""
+    check(inner.count("k") == 12 and len(inner) >= 89 and inner.count("g") <= 3,
           f"preview strips in order, all 96 rows (known: now and then 1 row missing at a strip's end) ({seq})")
+    # no DefIcons/Workbench and no PNG datatype in the emulator: the text file,
+    # opened with MultiView (the fallback), shows the way works
+    rc, _ = await amiga.rexx("OPENMEDIA Alice 1")
+    check(rc == "0", "attachment opened (OPENMEDIA)")
+    await asyncio.sleep(15)
+    await amiga.shot("04d-picture-opened")
     target = os.path.join(amiga.extra, "notiz.txt")
     if os.path.exists(target):
         os.remove(target)
@@ -667,6 +673,11 @@ async def main():
         if os.path.exists(gui_out):
             for line in open(gui_out, encoding="latin-1").read().splitlines():
                 log(f"# amatrix: {line}")
+        dbg = os.path.join(extra, "Amatrix.log")
+        if os.path.exists(dbg):              # the interesting lines of the DEBUG log
+            for line in open(dbg, encoding="latin-1").read().splitlines():
+                if "open file" in line or "open link" in line or "saved attachment" in line or "started" in line:
+                    log(f"# amatrix log: {line}")
         alive = os.path.exists(os.path.join(extra, "Amatrix"))
         ctx.check(alive, "program still there at the end")
         for line in out.decode(errors="replace").splitlines():

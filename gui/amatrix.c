@@ -35,6 +35,9 @@
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
 #include <proto/wb.h>
+#include <proto/icon.h>
+#include <workbench/workbench.h>
+#include <workbench/startup.h>
 #include <proto/asl.h>
 #include <libraries/asl.h>
 #include <dos/dostags.h>
@@ -1859,22 +1862,41 @@ static int open_link(ChatWin *w, int li, int quiet)
     return ok != 0;
 }
 
-/* a saved attachment with its default tool (Workbench V44 + DefIcons), else MultiView */
+/* a saved attachment with its default tool: the icon DefIcons gives the file
+ * type (no .info needed) names the tool, which Workbench starts with the file
+ * as its argument; without one, MultiView (datatypes) */
 static void open_file(const char *path)
 {
+    struct Library *IconBase = OpenLibrary("icon.library", 37);
     struct Library *WorkbenchBase = OpenLibrary("workbench.library", 44);
+    struct DiskObject *dob = IconBase ? GetDiskObjectNew((STRPTR)path) : NULL;
+    char tool[256] = "", cmd[600];
     BOOL ok = FALSE;
-    amx_log("open file %s", path);
-    if (WorkbenchBase) {
-        ok = OpenWorkbenchObjectA((STRPTR)path, NULL);
+    if (dob && dob->do_Type == WBPROJECT && dob->do_DefaultTool && dob->do_DefaultTool[0])
+        snprintf(tool, sizeof tool, "%s", dob->do_DefaultTool);
+    if (dob) FreeDiskObject(dob);
+    amx_log("open file %s with %s", path, tool[0] ? tool : "MultiView");
+    if (!tool[0]) snprintf(tool, sizeof tool, "SYS:Utilities/MultiView");
+    if (WorkbenchBase) {                         /* like a double-click: the tool gets the file */
+        BPTR dir = 0;
+        char drawer[300];
+        const char *name = (const char *)FilePart((STRPTR)path);
+        snprintf(drawer, sizeof drawer, "%.*s", (int)(name - path), path);
+        if ((dir = Lock((STRPTR)drawer, ACCESS_READ)) != 0) {
+            ok = OpenWorkbenchObject((STRPTR)tool, WBOPENA_ArgLock, dir, WBOPENA_ArgName, name, TAG_DONE);
+            UnLock(dir);
+        }
         CloseLibrary(WorkbenchBase);
     }
-    if (!ok) {
-        char cmd[400];
-        BPTR nil = Open("NIL:", MODE_NEWFILE);
-        snprintf(cmd, sizeof cmd, "SYS:Utilities/MultiView \"%s\"", path);
-        if (SystemTags(cmd, SYS_Input, nil, SYS_Output, 0, SYS_Asynch, TRUE, TAG_DONE) == -1 && nil) Close(nil);
-    }
+    if (!ok) {                                   /* no Workbench: from the shell */
+        BPTR in = Open("NIL:", MODE_OLDFILE), out = Open("NIL:", MODE_NEWFILE);
+        LONG rc;
+        snprintf(cmd, sizeof cmd, "\"%s\" \"%s\"", tool, path);
+        rc = SystemTags(cmd, SYS_Input, in, SYS_Output, out, SYS_Asynch, TRUE, NP_StackSize, 32768, TAG_DONE);
+        amx_log("  started from the shell: %ld", (long)rc);
+        if (rc == -1) { if (in) Close(in); if (out) Close(out); }
+    } else amx_log("  started by Workbench");
+    if (IconBase) CloseLibrary(IconBase);
 }
 
 static void open_media(ChatWin *w, int mi)

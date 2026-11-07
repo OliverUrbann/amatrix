@@ -66,6 +66,16 @@ tests/run.py [--target native|asan|amiga] [feature ...]
 Starts its own Synapse, registers fresh users, runs each feature's C test
 against an independent E2EE peer.  Details in [tests/README.md](tests/README.md).
 
+## Known bugs
+
+- **Picture previews have thin lines now and then.**  NList gives every
+  entry the same height, so a preview is cut into strips of line height,
+  one list entry each.  Sometimes NList leaves out the bottom row of a strip
+  (mostly while scrolling; a full redraw shows the picture right), and a
+  1-pixel line of background shows.  This is NList's drawing, not the
+  picture: the GUI test checks that all strips are there in order and
+  allows up to 3 missing rows.
+
 ## Next steps
 
 See the [feature list](docs/matrix-library-features.md) (priorities P1-P3,

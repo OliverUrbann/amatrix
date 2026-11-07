@@ -81,3 +81,10 @@ Passwort schützen (siehe oben) und nicht weitergeben.
 
 Was noch fehlt: Bilder/Dateien anzeigen und senden, andere Nutzer
 verifizieren.
+
+Bekannte Fehler
+---------------
+- In Bildvorschauen erscheinen manchmal dünne waagerechte Linien, vor
+  allem beim Scrollen.  NList zeichnet bei den Streifen, aus denen die
+  Vorschau besteht, ab und zu die unterste Zeile nicht.  Das Bild selbst
+  ist in Ordnung; nach einem vollständigen Neuzeichnen ist es richtig.
