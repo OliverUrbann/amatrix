@@ -236,8 +236,9 @@ async def scenario(ctx, amiga, srv, me):
     check(rc == "0", "typed a message (Return)")
     got = await p.wait(lambda: p.got(dm, me.user_id, "Hallo Alice, hier schreibt der Amiga. Grüße! äöü"), 180)
     check(got, "peer received it, decrypted, umlauts intact")
-    await p.send(dm, "Wie geht es dir?")
+    await asyncio.sleep(3)                  # our own message's echo is in
     n0 = await lines_dm()
+    await p.send(dm, "Wie geht es dir?")
 
     async def more():
         v = await lines_dm()
@@ -344,6 +345,13 @@ async def scenario(ctx, amiga, srv, me):
     check(v, f"our heart counted and marked as ours ({v!r})")
     await asyncio.sleep(5)
     await amiga.shot("05c-reactions")
+    rc, _ = await amiga.rexx("PICKER Kaffeeklatsch")
+    check(rc == "0", "reaction picker opens (smiley button)")
+    await asyncio.sleep(4)
+    await amiga.shot("05d-picker")
+    rc, _ = await amiga.rexx("REACT Kaffeeklatsch heart")
+    v = await reactions(lambda r: "heart 1" in r and "heart 1*" not in r and "heart 2" not in r)
+    check(v, f"the same reaction again takes ours back ({v!r})")
     await bob.c.room_redact(room, joy)
     v = await reactions(lambda r: "joy 1" in r and "thumbsup 2" in r)
     check(v, f"Bob took his reaction back ({v!r})")

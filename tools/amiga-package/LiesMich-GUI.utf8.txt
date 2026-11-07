@@ -45,6 +45,10 @@ Bedienung
 - Chatfenster: lädt beim Öffnen die letzten 30 Nachrichten.
               Werkzeugleiste oben (Maus darüber zeigt die Erklärung):
                 Pfeil nach oben  = 20 ältere Nachrichten laden
+                Smiley mit Plus  = Reaktion auf die markierte Nachricht (ohne
+                                   Markierung: die neueste fremde); öffnet
+                                   eine kleine Auswahl, nochmal dieselbe
+                                   nimmt die eigene Reaktion zurück
                 Person mit Plus  = jemanden in diesen Raum einladen
                 Tür mit Pfeil    = Raum endgültig verlassen (mit Rückfrage);
                                    auch im Menü "Raum verlassen ..." für
@@ -54,15 +58,15 @@ Bedienung
               Unten tippen, Return sendet.
               Reaktionen stehen unter der Nachricht, mit Anzahl (Personen);
               ähnliche Emojis zählen zusammen (alle Lach-Smileys, alle
-              Herzen/Kussmünder).  Deine eigene Anzahl ist fett.  Selbst
-              reagieren geht bisher nur per ARexx: REACT <Raum> heart
-              (thumbsup, thumbsdown, heart, smile, joy, confused, eyes,
-              tada, rocket) - reagiert auf die neueste fremde Nachricht.
+              Herzen/Kussmünder).  Deine eigene Anzahl ist fett.  Ein
+              Klick auf ein Bildchen dort setzt deine Reaktion bzw. nimmt
+              sie zurück.  ARexx: REACT <Raum> heart (thumbsup, thumbsdown,
+              heart, smile, joy, confused, eyes, tada, rocket).
 
 ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
 CHATLINES, UNREADABLE, OLDER,
 FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS, CHATSTATUS,
-CLOSECHAT, REACT, REACTIONS, LEAVE, LASTLINE, QUIT).
+CLOSECHAT, REACT, REACTIONS, PICKER, LEAVE, LASTLINE, QUIT).
 
 Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
 schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem

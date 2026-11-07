@@ -50,6 +50,7 @@ static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.20
 #define OLDER_HELP_END "Anfang des Chats - keine älteren Nachrichten"
 #define INVITE_HELP "Jemanden in diesen Raum einladen"
 #define LEAVE_HELP "Diesen Raum verlassen"
+#define REACT_HELP "Reaktion auf die markierte Nachricht\n(ohne Markierung: auf die neueste)"
 
 enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
@@ -78,7 +79,8 @@ typedef struct React {
 typedef struct ChatWin {
     struct ChatWin *next;
     char *room_id;
-    Object *win, *list, *input, *older, *invite, *leave;
+    Object *win, *list, *input, *older, *invite, *leave, *reactb;
+    long next_serial;
     char **seen;                  /* event IDs shown (history and live overlap) */
     int n_seen, cap_seen;
     int n_undec;                  /* placeholder lines for undecryptable messages */
@@ -279,7 +281,7 @@ static void store_dir(char *buf, size_t n, const char *server, const char *user)
  * blue for the shadow side, light from the top left, black outlines and a
  * drop shadow.  '.' = transparent */
 #define IC 16
-static Alpha icon_up, icon_invite, icon_leave;
+static Alpha icon_up, icon_invite, icon_leave, icon_react;
 static const char *const art_up[IC] = {
     "................",
     ".......kk.......",
@@ -333,6 +335,24 @@ static const char *const art_leave[IC] = {
     "kkkkkkkkkd......",
     ".ddddddddd......" };
 
+static const char *const art_react[IC] = {
+    "...kkkkk........",
+    ".kkyyyyykk......",
+    ".kywyyyyYk......",
+    "kywyyyyyyYk.....",
+    "kyykyyykyYk.....",
+    "kyykyyykyYk.....",
+    "kyyyyyyyyYk.....",
+    "kykyyyyykYk.....",
+    "kyykkkkkYYk.....",
+    ".kYyyyyYYk.kkk..",
+    "..kkYYYkk..kbk..",
+    "....kkk..kkkbkkk",
+    ".........kbbbbbk",
+    ".........kkkbkkk",
+    "...........kbk..",
+    "...........kkk.." };
+
 static ULONG wb_colour(char ch)
 {
     switch (ch) {
@@ -370,7 +390,7 @@ static void make_icon(Alpha *a, const char *const *art)
  * quick reactions plus "tears of joy"); keys are UTF-8 */
 #define EM 12
 enum { EMO_THUMBSUP, EMO_THUMBSDOWN, EMO_HEART, EMO_SMILE, EMO_JOY, EMO_CONFUSED, EMO_EYES, EMO_TADA, EMO_ROCKET, EMO_UNKNOWN, N_EMO };
-static Alpha emo_img[N_EMO];
+static Alpha emo_img[N_EMO], emo_big[N_EMO];   /* 12x12 in text, 24x24 in the picker */
 static const char *const emo_art[N_EMO][EM] = {
     { /* thumbsup */
       "............",
@@ -616,6 +636,9 @@ static void make_emoji(void)
         emo_img[i].ad.width = emo_img[i].ad.height = EM;
         for (y = 0; y < EM; y++)
             for (x = 0; x < EM; x++) emo_img[i].px[y * EM + x] = wb_colour(emo_art[i][y][x]);
+        emo_big[i].ad.width = emo_big[i].ad.height = 2 * EM;
+        for (y = 0; y < 2 * EM; y++)
+            for (x = 0; x < 2 * EM; x++) emo_big[i].px[y * 2 * EM + x] = emo_img[i].px[(y / 2) * EM + x / 2];
     }
 }
 
@@ -941,6 +964,7 @@ typedef struct {
     int undec;                    /* placeholder for a message we cannot decrypt (yet) */
     int react;                    /* the reactions line under the message eid */
     int own;                      /* our own message */
+    long serial;                  /* reactions line: number for its clickable pictures */
 } Line;
 
 static Line *new_line(const char *eid, const char *text, size_t n, int undec)
@@ -1072,6 +1096,132 @@ HOOKPROTONH(chat_invite_func, LONG, Object *obj, ULONG *param)
 }
 MakeStaticHook(chat_invite_hook, chat_invite_func);
 
+/* our reaction with key (or one like it) to target: take it back if we have
+ * one, else send it (the picture's usual key, a heart with U+FE0F like Element) */
+static void react_toggle(ChatWin *w, const char *target, const char *key)
+{
+    int i, img = emo_index(key);
+    unsigned k;
+    for (i = 0; i < w->n_react; i++)
+        if (w->react[i].own && !strcmp(w->react[i].target, target) && same_key(w->react[i].key, key)) {
+            amx_async_redact(A, w->room_id, w->react[i].id, TAG_REACT);
+            return;
+        }
+    if (img == EMO_HEART) key = "\xe2\x9d\xa4\xef\xb8\x8f";
+    else if (img >= 0)
+        for (k = 0; k < sizeof emo_keys / sizeof emo_keys[0]; k++)
+            if (emo_keys[k].img == img) { key = emo_keys[k].key; break; }
+    amx_async_react(A, w->room_id, target, key, TAG_REACT);
+}
+
+/* the message a reaction is for: the marked one, else the newest of someone else */
+static const char *react_target(ChatWin *w)
+{
+    Line *l = NULL;
+    LONG n, k;
+    DoMethod(w->list, MUIM_NList_GetEntry, MUIV_NList_GetEntry_Active, &l);
+    if (l && l->eid) return l->eid;             /* a reactions line: its message */
+    n = (LONG)xget(w->list, MUIA_NList_Entries);
+    for (k = n - 1; k >= 0; k--) {
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (l && !l->react && !l->own && l->eid) return l->eid;
+    }
+    return NULL;
+}
+
+/* a click on a picture in a reactions line */
+HOOKPROTONH(chip_func, LONG, Object *obj, ULONG *param)
+{
+    ChatWin *w = (ChatWin *)param[0];
+    long v = (long)param[1], serial = v / 16;
+    int group = (int)(v % 16), i, j, g = 0;
+    LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k;
+    (void)obj;
+    for (k = 0; k < n; k++) {
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (!l || !l->react || l->serial != serial) continue;
+        for (i = 0; i < w->n_react; i++) {               /* the groups in reaction_text's order */
+            if (strcmp(w->react[i].target, l->eid)) continue;
+            for (j = 0; j < i; j++)
+                if (!strcmp(w->react[j].target, l->eid) && same_key(w->react[j].key, w->react[i].key)) break;
+            if (j < i) continue;
+            if (g++ == group) { react_toggle(w, l->eid, w->react[i].key); return 0; }
+        }
+        return 0;
+    }
+    return 0;
+}
+MakeStaticHook(chip_hook, chip_func);
+
+/* the picker: a small window with the pictures, opened by the smiley button */
+static Object *win_pick, *pick_btn[N_EMO];
+static ChatWin *pick_w;
+static char *pick_eid;
+static const char *const emo_help[N_EMO] = { "Daumen hoch", "Daumen runter", "Herz", "Lächeln", "Lachen",
+                                             "Nachdenklich", "Augen", "Feiern", "Rakete", "" };
+
+static void open_picker(ChatWin *w)
+{
+    const char *t = react_target(w);
+    if (!t || !win_pick) return;
+    free(pick_eid);
+    pick_eid = strdup(t);
+    pick_w = w;
+    set(win_pick, MUIA_Window_Open, FALSE);
+    set(win_pick, MUIA_Window_Open, TRUE);
+}
+
+HOOKPROTONH(pick_func, LONG, Object *obj, ULONG *param)
+{
+    int i = (int)param[0];
+    unsigned k;
+    (void)obj;
+    set(win_pick, MUIA_Window_Open, FALSE);
+    if (!pick_w || !pick_eid || i < 0 || i >= EMO_UNKNOWN) return 0;
+    for (k = 0; k < sizeof emo_keys / sizeof emo_keys[0]; k++)
+        if (emo_keys[k].img == i) { react_toggle(pick_w, pick_eid, emo_keys[k].key); break; }
+    return 0;
+}
+MakeStaticHook(pick_hook, pick_func);
+
+HOOKPROTONH(chat_react_func, LONG, Object *obj, ULONG *param)
+{
+    (void)obj;
+    open_picker((ChatWin *)param[0]);
+    return 0;
+}
+MakeStaticHook(chat_react_hook, chat_react_func);
+
+static Object *make_picker(void)
+{
+    Object *g = HGroup, MUIA_Group_Spacing, 2, End;
+    int i;
+    win_pick = WindowObject,
+        MUIA_Window_Title, "Reaktion",
+        MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Moused,
+        MUIA_Window_TopEdge, MUIV_Window_TopEdge_Moused,
+        MUIA_Window_SizeGadget, FALSE,
+        MUIA_Window_DepthGadget, FALSE,
+        MUIA_Window_ID, 0,
+        WindowContents, g,
+    End;
+    for (i = 0; win_pick && i < EMO_UNKNOWN; i++) {
+        pick_btn[i] = icon_button(&emo_big[i], emo_help[i]);
+        if (!pick_btn[i]) continue;
+        DoMethod(g, OM_ADDMEMBER, pick_btn[i]);
+        DoMethod(pick_btn[i], MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
+                 MUIM_CallHook, &pick_hook, i);
+    }
+    if (win_pick) {
+        DoMethod(win_pick, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_pick, 3,
+                 MUIM_Set, MUIA_Window_Open, FALSE);
+        DoMethod(win_pick, MUIM_Notify, MUIA_Window_Activate, FALSE, win_pick, 3,
+                 MUIM_Set, MUIA_Window_Open, FALSE);       /* closes like a popup menu */
+    }
+    return win_pick;
+}
+
 static void open_chat(const char *room_id)
 {
     amx_log("open_chat %s", room_id);
@@ -1117,6 +1267,7 @@ static void open_chat(const char *room_id)
         WindowContents, VGroup,
             Child, HGroup,                          /* toolbar */
                 Child, w->older = icon_button(&icon_up, OLDER_HELP),
+                Child, w->reactb = icon_button(&icon_react, REACT_HELP),
                 Child, w->invite = icon_button(&icon_invite, INVITE_HELP),
                 Child, w->leave = icon_button(&icon_leave, LEAVE_HELP),
                 Child, w->busy = TextObject,
@@ -1128,7 +1279,7 @@ static void open_chat(const char *room_id)
             Child, NListviewObject,
                 MUIA_NListview_NList, w->list = NListObject,
                     MUIA_NList_DisplayHook2, &line_disp_hook,
-                    MUIA_NList_Input, FALSE,
+                    MUIA_NList_Input, TRUE,
                     MUIA_NList_AutoVisible, TRUE,
                 End,
             End,
@@ -1161,6 +1312,10 @@ static void open_chat(const char *room_id)
              MUIM_CallHook, &chat_invite_hook, w);
     DoMethod(w->leave, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
              MUIM_CallHook, &chat_leave_hook, w);
+    DoMethod(w->reactb, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
+             MUIM_CallHook, &chat_react_hook, w);
+    DoMethod(w->list, MUIM_Notify, MUIA_NList_ButtonClick, MUIV_EveryTime, MUIV_Notify_Application, 4,
+             MUIM_CallHook, &chip_hook, w, MUIV_TriggerValue);
     set(w->win, MUIA_Window_ActiveObject, w->input);
     w->next = chats;
     chats = w;
@@ -1178,6 +1333,7 @@ static void close_chat(ChatWin *w)
     ChatWin **p;
     int i;
     for (p = &chats; *p; p = &(*p)->next) if (*p == w) { *p = w->next; break; }
+    if (pick_w == w) { pick_w = NULL; if (win_pick) set(win_pick, MUIA_Window_Open, FALSE); }
     set(w->win, MUIA_Window_Open, FALSE);
     DoMethod(w->list, MUIM_NList_Clear);
     DoMethod(w->list, MUIM_NList_UseImage, NULL, MUIV_NList_UseImage_All, 0);
@@ -1374,9 +1530,9 @@ static int group_count(ChatWin *w, const char *target, int i, int *own)
     return count;
 }
 
-static void reaction_text(ChatWin *w, const char *target, char *buf, size_t n)
+static void reaction_text(ChatWin *w, const char *target, long serial, char *buf, size_t n)
 {
-    int i, j, any = 0;
+    int i, j, any = 0, g = 0;
     size_t len;
     snprintf(buf, n, "      ");
     for (i = 0; i < w->n_react; i++) {
@@ -1390,10 +1546,11 @@ static void reaction_text(ChatWin *w, const char *target, char *buf, size_t n)
         len = strlen(buf);
         if (len + 64 >= n) break;
         any = 1;
-        if ((img = emo_index(r->key)) >= 0)
-            snprintf(buf + len, n - len, "\33o[%d] %s%d%s   ", img, own ? "\33b" : "", count, own ? "\33n" : "");
-        else
-            snprintf(buf + len, n - len, "\33o[%d] %s%d%s   ", EMO_UNKNOWN, own ? "\33b" : "", count, own ? "\33n" : "");
+        if ((img = emo_index(r->key)) < 0) img = EMO_UNKNOWN;
+        /* a click on the picture (button value serial*16+group) toggles ours */
+        snprintf(buf + len, n - len, "\33o[%d@%ld] %s%d%s   ", img, serial * 16 + (g < 15 ? g : 15),
+                 own ? "\33b" : "", count, own ? "\33n" : "");
+        g++;
     }
     if (!any) buf[0] = 0;
 }
@@ -1413,7 +1570,7 @@ static void refresh_reactions(ChatWin *w, const char *target)
         else last = k;
     }
     if (last < 0) return;                       /* the message is not shown (yet) */
-    reaction_text(w, target, text, sizeof text);
+    reaction_text(w, target, rline ? rline->serial : w->next_serial + 1, text, sizeof text);
     if (!text[0]) {
         if (rl >= 0) { DoMethod(w->list, MUIM_NList_Remove, rl); w->lines--; }
         return;
@@ -1428,6 +1585,7 @@ static void refresh_reactions(ChatWin *w, const char *target)
         Line *l = new_line(target, text, strlen(text), 0);
         if (!l) return;
         l->react = 1;
+        l->serial = ++w->next_serial;
         remember_line(w, l);
         DoMethod(w->list, MUIM_NList_InsertSingle, l, last + 1);
         w->lines++;
@@ -2163,8 +2321,7 @@ HOOKPROTONH(rx_react_func, LONG, Object *obj, ULONG *arg)
         if (!l || l->react || l->undec || !l->eid || l->own || !strstr(l->text, ":\33n")) continue;
         for (i = 0; i < sizeof emo_keys / sizeof emo_keys[0]; i++)
             if (emo_keys[i].img == img) break;
-        amx_async_react(A, w->room_id, l->eid,
-                        img == EMO_HEART ? "\xe2\x9d\xa4\xef\xb8\x8f" : emo_keys[i].key, TAG_REACT);
+        react_toggle(w, l->eid, emo_keys[i].key);       /* again: takes it back */
         return 0;
     }
     return 10;
@@ -2234,6 +2391,17 @@ HOOKPROTONH(rx_last_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_last_hook, rx_last_func);
 
+HOOKPROTONH(rx_picker_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    open_picker(w);
+    return 0;
+}
+MakeStaticHook(rx_picker_hook, rx_picker_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
@@ -2251,6 +2419,7 @@ static struct MUI_Command rexx_cmds[] = {
     { "REACTIONS", "ROOM/F",          1, &rx_reactions_hook, { 0 } },
     { "LEAVE",     "ROOM/F",          1, &rx_leave_hook,    { 0 } },
     { "LASTLINE",  "ROOM/F",          1, &rx_last_hook,     { 0 } },
+    { "PICKER",    "ROOM/F",          1, &rx_picker_hook,   { 0 } },
     { "RECOVERY",  "KEY/F",           1, &rx_recovery_hook, { 0 } },
     { "UNLOCK",    "PASS/F",          1, &rx_unlock_hook,   { 0 } },
     { "CHATSTATUS","ROOM/F",          1, &rx_chatstatus_hook, { 0 } },
@@ -2444,6 +2613,7 @@ static Object *build_app(void)
         End,
     End;
     if (!a) return NULL;
+    if (make_picker()) DoMethod(a, OM_ADDMEMBER, win_pick);
     DoMethod(b_invite, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INVITE_GO);
     DoMethod(b_recovery, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_RECOVERY_GO);
     DoMethod(b_unlock, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_UNLOCK_GO);
@@ -2613,6 +2783,7 @@ int main(int argc, char **argv)
     make_icon(&icon_up, art_up);
     make_icon(&icon_invite, art_invite);
     make_icon(&icon_leave, art_leave);
+    make_icon(&icon_react, art_react);
     make_emoji();
     if (!(MUIMasterBase = OpenLibrary((STRPTR)"muimaster.library", 20))) {
         printf("Amatrix braucht MUI 5 (muimaster.library V20).\n");
