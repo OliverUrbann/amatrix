@@ -18,6 +18,7 @@ private Synapse started by the tests.
 | e2ee_send | ✔ | ✔ | ✔ |
 | reactions | ✔ | ✔ | ✔ |
 | media | ✔ | ✔ | ✔ |
+| replies | ✔ | ✔ | ✔ |
 | tls_verify | ✔ | ✔ | ✔ |
 | room_list | ✔ | ✔ | ✔ |
 | directory | ✔ | ✔ | ✔ |

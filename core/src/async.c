@@ -37,7 +37,7 @@ typedef struct Cmd {
     struct Cmd *next;
     int cmd;
     unsigned long tag;
-    char *s1, *s2, *s3;
+    char *s1, *s2, *s3, *s4;
     int i1, i2;
     AmxRoomOptions opt;
     char **invite;
@@ -49,7 +49,7 @@ typedef struct Out {
 #endif
     struct Out *next;
     AmxMsg m;
-    char *own[16];                 /* strings owned by the message */
+    char *own[20];                 /* strings owned by the message */
     int n_own;
 } Out;
 
@@ -235,7 +235,10 @@ static void on_event(AmxClient *c, const AmxEvent *ev, void *ud)
     o->m.ev.reason = own(o, ev->reason);
     o->m.ev.sender_name = own(o, ev->sender_name);
     o->m.ev.relates_to = own(o, ev->relates_to);
+    o->m.ev.thread_count = ev->thread_count;
     o->m.ev.media = own(o, ev->media);
+    o->m.ev.reply_to = own(o, ev->reply_to);
+    o->m.ev.thread_root = own(o, ev->thread_root);
     put_out(a, o);
 }
 
@@ -298,7 +301,7 @@ static void free_cmd(Cmd *c)
 {
     char **p;
     if (!c) return;
-    free(c->s1); free(c->s2); free(c->s3);
+    free(c->s1); free(c->s2); free(c->s3); free(c->s4);
     if (c->invite) { for (p = c->invite; *p; p++) free(*p); free(c->invite); }
     free(c);
 }
@@ -357,6 +360,28 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
         break;
     case AMX_CMD_MARK_READ:
         r = amx_mark_read(a->c, c->s1, c->s2);
+        break;
+    case AMX_CMD_LOAD_THREAD: {
+        int at_start = 0, n = amx_load_thread(a->c, c->s1, c->s2, c->i1, c->i2, &at_start);
+        Out *o = new_out(AMX_MSG_RESULT);
+        if (o) {
+            o->m.cmd = AMX_CMD_LOAD_THREAD;
+            o->m.tag = c->tag;
+            o->m.status = n < 0 ? -1 : 0;
+            o->m.result = own(o, c->s2);
+            o->m.count = n < 0 ? 0 : n;
+            o->m.at_start = at_start;
+            if (n < 0) o->m.error = own(o, amx_error(a->c));
+            put_out(a, o);
+        }
+        return;
+    }
+    case AMX_CMD_SEND_REPLY:
+        r = amx_send_reply(a->c, c->s1, c->s3 && c->s3[0] ? c->s3 : NULL, c->s4 && c->s4[0] ? c->s4 : NULL,
+                           c->s2, &out);
+        break;
+    case AMX_CMD_EDIT:
+        r = amx_send_edit(a->c, c->s1, c->s3, c->s2, &out);
         break;
     case AMX_CMD_REACT:
         r = amx_send_reaction(a->c, c->s1, c->s2, c->s3, &out);
@@ -760,3 +785,35 @@ int amx_async_media_thumbnail(AmxAsync *a, const char *media, int index, const c
 
 int amx_async_media_save(AmxAsync *a, const char *media, int index, const char *path, unsigned long tag)
 { return cmd(a, AMX_CMD_MEDIA_SAVE, tag, media, path, index, 0); }
+
+int amx_async_send_reply(AmxAsync *a, const char *room_id, const char *reply_to, const char *thread_root,
+                         const char *body, unsigned long tag)
+{
+    Cmd *c = calloc(1, sizeof *c);
+    if (!c) return -1;
+    c->cmd = AMX_CMD_SEND_REPLY;
+    c->tag = tag;
+    c->s1 = dup0(room_id);
+    c->s2 = dup0(body);
+    c->s3 = dup0(reply_to);
+    c->s4 = dup0(thread_root);
+    put_cmd(a, c);
+    return 0;
+}
+
+int amx_async_edit(AmxAsync *a, const char *room_id, const char *event_id, const char *body, unsigned long tag)
+{
+    Cmd *c = calloc(1, sizeof *c);
+    if (!c) return -1;
+    c->cmd = AMX_CMD_EDIT;
+    c->tag = tag;
+    c->s1 = dup0(room_id);
+    c->s2 = dup0(body);
+    c->s3 = dup0(event_id);
+    put_cmd(a, c);
+    return 0;
+}
+
+int amx_async_load_thread(AmxAsync *a, const char *room_id, const char *root, int limit, int from_newest,
+                          unsigned long tag)
+{ return cmd(a, AMX_CMD_LOAD_THREAD, tag, room_id, root, limit, from_newest); }

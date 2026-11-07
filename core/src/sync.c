@@ -150,3 +150,63 @@ int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newe
     cJSON_Delete(r);
     return n;
 }
+
+int amx_load_thread(AmxClient *c, const char *room_id, const char *root, int limit, int from_newest, int *at_start)
+{
+    char *key = amx__malloc(strlen(room_id) + strlen(root) + 4), *esc, *resc, *fesc, *path;
+    const char *from;
+    cJSON *r, *x;
+    int n = 0;
+    long st;
+
+    sprintf(key, "t:%s|%s", room_id, root);
+    if (at_start) *at_start = 0;
+    if (!c->hist) c->hist = cJSON_CreateObject();
+    from = from_newest ? NULL : amx__jstr(c->hist, key);
+    if (!from_newest && !from && cJSON_GetObjectItemCaseSensitive(c->hist, key)) {
+        free(key);
+        if (at_start) *at_start = 1;
+        return 0;
+    }
+    esc = http_escape(room_id);
+    resc = http_escape(root);
+    fesc = from ? http_escape(from) : NULL;
+    path = amx__malloc(strlen(esc) + strlen(resc) + (fesc ? strlen(fesc) : 0) + 120);
+    sprintf(path, "/_matrix/client/v1/rooms/%s/relations/%s/m.thread?dir=b&limit=%d%s%s", esc, resc,
+            limit > 0 ? limit : 20, fesc ? "&from=" : "", fesc ? fesc : "");
+    free(fesc);
+    r = amx__api(c, "GET", path, NULL, 60, &st);
+    free(path);
+    if (st != 200 || !r) { cJSON_Delete(r); free(esc); free(resc); free(key); return -1; }
+    if (amx_backup_available(c)) amx__backup_for_events(c, room_id, cJSON_GetObjectItemCaseSensitive(r, "chunk"), 1);
+    cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(r, "chunk")) {
+        amx__handle_room_event(c, room_id, x, 1);
+        n++;
+    }
+    cJSON_DeleteItemFromObjectCaseSensitive(c->hist, key);
+    if (amx__jstr(r, "next_batch")) cJSON_AddStringToObject(c->hist, key, amx__jstr(r, "next_batch"));
+    else {                                                  /* all there: the root on top */
+        cJSON *ev;
+        cJSON_AddNullToObject(c->hist, key);
+        if (at_start) *at_start = 1;
+        path = amx__malloc(strlen(esc) + strlen(resc) + 40);
+        sprintf(path, "/rooms/%s/event/%s", esc, resc);
+        ev = amx__api(c, "GET", path, NULL, 60, &st);
+        free(path);
+        if (st == 200 && ev) {
+            if (amx_backup_available(c)) {
+                cJSON *one = cJSON_CreateArray();
+                cJSON_AddItemReferenceToArray(one, ev);
+                amx__backup_for_events(c, room_id, one, 1);
+                cJSON_Delete(one);
+            }
+            amx__handle_room_event(c, room_id, ev, 1);
+            n++;
+        }
+        cJSON_Delete(ev);
+    }
+    amx__fetch_missing_keys(c);
+    cJSON_Delete(r);
+    free(esc); free(resc); free(key);
+    return n;
+}

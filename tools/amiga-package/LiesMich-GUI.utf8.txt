@@ -45,6 +45,13 @@ Bedienung
 - Chatfenster: lädt beim Öffnen die letzten 30 Nachrichten.
               Werkzeugleiste oben (Maus darüber zeigt die Erklärung):
                 Pfeil nach oben  = 20 ältere Nachrichten laden
+                Pfeil zurück     = auf die markierte Nachricht antworten
+                                   (über der Eingabe steht dann, worauf;
+                                   "Abbrechen" nimmt das zurück)
+                Stift            = eigene markierte Nachricht bearbeiten
+                                   (Text kommt in die Eingabe, Return
+                                   speichert)
+                Papierkorb       = eigene markierte Nachricht löschen
                 Smiley mit Plus  = Reaktion auf die markierte Nachricht (ohne
                                    Markierung: die neueste fremde); öffnet
                                    eine kleine Auswahl, nochmal dieselbe
@@ -53,6 +60,13 @@ Bedienung
                 Tür mit Pfeil    = Raum endgültig verlassen (mit Rückfrage);
                                    auch im Menü "Raum verlassen ..." für
                                    den in der Liste gewählten Raum
+              Antworten zeigen darüber eine Zitatzeile (» Name: Text),
+              bearbeitete Nachrichten "(bearbeitet)", gelöschte
+              "(Nachricht gelöscht)".  Wo der Tag wechselt, steht das
+              Datum.  Threads: unter der ersten Nachricht steht
+              "Thread: n Antworten"; ein Klick auf das Sprechblasen-
+              Symbol öffnet den Thread in einem eigenen Fenster, was du
+              dort schreibst, geht in den Thread.
               Emojis im Text erscheinen als kleine Bilder; unbekannte als
               gelbes Gesicht mit Fragezeichen.
               Bilder: eine kleine Vorschau unter der Nachricht; ein Klick
@@ -73,7 +87,8 @@ ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
 CHATLINES, UNREADABLE, OLDER,
 FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS, CHATSTATUS,
 CLOSECHAT, REACT, REACTIONS, PICKER, LEAVE, LASTLINE, MEDIA, SAVEMEDIA,
-OPENMEDIA, LINKS, OPENLINK, QUIT).
+OPENMEDIA, LINKS, OPENLINK, REPLY, EDITLAST, DELETELAST, TEXTS, OPENTHREAD,
+THREADSAY, QUIT).
 
 Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
 schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem

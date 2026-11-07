@@ -86,3 +86,44 @@ int amx_redact(AmxClient *c, const char *room_id, const char *event_id, const ch
     LOG(c, "redacted %s in %s", event_id, room_id);
     return 0;
 }
+
+int amx_send_reply(AmxClient *c, const char *room_id, const char *reply_to, const char *thread_root,
+                   const char *body, char **event_id_out)
+{
+    cJSON *ct = cJSON_CreateObject(), *rel = cJSON_AddObjectToObject(ct, "m.relates_to");
+    int r;
+    cJSON_AddStringToObject(ct, "msgtype", "m.text");
+    cJSON_AddStringToObject(ct, "body", body);
+    if (thread_root) {
+        cJSON_AddStringToObject(rel, "rel_type", "m.thread");
+        cJSON_AddStringToObject(rel, "event_id", thread_root);
+        if (!reply_to) cJSON_AddTrueToObject(rel, "is_falling_back");
+    }
+    if (reply_to || thread_root)
+        cJSON_AddStringToObject(cJSON_AddObjectToObject(rel, "m.in_reply_to"), "event_id",
+                                reply_to ? reply_to : thread_root);
+    r = send_event(c, room_id, "m.room.message", ct, event_id_out);
+    cJSON_Delete(ct);
+    return r;
+}
+
+int amx_send_edit(AmxClient *c, const char *room_id, const char *event_id, const char *body,
+                  char **event_id_out)
+{
+    cJSON *ct = cJSON_CreateObject(), *nc, *rel;
+    char *star = amx__malloc(strlen(body) + 3);
+    int r;
+    sprintf(star, "* %s", body);                         /* for clients without edits */
+    cJSON_AddStringToObject(ct, "msgtype", "m.text");
+    cJSON_AddStringToObject(ct, "body", star);
+    free(star);
+    nc = cJSON_AddObjectToObject(ct, "m.new_content");
+    cJSON_AddStringToObject(nc, "msgtype", "m.text");
+    cJSON_AddStringToObject(nc, "body", body);
+    rel = cJSON_AddObjectToObject(ct, "m.relates_to");
+    cJSON_AddStringToObject(rel, "rel_type", "m.replace");
+    cJSON_AddStringToObject(rel, "event_id", event_id);
+    r = send_event(c, room_id, "m.room.message", ct, event_id_out);
+    cJSON_Delete(ct);
+    return r;
+}

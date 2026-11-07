@@ -25,6 +25,7 @@ class Peer:
                              config=AsyncClientConfig(encryption_enabled=True, store_sync_tokens=True))
         self.messages = []        # (room_id, sender, body)
         self.ids = {}             # (room_id, sender, body) -> event_id
+        self.events = []          # all text events (for relations)
         self.undecryptable = []   # (room_id, sender, event_id)
         self.c.add_event_callback(self._on_text, RoomMessageText)
         self.c.add_event_callback(self._on_megolm, MegolmEvent)
@@ -32,6 +33,7 @@ class Peer:
     def _on_text(self, room, ev):
         self.messages.append((room.room_id, ev.sender, ev.body))
         self.ids[(room.room_id, ev.sender, ev.body)] = ev.event_id
+        self.events.append(ev)
         self.ctx.diag(f"peer got {ev.sender}: {ev.body}")
 
     def _on_megolm(self, room, ev):

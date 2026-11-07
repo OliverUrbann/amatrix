@@ -39,7 +39,8 @@ typedef enum {
     AMX_CMD_LOGIN = 1, AMX_CMD_LOGOUT, AMX_CMD_SEND_TEXT, AMX_CMD_JOIN, AMX_CMD_LEAVE,
     AMX_CMD_INVITE, AMX_CMD_CREATE_ROOM, AMX_CMD_LOAD_HISTORY, AMX_CMD_PUBLIC_ROOMS,
     AMX_CMD_AVATAR, AMX_CMD_MARK_READ, AMX_CMD_RECOVERY, AMX_CMD_STORE_UNLOCK, AMX_CMD_STORE_PASS,
-    AMX_CMD_REACT, AMX_CMD_REDACT, AMX_CMD_MEDIA_THUMB, AMX_CMD_MEDIA_SAVE
+    AMX_CMD_REACT, AMX_CMD_REDACT, AMX_CMD_MEDIA_THUMB, AMX_CMD_MEDIA_SAVE,
+    AMX_CMD_SEND_REPLY, AMX_CMD_EDIT, AMX_CMD_LOAD_THREAD
 } AmxCmd;
 
 typedef enum {
@@ -112,6 +113,13 @@ int amx_async_store_unlock(AmxAsync *a, const char *passphrase, unsigned long ta
 int amx_async_store_passphrase(AmxAsync *a, const char *passphrase, unsigned long tag);
 int amx_async_react(AmxAsync *a, const char *room_id, const char *event_id, const char *key, unsigned long tag);
 int amx_async_redact(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag);
+/* amx_load_thread(); result = the root, count/at_start as for LOAD_HISTORY */
+int amx_async_load_thread(AmxAsync *a, const char *room_id, const char *root, int limit, int from_newest,
+                          unsigned long tag);
+/* amx_send_reply() / amx_send_edit(); result = the new event ID */
+int amx_async_send_reply(AmxAsync *a, const char *room_id, const char *reply_to, const char *thread_root,
+                         const char *body, unsigned long tag);
+int amx_async_edit(AmxAsync *a, const char *room_id, const char *event_id, const char *body, unsigned long tag);
 /* amx_media_thumbnail(); key (e.g. the event ID) comes back as result */
 int amx_async_media_thumbnail(AmxAsync *a, const char *media, int index, const char *key, int max_w,
                               int max_h, unsigned long tag);

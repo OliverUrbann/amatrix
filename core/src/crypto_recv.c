@@ -405,12 +405,48 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
     } else if (strcmp(type, "m.room.message")) {
         return;                                         /* other types: later features */
     } else {
+        const cJSON *rel = cJSON_GetObjectItemCaseSensitive(content, "m.relates_to");
+        const char *rt = amx__jstr(rel, "rel_type");
         memset(&e, 0, sizeof e);
-        e.type = AMX_EV_MESSAGE;
-        e.msgtype = amx__jstr(content, "msgtype");
-        e.body = amx__jstr(content, "body") ? amx__jstr(content, "body") : "";
-        media = amx__media_json(content, e.msgtype);
-        e.media = media;
+        if (rt && !strcmp(rt, "m.replace") && amx__jstr(rel, "event_id")) {      /* an edit */
+            const cJSON *nc = cJSON_GetObjectItemCaseSensitive(content, "m.new_content");
+            if (!nc) return;
+            e.type = AMX_EV_EDIT;
+            e.relates_to = amx__jstr(rel, "event_id");
+            e.msgtype = amx__jstr(nc, "msgtype");
+            e.body = amx__jstr(nc, "body") ? amx__jstr(nc, "body") : "";
+        } else {
+            e.type = AMX_EV_MESSAGE;
+            e.msgtype = amx__jstr(content, "msgtype");
+            e.body = amx__jstr(content, "body") ? amx__jstr(content, "body") : "";
+            e.reply_to = amx__jstr(cJSON_GetObjectItemCaseSensitive(rel, "m.in_reply_to"), "event_id");
+            if (rt && !strcmp(rt, "m.thread")) {
+                e.thread_root = amx__jstr(rel, "event_id");
+                if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(rel, "is_falling_back")))
+                    e.reply_to = NULL;                  /* only for clients without threads */
+            }
+            if (e.reply_to && !strncmp(e.body, "> ", 2)) {                    /* old quoted fallback */
+                const char *p = e.body;
+                while (!strncmp(p, "> ", 2) || !strncmp(p, ">\n", 2)) {
+                    const char *nl = strchr(p, '\n');
+                    if (!nl) break;
+                    p = nl + 1;
+                }
+                if (*p == '\n') p++;
+                e.body = p;
+            }
+            {
+                const cJSON *tc = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(
+                    cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(ev, "unsigned"),
+                                                     "m.relations"), "m.thread"), "count");
+                if (cJSON_IsNumber(tc)) e.thread_count = tc->valueint;
+            }
+            if (!e.msgtype && !amx__jstr(content, "body")
+                && cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(ev, "unsigned"), "redacted_because"))
+                e.redacted = 1;
+            media = amx__media_json(content, e.msgtype);
+            e.media = media;
+        }
     }
     e.room_id = room_id;
     e.event_id = amx__jstr(ev, "event_id");
@@ -526,8 +562,11 @@ void amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev, 
     if (!type) return;
     if (!strcmp(type, "m.room.encrypted")) {
         if (cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(ev, "unsigned"), "redacted_because")
-            && !amx__jstr(ct, "ciphertext"))
-            return;                       /* removed: nothing left to show or decrypt */
+            && !amx__jstr(ct, "ciphertext")) {    /* removed: a deleted message, nothing to decrypt */
+            static const cJSON empty;
+            emit_message(c, room_id, ev, "m.room.message", &empty, 1, history);
+            return;
+        }
         if (!try_megolm(c, room_id, ev, 1, history)) {
             /* the key may still come (to-device): try again after each sync,
              * also for history; once per event */

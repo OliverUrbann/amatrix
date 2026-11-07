@@ -29,8 +29,10 @@ typedef enum {
     AMX_EV_MEMBERSHIP,      /* m.room.member in a joined room: room_id, sender, state_key=user, membership in body */
     AMX_EV_REACTION,        /* m.reaction (m.annotation): room_id, event_id, sender, relates_to = the
                                message reacted to, body = the key (an emoji, UTF-8) */
-    AMX_EV_REDACTION        /* m.room.redaction: room_id, event_id, sender, relates_to = the event
+    AMX_EV_REDACTION,       /* m.room.redaction: room_id, event_id, sender, relates_to = the event
                                removed (a message or a reaction) */
+    AMX_EV_EDIT             /* an edit (m.replace): room_id, event_id (of the edit), sender,
+                               relates_to = the message edited, msgtype/body = its new text */
 } AmxEventType;
 
 typedef struct {
@@ -49,6 +51,11 @@ typedef struct {
     const char *sender_name; /* display name of the sender in this room (or the
                                 localpart of the user ID if none is known) */
     const char *relates_to;  /* AMX_EV_REACTION / AMX_EV_REDACTION: the event concerned */
+    const char *reply_to;    /* AMX_EV_MESSAGE: the message this answers (m.in_reply_to), or NULL;
+                                a quoted fallback ("> <@user> ...") is taken off body */
+    const char *thread_root; /* AMX_EV_MESSAGE: the thread (its first message) this belongs to */
+    int redacted;            /* AMX_EV_MESSAGE: the message was deleted (body is "") */
+    int thread_count;        /* AMX_EV_MESSAGE: replies in the thread it starts (server's count) */
     const char *media;       /* AMX_EV_MESSAGE with attachments (msgtype m.image /
                                 m.file / m.video / m.audio / m.sticker, or a gallery):
                                 an opaque description for amx_media_*() (body is the
@@ -194,6 +201,20 @@ const char *amx_media_info(const char *media, int index, const char *field, char
 int amx_media_thumbnail(AmxClient *c, const char *media, int index, int max_w, int max_h,
                         unsigned long **argb, int *w, int *h);
 int amx_media_save(AmxClient *c, const char *media, int index, const char *path);
+
+/* Like amx_load_history, for one thread (root = its first message): the
+ * thread's messages, newest first, then (when all are there) the root itself;
+ * events come with history = 1. */
+int amx_load_thread(AmxClient *c, const char *room_id, const char *root, int limit, int from_newest,
+                    int *at_start);
+
+/* A reply to event reply_to; with thread_root (may be NULL) inside that thread
+ * (reply_to may then be NULL: just a message in the thread). */
+int amx_send_reply(AmxClient *c, const char *room_id, const char *reply_to, const char *thread_root,
+                   const char *body, char **event_id_out);
+/* Replaces the text of an own message (m.replace). */
+int amx_send_edit(AmxClient *c, const char *room_id, const char *event_id, const char *body,
+                  char **event_id_out);
 
 /* Removes an event (a message or a reaction of ours); reason may be NULL. */
 int amx_redact(AmxClient *c, const char *room_id, const char *event_id, const char *reason);

@@ -296,19 +296,21 @@ async def scenario(ctx, amiga, srv, me):
     await asyncio.sleep(3)
     await amiga.shot("04c-picture-link")
     shot = _Image.open(os.path.join(SHOTS, "04c-picture-link.png")).convert("RGB")
-    reds = [(x, y) for y in range(shot.height) for x in range(0, shot.width, 2)
-            if (lambda q: q[0] > 150 and q[1] < 60 and q[2] < 60)(shot.getpixel((x, y)))]
+    isred = lambda q: q[0] > 150 and q[1] < 60 and q[2] < 60
+    cols = {}
+    for y in range(shot.height):
+        for x in range(0, shot.width, 2):
+            if isred(shot.getpixel((x, y))):
+                cols[x] = cols.get(x, 0) + 1
     rows = []
-    if reds:
-        x0 = min(r[0] for r in reds) + 4
-        ys = [r[1] for r in reds]
-        y0, y1 = min(ys), max(ys)
-        for y in range(y0 - 1, y1 + 2):
+    if cols:
+        x0 = max(cols, key=cols.get)                 # the column through the picture
+        for y in range(shot.height):
             q = shot.getpixel((x0, y))
-            rows.append("k" if max(q) < 60 else "r" if q[0] > 150 and q[1] < 60 else "g")
+            rows.append("k" if max(q) < 60 else "r" if isred(q) else "g")
     seq = "".join(rows)
-    inner = seq[seq.find("kr"):].rstrip("g") if "kr" in seq else ""
-    check(inner.count("k") == 12 and len(inner) >= 89 and inner.count("g") <= 3,
+    inner = seq[seq.find("kr"):seq.find("kr") + 96] if "kr" in seq else ""
+    check(len(inner) == 96 and inner.count("k") >= 11 and inner.count("g") <= 3,
           f"preview strips in order, all 96 rows (known: now and then 1 row missing at a strip's end) ({seq})")
     # no DefIcons/Workbench and no PNG datatype in the emulator: the text file,
     # opened with MultiView (the fallback), shows the way works
@@ -336,6 +338,76 @@ async def scenario(ctx, amiga, srv, me):
           f"emoji in a message shown as pictures ({v!r})")
     v = await preview("Alice", "Prima ")
     check(v and "?" not in v and v.count("\x1bA[") == 3, f"room list preview: emoji as pictures too ({v!r})")
+
+    # replies, edits, deleting, date separator
+    async def texts(want, n=12):
+        async def f():
+            rc, r = await amiga.rexx(f"TEXTS Alice {n}")
+            return want(r) and r
+        return await amiga.until(f, 120)
+    v = await texts(lambda r: "^c^i- " in r and " 2026 -" in r or " 2027 -" in r, 400)
+    check(v, "a date separator above the day's messages")
+    rc, _ = await amiga.rexx("REPLY Alice Klar doch")
+    check(rc == "0", "replied to the newest message of Alice")
+    ok = await p.wait(lambda: p.got(dm, me.user_id, "Klar doch"), 120)
+    ev = next((e for e in p.events if getattr(e, "body", None) == "Klar doch"), None)
+    rel = ((ev.source.get("content") or {}).get("m.relates_to") or {}) if ev else {}
+    check(ok and rel.get("m.in_reply_to", {}).get("event_id"), "Alice gets it as a reply")
+    v = await texts(lambda r: "^i  \xbb Alice: Prima" in r and "Klar doch" in r)
+    check(v, f"our reply shows the quote above it ({v!r})")
+    mine = p.ids.get((dm, me.user_id, "Klar doch"))
+    await p.c.room_send(dm, "m.room.message", {
+        "msgtype": "m.text", "body": f"> <{me.user_id}> Klar doch\n\nSchön",
+        "m.relates_to": {"m.in_reply_to": {"event_id": mine}}}, ignore_unverified_devices=True)
+    v = await texts(lambda r: "Klar doch|" in r and "Alice:^n Schön" in r and "> <" not in r)
+    check(v, f"Alice's reply: quote, without the old fallback text ({v!r})")
+    rc, _ = await amiga.rexx("EDITLAST Alice Klar doch, gerne")
+    v = await texts(lambda r: "Klar doch, gerne ^i(bearbeitet)" in r)
+    check(v, f"our edit shown in place, marked (bearbeitet) ({v!r})")
+    ok = await p.wait(lambda: any(((e.source.get("content") or {}).get("m.relates_to") or {}).get("rel_type")
+                                  == "m.replace" for e in p.events), 120)
+    check(ok, "Alice gets the edit")
+    schoen = p.ids.get((dm, ctx.peer_user.user_id, f"> <{me.user_id}> Klar doch\n\nSchön"))
+    await p.c.room_send(dm, "m.room.message", {
+        "msgtype": "m.text", "body": "* Sehr schön", "m.new_content": {"msgtype": "m.text", "body": "Sehr schön"},
+        "m.relates_to": {"rel_type": "m.replace", "event_id": schoen}}, ignore_unverified_devices=True)
+    v = await texts(lambda r: "Sehr schön ^i(bearbeitet)" in r)
+    check(v, f"Alice's edit shown ({v!r})")
+    await asyncio.sleep(3)
+    await amiga.shot("04e-reply-edit")
+    rc, _ = await amiga.rexx("DELETELAST Alice")
+    v = await texts(lambda r: "(Nachricht gelöscht)" in r and "Klar doch, gerne" not in r.split("|")[-1])
+    check(v, f"our message deleted, shown as deleted ({v!r})")
+
+    # threads: a line under the first message, the thread in its own window
+    root = await p.send(dm, "Thread-Start")
+    for t in ("im Faden 1", "im Faden 2"):
+        await p.c.room_send(dm, "m.room.message", {"msgtype": "m.text", "body": t, "m.relates_to": {
+            "rel_type": "m.thread", "event_id": root, "is_falling_back": True,
+            "m.in_reply_to": {"event_id": root}}}, ignore_unverified_devices=True)
+    v = await texts(lambda r: "Thread-Start" in r and "Thread: 2 Antworten" in r)
+    check(v and "im Faden" not in v, f"room window: thread line, not the thread's messages ({v!r})")
+    rc, _ = await amiga.rexx("OPENTHREAD Alice")
+    check(rc == "0", "thread window opened")
+
+    async def ttexts(want):
+        async def f():
+            rc, r = await amiga.rexx("TEXTS Alice 20 THREAD")
+            return want(r) and r
+        return await amiga.until(f, 120)
+    v = await ttexts(lambda r: "Thread-Start" in r and "im Faden 1" in r and "im Faden 2" in r)
+    check(v, f"thread window: the first message and the thread ({v!r})")
+    rc, _ = await amiga.rexx("THREADSAY Alice Ich auch")
+    ok = await p.wait(lambda: p.got(dm, me.user_id, "Ich auch"), 120)
+    ev = next((e for e in p.events if getattr(e, "body", None) == "Ich auch"), None)
+    rel = ((ev.source.get("content") or {}).get("m.relates_to") or {}) if ev else {}
+    check(ok and rel.get("rel_type") == "m.thread" and rel.get("event_id") == root, "our message went into the thread")
+    v = await texts(lambda r: "Thread: 3 Antworten" in r)
+    check(v, f"the room window counts it ({v!r})")
+    v = await ttexts(lambda r: "Ich auch" in r)
+    check(v, "our thread message shows in the thread window")
+    await asyncio.sleep(3)
+    await amiga.shot("04f-thread")
 
     # a long message (wrapped over several lines), then close and reopen the
     # window a few times: freeing the lines must not crash (seen on the Vampire)
