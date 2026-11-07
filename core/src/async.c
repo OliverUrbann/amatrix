@@ -49,7 +49,7 @@ typedef struct Out {
 #endif
     struct Out *next;
     AmxMsg m;
-    char *own[10];                 /* strings owned by the message */
+    char *own[16];                 /* strings owned by the message */
     int n_own;
 } Out;
 
@@ -235,6 +235,7 @@ static void on_event(AmxClient *c, const AmxEvent *ev, void *ud)
     o->m.ev.reason = own(o, ev->reason);
     o->m.ev.sender_name = own(o, ev->sender_name);
     o->m.ev.relates_to = own(o, ev->relates_to);
+    o->m.ev.media = own(o, ev->media);
     put_out(a, o);
 }
 
@@ -424,6 +425,28 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
         } else free(px);
         return;
     }
+    case AMX_CMD_MEDIA_THUMB: {
+        unsigned long *px = NULL;
+        int w = 0, h = 0;
+        Out *o = new_out(AMX_MSG_RESULT);
+        r = amx_media_thumbnail(a->c, c->s1, c->i1 >> 16, c->i1 & 0xffff, c->i2, &px, &w, &h);
+        if (o) {
+            o->m.cmd = AMX_CMD_MEDIA_THUMB;
+            o->m.tag = c->tag;
+            o->m.status = r;
+            o->m.result = own(o, c->s2);              /* the caller's key (event ID) */
+            o->m.pixels = px;
+            o->m.width = w;
+            o->m.height = h;
+            if (r) o->m.error = own(o, amx_error(a->c));
+            put_out(a, o);
+        } else free(px);
+        return;
+    }
+    case AMX_CMD_MEDIA_SAVE:
+        r = amx_media_save(a->c, c->s1, c->i1, c->s2);
+        out = r ? NULL : (c->s2 ? strdup(c->s2) : NULL);
+        break;
     case AMX_CMD_PUBLIC_ROOMS: {
         AmxPublicRoom *l = NULL;
         int n = amx_public_rooms(a->c, c->s1, c->s2, c->i1, &l);
@@ -730,3 +753,10 @@ int amx_async_react(AmxAsync *a, const char *room_id, const char *event_id, cons
 
 int amx_async_redact(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag)
 { return cmd(a, AMX_CMD_REDACT, tag, room_id, event_id, 0, 0); }
+
+int amx_async_media_thumbnail(AmxAsync *a, const char *media, int index, const char *key, int max_w,
+                              int max_h, unsigned long tag)
+{ return cmd(a, AMX_CMD_MEDIA_THUMB, tag, media, key, (index << 16) | (max_w & 0xffff), max_h); }
+
+int amx_async_media_save(AmxAsync *a, const char *media, int index, const char *path, unsigned long tag)
+{ return cmd(a, AMX_CMD_MEDIA_SAVE, tag, media, path, index, 0); }

@@ -49,6 +49,10 @@ typedef struct {
     const char *sender_name; /* display name of the sender in this room (or the
                                 localpart of the user ID if none is known) */
     const char *relates_to;  /* AMX_EV_REACTION / AMX_EV_REDACTION: the event concerned */
+    const char *media;       /* AMX_EV_MESSAGE with attachments (msgtype m.image /
+                                m.file / m.video / m.audio / m.sticker, or a gallery):
+                                an opaque description for amx_media_*() (body is the
+                                file name or caption); else NULL */
 } AmxEvent;
 
 typedef void (*AmxEventFn)(AmxClient *c, const AmxEvent *ev, void *userdata);
@@ -175,6 +179,22 @@ int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newe
  * amx_redact() needs to take the reaction back.  Caller frees. */
 int amx_send_reaction(AmxClient *c, const char *room_id, const char *event_id, const char *key,
                       char **event_id_out);
+/* Attachments (AmxEvent.media: one or more - a gallery has several; encrypted
+ * ones are decrypted and checked).
+ * amx_media_count: how many; amx_media_info: a field of one ("type" m.image/
+ * m.file/m.video/m.audio/m.sticker, "name", "mime", "size", "w", "h") into
+ * buf, or NULL.
+ * amx_media_thumbnail: a preview of attachment index that fits into
+ * max_w x max_h (aspect kept, never enlarged) as 0xAARRGGBB, *w x *h; free()
+ * it.  Uses the server's thumbnail, or the encrypted thumbnail / the picture
+ * itself (PNG, JPEG, GIF) in encrypted rooms.
+ * amx_media_save: the whole file to path. */
+int amx_media_count(const char *media);
+const char *amx_media_info(const char *media, int index, const char *field, char *buf, size_t size);
+int amx_media_thumbnail(AmxClient *c, const char *media, int index, int max_w, int max_h,
+                        unsigned long **argb, int *w, int *h);
+int amx_media_save(AmxClient *c, const char *media, int index, const char *path);
+
 /* Removes an event (a message or a reaction of ours); reason may be NULL. */
 int amx_redact(AmxClient *c, const char *room_id, const char *event_id, const char *reason);
 

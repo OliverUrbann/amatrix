@@ -102,7 +102,8 @@ void  amx__add_group_session(AmxClient *c, const char *room, const char *sid, co
 void  amx__handle_to_device(AmxClient *c, const cJSON *ev);
 void  amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev, int history);
 void  amx__retry_pending(AmxClient *c);
-void  amx__fetch_missing_keys(AmxClient *c);   /* backup + key requests for pending events */
+void  amx__fetch_missing_keys(AmxClient *c);
+char *amx__media_json(const cJSON *content, const char *msgtype);   /* JSON array; NULL if none */   /* backup + key requests for pending events */
 
 /* crypto_send.c */
 int   amx__load_send_state(AmxClient *c);

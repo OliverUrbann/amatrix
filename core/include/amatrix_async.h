@@ -39,7 +39,7 @@ typedef enum {
     AMX_CMD_LOGIN = 1, AMX_CMD_LOGOUT, AMX_CMD_SEND_TEXT, AMX_CMD_JOIN, AMX_CMD_LEAVE,
     AMX_CMD_INVITE, AMX_CMD_CREATE_ROOM, AMX_CMD_LOAD_HISTORY, AMX_CMD_PUBLIC_ROOMS,
     AMX_CMD_AVATAR, AMX_CMD_MARK_READ, AMX_CMD_RECOVERY, AMX_CMD_STORE_UNLOCK, AMX_CMD_STORE_PASS,
-    AMX_CMD_REACT, AMX_CMD_REDACT
+    AMX_CMD_REACT, AMX_CMD_REDACT, AMX_CMD_MEDIA_THUMB, AMX_CMD_MEDIA_SAVE
 } AmxCmd;
 
 typedef enum {
@@ -70,6 +70,7 @@ typedef struct {
     int verified, backup;         /* RECOVERY: device signed / backup key taken
                                      over; LOGIN: device verified */
     int size;
+    int width, height;            /* MEDIA_THUMB: pixels is width x height; result = the key */
 } AmxMsg;
 
 /* Starts the network process for one account (store_dir as for
@@ -111,6 +112,11 @@ int amx_async_store_unlock(AmxAsync *a, const char *passphrase, unsigned long ta
 int amx_async_store_passphrase(AmxAsync *a, const char *passphrase, unsigned long tag);
 int amx_async_react(AmxAsync *a, const char *room_id, const char *event_id, const char *key, unsigned long tag);
 int amx_async_redact(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag);
+/* amx_media_thumbnail(); key (e.g. the event ID) comes back as result */
+int amx_async_media_thumbnail(AmxAsync *a, const char *media, int index, const char *key, int max_w,
+                              int max_h, unsigned long tag);
+/* amx_media_save(); result = path */
+int amx_async_media_save(AmxAsync *a, const char *media, int index, const char *path, unsigned long tag);
 
 #ifdef __cplusplus
 }

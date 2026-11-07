@@ -256,6 +256,69 @@ async def scenario(ctx, amiga, srv, me):
     v = await preview("Kaffeeklatsch", "Alice: Wer hat Kuchen mitgebracht?")
     check(v, f"second line of a group: sender and message ({v!r})")
 
+    # pictures, files and links
+    import io as _io
+    from PIL import Image as _Image
+    # 128x96 (shown 1:1): left red, right blue, a black line every 8 rows -
+    # the strips must join without gaps
+    pic = _Image.new("RGB", (128, 96), (220, 30, 30))
+    for y in range(96):
+        for x in range(128):
+            if y % 8 == 0:
+                pic.putpixel((x, y), (0, 0, 0))
+            elif x >= 64:
+                pic.putpixel((x, y), (30, 30, 220))
+    buf = _io.BytesIO()
+    pic.save(buf, "PNG")
+    data = buf.getvalue()
+
+    async def up(d, mime, name):
+        resp, keys = await p.c.upload(lambda *a: _io.BytesIO(d), content_type=mime, filename=name,
+                                      encrypt=True, filesize=len(d))
+        return {"url": resp.content_uri, "key": keys["key"], "iv": keys["iv"], "hashes": keys["hashes"], "v": "v2"}
+    await p.c.room_send(dm, "m.room.message", {"msgtype": "m.image", "body": "rot-blau.png",
+                        "file": await up(data, "image/png", "rot-blau.png"),
+                        "info": {"mimetype": "image/png", "size": len(data), "w": 128, "h": 96}},
+                        ignore_unverified_devices=True)
+    txt = "Hallo vom Anhang\n".encode()
+    await p.c.room_send(dm, "m.room.message", {"msgtype": "m.file", "body": "notiz.txt",
+                        "file": await up(txt, "text/plain", "notiz.txt"),
+                        "info": {"mimetype": "text/plain", "size": len(txt)}}, ignore_unverified_devices=True)
+    await p.send(dm, "Schau mal https://www.amiga.org/forum. und www.aminet.net")
+
+    async def shown():
+        rc, r = await amiga.rexx("MEDIA Alice")
+        return "rot-blau.png:2:" in r and "notiz.txt" in r and r
+    v = await amiga.until(shown, 180)
+    check(v, f"picture shown as a preview in strips, file listed ({v!r})")
+    rc, v = await amiga.rexx("LINKS Alice")
+    check(v == "https://www.amiga.org/forum http://www.aminet.net", f"links found, sentence end left out ({v!r})")
+    await asyncio.sleep(3)
+    await amiga.shot("04c-picture-link")
+    shot = _Image.open(os.path.join(SHOTS, "04c-picture-link.png")).convert("RGB")
+    reds = [(x, y) for y in range(shot.height) for x in range(0, shot.width, 2)
+            if (lambda q: q[0] > 150 and q[1] < 60 and q[2] < 60)(shot.getpixel((x, y)))]
+    rows = []
+    if reds:
+        x0 = min(r[0] for r in reds) + 4
+        ys = [r[1] for r in reds]
+        y0, y1 = min(ys), max(ys)
+        for y in range(y0 - 1, y1 + 2):
+            q = shot.getpixel((x0, y))
+            rows.append("k" if max(q) < 60 else "r" if q[0] > 150 and q[1] < 60 else "g")
+    seq = "".join(rows)
+    inner = seq.strip("g")
+    check(seq.startswith("k") and seq.count("k") == 12 and len(inner) >= 89 and inner.count("g") <= 3,
+          f"preview strips in order, all 96 rows (known: now and then 1 row missing at a strip's end) ({seq})")
+    target = os.path.join(amiga.extra, "notiz.txt")
+    if os.path.exists(target):
+        os.remove(target)
+    rc, _ = await amiga.rexx("SAVEMEDIA Alice 1 Extra:notiz.txt")
+
+    async def saved():
+        return os.path.exists(target) and open(target, "rb").read() == txt
+    check(await amiga.until(saved, 120), "file downloaded and decrypted (SAVEMEDIA)")
+
     # emoji in the text: our pictures, unknown ones the yellow "?" face
     await p.send(dm, "Prima \U0001F602 und \U0001F984 und \u2764\ufe0f")
 

@@ -376,6 +376,7 @@ static void stamp(AmxEvent *e, const cJSON *ev, int history)
 static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, const char *type,
                          const cJSON *content, int encrypted, int history)
 {
+    char *media = NULL;
     AmxEvent e;
     const char *sender = amx__jstr(ev, "sender");
     if (!strcmp(type, "m.reaction")) {
@@ -394,6 +395,13 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
         e.type = AMX_EV_REDACTION;
         e.relates_to = amx__jstr(ev, "redacts") ? amx__jstr(ev, "redacts") : amx__jstr(content, "redacts");
         if (!e.relates_to) return;
+    } else if (!strcmp(type, "m.sticker")) {
+        memset(&e, 0, sizeof e);
+        e.type = AMX_EV_MESSAGE;
+        e.msgtype = "m.sticker";
+        e.body = amx__jstr(content, "body") ? amx__jstr(content, "body") : "";
+        media = amx__media_json(content, "m.sticker");
+        e.media = media;
     } else if (strcmp(type, "m.room.message")) {
         return;                                         /* other types: later features */
     } else {
@@ -401,6 +409,8 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
         e.type = AMX_EV_MESSAGE;
         e.msgtype = amx__jstr(content, "msgtype");
         e.body = amx__jstr(content, "body") ? amx__jstr(content, "body") : "";
+        media = amx__media_json(content, e.msgtype);
+        e.media = media;
     }
     e.room_id = room_id;
     e.event_id = amx__jstr(ev, "event_id");
@@ -409,6 +419,7 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
     e.own = sender && c->user_id && !strcmp(sender, c->user_id);
     stamp(&e, ev, history);
     amx__emit(c, &e);
+    free(media);
 }
 
 static void emit_undecryptable(AmxClient *c, const char *room_id, const cJSON *ev, const char *reason, int history)

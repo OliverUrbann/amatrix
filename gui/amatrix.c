@@ -34,6 +34,12 @@
 #include <proto/dos.h>
 #include <proto/intuition.h>
 #include <proto/muimaster.h>
+#include <proto/wb.h>
+#include <proto/asl.h>
+#include <libraries/asl.h>
+#include <dos/dostags.h>
+#include <utility/tagitem.h>
+#include "openurl_inline.h"
 #include <SDI_hook.h>
 #include "mui_util.h"
 #include "amatrix_async.h"
@@ -58,7 +64,7 @@ enum {
 };
 enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TAG_AVATAR,
        TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY, TAG_UNLOCK, TAG_STOREPASS,
-       TAG_REACT };
+       TAG_REACT, TAG_THUMB, TAG_SAVE };
 
 /* ------------------------------------------------------------------ state */
 
@@ -76,11 +82,28 @@ typedef struct React {
     int own;
 } React;
 
+/* an attachment in a chat window: the picture as strips of line height */
+typedef struct Media {
+    char *eid, *media, *name, *type;
+    int idx;                      /* item of the event's attachment list */
+    int state;                    /* 0 none, 1 loading, 2 shown, 3 no preview */
+    char *path, *saving;          /* saved to T:, being saved */
+    int open_after;               /* opening (T:) - else a download where the user chose */
+    int n_slices, img0;           /* NList images img0.. */
+    Object **obj;
+    struct MUI_AlphaData **ad;
+} Media;
+
 typedef struct ChatWin {
     struct ChatWin *next;
     char *room_id;
     Object *win, *list, *input, *older, *invite, *leave, *reactb;
     long next_serial;
+    struct Media *media;          /* attachments shown in this window */
+    int n_media, cap_media;
+    char **links;                 /* URLs in the text, for the globe pictures */
+    int n_links, cap_links;
+    int next_img;                 /* next free NList image number (pictures) */
     char **seen;                  /* event IDs shown (history and live overlap) */
     int n_seen, cap_seen;
     int n_undec;                  /* placeholder lines for undecryptable messages */
@@ -389,7 +412,7 @@ static void make_icon(Alpha *a, const char *const *art)
 /* reactions: the common ones as 12x12 pictures in the same style (Element's
  * quick reactions plus "tears of joy"); keys are UTF-8 */
 #define EM 12
-enum { EMO_THUMBSUP, EMO_THUMBSDOWN, EMO_HEART, EMO_SMILE, EMO_JOY, EMO_CONFUSED, EMO_EYES, EMO_TADA, EMO_ROCKET, EMO_UNKNOWN, N_EMO };
+enum { EMO_THUMBSUP, EMO_THUMBSDOWN, EMO_HEART, EMO_SMILE, EMO_JOY, EMO_CONFUSED, EMO_EYES, EMO_TADA, EMO_ROCKET, EMO_UNKNOWN, EMO_FILE, EMO_LINK, N_EMO };
 static Alpha emo_img[N_EMO], emo_big[N_EMO];   /* 12x12 in text, 24x24 in the picker */
 static const char *const emo_art[N_EMO][EM] = {
     { /* thumbsup */
@@ -521,6 +544,32 @@ static const char *const emo_art[N_EMO][EM] = {
       ".kyyyyyyyYk.",
       ".kYyykyyYYk.",
       "..kkYYYYkk..",
+      "....kkkk...." },
+    { /* file: a click opens the attachment */
+      ".kkkkkkk....",
+      ".kwwwwwkk...",
+      ".kwddwwklk..",
+      ".kwwwwwkkkk.",
+      ".kwdddddwwk.",
+      ".kwwwwwwwwk.",
+      ".kwddddddwk.",
+      ".kwwwwwwwwk.",
+      ".kwdddddwwk.",
+      ".kwwwwwwwwk.",
+      ".kkkkkkkkkk.",
+      "............" },
+    { /* link: a click opens the browser */
+      "....kkkk....",
+      "..kkcbbckk..",
+      ".kcbGGbcbck.",
+      ".kbGGGbbcbk.",
+      "kcbGGbbbbcck",
+      "kccbbbbGGcbk",
+      "kbcbbbGGGbck",
+      "kcbbbbGGbcbk",
+      ".kbcbbbGbck.",
+      ".kcbcbbbcck.",
+      "..kkbccbkk..",
       "....kkkk...." },
 };
 /* key (without variation selector / skin tone) -> picture; similar emoji
@@ -965,6 +1014,8 @@ typedef struct {
     int react;                    /* the reactions line under the message eid */
     int own;                      /* our own message */
     long serial;                  /* reactions line: number for its clickable pictures */
+    int slice;                    /* a strip of a picture (media entry midx) */
+    int midx;
 } Line;
 
 static Line *new_line(const char *eid, const char *text, size_t n, int undec)
@@ -1130,6 +1181,14 @@ static const char *react_target(ChatWin *w)
 }
 
 /* a click on a picture in a reactions line */
+#define CLICK_MEDIA 0x40000000L         /* button values: picture / file icon, globe, else reactions */
+#define CLICK_LINK  0x20000000L
+#define CLICK_SAVE  0x10000000L         /* the file icon: download (save as ...) */
+static void open_media(ChatWin *w, int mi);
+static void save_media(ChatWin *w, int mi, const char *to);
+static int open_link(ChatWin *w, int li, int quiet);
+static void free_media(ChatWin *w);
+
 HOOKPROTONH(chip_func, LONG, Object *obj, ULONG *param)
 {
     ChatWin *w = (ChatWin *)param[0];
@@ -1137,6 +1196,9 @@ HOOKPROTONH(chip_func, LONG, Object *obj, ULONG *param)
     int group = (int)(v % 16), i, j, g = 0;
     LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k;
     (void)obj;
+    if (v & CLICK_MEDIA) { open_media(w, (int)(v & 0xffffff)); return 0; }
+    if (v & CLICK_SAVE) { save_media(w, (int)(v & 0xffffff), NULL); return 0; }
+    if (v & CLICK_LINK) { open_link(w, (int)(v & 0xffffff), 0); return 0; }
     for (k = 0; k < n; k++) {
         Line *l = NULL;
         DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
@@ -1159,7 +1221,7 @@ static Object *win_pick, *pick_btn[N_EMO];
 static ChatWin *pick_w;
 static char *pick_eid;
 static const char *const emo_help[N_EMO] = { "Daumen hoch", "Daumen runter", "Herz", "Lächeln", "Lachen",
-                                             "Nachdenklich", "Augen", "Feiern", "Rakete", "" };
+                                             "Nachdenklich", "Augen", "Feiern", "Rakete", "", "", "" };
 
 static void open_picker(ChatWin *w)
 {
@@ -1237,6 +1299,7 @@ static void open_chat(const char *room_id)
         return;
     }
     if (!(w = calloc(1, sizeof *w))) return;
+    w->next_img = 16;                         /* 0..15: the small pictures (emoji, file, link) */
     w->room_id = strdup(room_id);
     w->title = strdup(r ? r->name : room_id);
     h = hash(room_id);
@@ -1340,6 +1403,7 @@ static void close_chat(ChatWin *w)
     DoMethod(app, OM_REMMEMBER, w->win);
     MUI_DisposeObject(w->win);
     for (i = 0; i < N_EMO; i++) if (w->emo[i]) MUI_DisposeObject(w->emo[i]);
+    free_media(w);
     for (i = 0; i < w->n_react; i++) {
         free(w->react[i].id); free(w->react[i].target); free(w->react[i].key); free(w->react[i].sender);
     }
@@ -1651,6 +1715,341 @@ static void reaction_event(ChatWin *w, const AmxEvent *e)
     refresh_reactions(w, e->relates_to);
 }
 
+/* ---------------------------------------------------------------- attachments, links */
+
+static char save_dir[256];            /* last drawer of "save as" */
+
+#define THUMB_W 128                   /* previews fit into this (small: memory, speed) */
+#define THUMB_H 96
+
+static int add_media(ChatWin *w, const AmxEvent *e, int idx)
+{
+    Media *m;
+    char b[256];
+    if (w->n_media == w->cap_media) {
+        Media *t = realloc(w->media, sizeof *t * (w->cap_media ? w->cap_media * 2 : 16));
+        if (!t) return -1;
+        w->media = t;
+        w->cap_media = w->cap_media ? w->cap_media * 2 : 16;
+    }
+    m = &w->media[w->n_media];
+    memset(m, 0, sizeof *m);
+    m->eid = strdup(e->event_id);
+    m->media = strdup(e->media);
+    m->idx = idx;
+    m->type = strdup(amx_media_info(e->media, idx, "type", b, sizeof b) ? b : "m.file");
+    m->name = strdup(amx_media_info(e->media, idx, "name", b, sizeof b) ? b : "Datei");
+    if (!m->eid || !m->media || !m->type || !m->name) return -1;
+    return w->n_media++;
+}
+
+static int is_picture(const Media *m)
+{
+    return !strcmp(m->type, "m.image") || !strcmp(m->type, "m.sticker");
+}
+
+/* the caption of a message with attachments, each with a clickable file icon;
+ * pictures get their preview requested */
+static char *media_text(ChatWin *w, const AmxEvent *e, const char *text)
+{
+    int n = amx_media_count(e->media), i, single = n == 1 && e->msgtype && strcmp(e->msgtype, "m.sticker");
+    size_t len = strlen(text) + 64 * n + 1;
+    char *out = malloc(len), *q;
+    if (!out) return NULL;
+    strcpy(out, text);
+    for (i = 0; i < n; i++) {
+        int mi = add_media(w, e, i);
+        if (mi < 0) break;
+        q = out + strlen(out);
+        snprintf(q, len - strlen(out), " \33o[%d@%ld]", EMO_FILE, CLICK_SAVE | mi);
+        if (is_picture(&w->media[mi])) {
+            char key[300];
+            snprintf(key, sizeof key, "%s\n%s\n%d", w->room_id, e->event_id, i);
+            w->media[mi].state = 1;
+            amx_async_media_thumbnail(A, e->media, i, key, THUMB_W, THUMB_H, TAG_THUMB);
+        }
+    }
+    (void)single;
+    return out;
+}
+
+/* URLs in a line of text: underlined, a globe after each (a click opens the browser) */
+static int add_link(ChatWin *w, const char *u, size_t n)
+{
+    char *c;
+    if (w->n_links == w->cap_links) {
+        char **t = realloc(w->links, sizeof *t * (w->cap_links ? w->cap_links * 2 : 16));
+        if (!t) return -1;
+        w->links = t;
+        w->cap_links = w->cap_links ? w->cap_links * 2 : 16;
+    }
+    if (!(c = malloc(n + 1))) return -1;
+    memcpy(c, u, n);
+    c[n] = 0;
+    w->links[w->n_links] = c;
+    return w->n_links++;
+}
+
+static char *linkify(ChatWin *w, char *text)
+{
+    char *p = text, *out, *q;
+    size_t cap = strlen(text) * 2 + 64, used = 0;
+    if (!strstr(text, "http://") && !strstr(text, "https://") && !strstr(text, "www.")) return text;
+    if (!(out = malloc(cap))) return text;
+    while (*p) {
+        char *u = NULL;
+        if (!strncmp(p, "http://", 7) || !strncmp(p, "https://", 8)
+            || (!strncmp(p, "www.", 4) && (p == text || p[-1] == ' ' || p[-1] == '(')))
+            u = p;
+        if (u) {
+            char *e = u;
+            int li;
+            size_t n;
+            while (*e && *e != ' ' && *e != '\n' && *e != '\t' && *e != '<' && *e != '>' && *e != '"'
+                   && *e != 27 && (unsigned char)*e > 32)
+                e++;
+            while (e > u && strchr(".,;:!?)'", e[-1])) e--;          /* end of sentence */
+            n = (size_t)(e - u);
+            if (n > 8 && used + n + 40 < cap) {
+                char tmp[40];
+                q = out + used;
+                memcpy(q, "\33u", 2);
+                memcpy(q + 2, u, n);
+                used += n + 2;
+                if (!strncmp(u, "www.", 4)) {
+                    char *full = malloc(n + 8);
+                    if (full) { sprintf(full, "http://%.*s", (int)n, u); li = add_link(w, full, strlen(full)); free(full); }
+                    else li = -1;
+                } else li = add_link(w, u, n);
+                if (li >= 0) snprintf(tmp, sizeof tmp, "\33n \33o[%d@%ld]", EMO_LINK, CLICK_LINK | li);
+                else snprintf(tmp, sizeof tmp, "\33n");
+                memcpy(out + used, tmp, strlen(tmp));
+                used += strlen(tmp);
+                p = e;
+                continue;
+            }
+        }
+        if (used + 2 >= cap) break;
+        out[used++] = *p++;
+    }
+    out[used] = 0;
+    free(text);
+    return out;
+}
+
+/* the browser (openurl.library); quiet: no requester (ARexx) */
+static int open_link(ChatWin *w, int li, int quiet)
+{
+    struct Library *OpenURLBase;
+    ULONG ok = 0;
+    if (li < 0 || li >= w->n_links) return 0;
+    amx_log("open link %s", w->links[li]);
+    if ((OpenURLBase = OpenLibrary("openurl.library", 0)) != NULL) {
+        struct TagItem tags[] = { { 0x81480000UL + 4, TRUE },      /* URL_Launch */
+                                  { 0x81480000UL + 1, TRUE },      /* URL_Show */
+                                  { 0x81480000UL + 2, TRUE },      /* URL_BringToFront */
+                                  { TAG_DONE, 0 } };
+        ok = URL_OpenA((STRPTR)w->links[li], tags);
+        CloseLibrary(OpenURLBase);
+    }
+    if (!ok && !quiet)
+        MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
+                    (STRPTR)"Der Link konnte nicht geöffnet werden\n(openurl.library installiert?):\n\n%s",
+                    (ULONG)w->links[li]);
+    return ok != 0;
+}
+
+/* a saved attachment with its default tool (Workbench V44 + DefIcons), else MultiView */
+static void open_file(const char *path)
+{
+    struct Library *WorkbenchBase = OpenLibrary("workbench.library", 44);
+    BOOL ok = FALSE;
+    amx_log("open file %s", path);
+    if (WorkbenchBase) {
+        ok = OpenWorkbenchObjectA((STRPTR)path, NULL);
+        CloseLibrary(WorkbenchBase);
+    }
+    if (!ok) {
+        char cmd[400];
+        BPTR nil = Open("NIL:", MODE_NEWFILE);
+        snprintf(cmd, sizeof cmd, "SYS:Utilities/MultiView \"%s\"", path);
+        if (SystemTags(cmd, SYS_Input, nil, SYS_Output, 0, SYS_Asynch, TRUE, TAG_DONE) == -1 && nil) Close(nil);
+    }
+}
+
+static void open_media(ChatWin *w, int mi)
+{
+    Media *m;
+    char path[300], *q;
+    BPTR l;
+    if (mi < 0 || mi >= w->n_media) return;
+    m = &w->media[mi];
+    if (m->path) { open_file(m->path); return; }
+    if (m->saving) return;
+    if ((l = Lock("T:Amatrix", ACCESS_READ)) != 0) UnLock(l);
+    else if ((l = CreateDir("T:Amatrix")) != 0) UnLock(l);
+    snprintf(path, sizeof path, "T:Amatrix/%.8s-%s", m->eid + 1, m->name);
+    for (q = path + 10; *q; q++)
+        if (*q == ':' || *q == '/' || *q == '"' || (unsigned char)*q < 32) *q = '_';
+    if (!(m->saving = strdup(path))) return;
+    m->open_after = 1;
+    snprintf(w->err, sizeof w->err, "Lade %s ...", m->name);
+    update_status(w);
+    amx_async_media_save(A, m->media, m->idx, path, TAG_SAVE);
+}
+
+/* the file icon: download to a place the user picks (to: without asking) */
+static void save_media(ChatWin *w, int mi, const char *to)
+{
+    Media *m;
+    char path[512];
+    if (mi < 0 || mi >= w->n_media) return;
+    m = &w->media[mi];
+    if (m->saving) return;
+    if (to) snprintf(path, sizeof path, "%s", to);
+    else {
+        struct Library *AslBase = OpenLibrary("asl.library", 38);
+        struct FileRequester *fr;
+        int ok = 0;
+        if (!AslBase) return;
+        set(app, MUIA_Application_Sleep, TRUE);
+        fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
+                 ASLFR_Window, (ULONG)xget(w->win, MUIA_Window_Window),
+                 ASLFR_TitleText, (ULONG)"Datei speichern",
+                 ASLFR_InitialFile, (ULONG)m->name, ASLFR_InitialDrawer, (ULONG)(save_dir[0] ? save_dir : "RAM:"),
+                 ASLFR_DoSaveMode, TRUE, TAG_DONE);
+        if (fr && AslRequest(fr, NULL) && fr->fr_File[0]) {
+            snprintf(save_dir, sizeof save_dir, "%s", fr->fr_Drawer);
+            snprintf(path, sizeof path, "%s", fr->fr_Drawer);
+            ok = AddPart((STRPTR)path, (STRPTR)fr->fr_File, sizeof path);
+        }
+        if (fr) FreeAslRequest(fr);
+        CloseLibrary(AslBase);
+        set(app, MUIA_Application_Sleep, FALSE);
+        if (!ok) return;
+    }
+    if (!(m->saving = strdup(path))) return;
+    m->open_after = 0;
+    snprintf(w->err, sizeof w->err, "Speichere %s ...", m->name);
+    update_status(w);
+    amx_async_media_save(A, m->media, m->idx, path, TAG_SAVE);
+}
+
+/* saved: open it (if a window still waits for it) */
+static void media_saved(const AmxMsg *m)
+{
+    ChatWin *w;
+    int i;
+    for (w = chats; w; w = w->next)
+        for (i = 0; i < w->n_media; i++) {
+            Media *x = &w->media[i];
+            if (!x->saving || !m->result || strcmp(x->saving, m->result)) continue;
+            free(x->saving);
+            x->saving = NULL;
+            w->err[0] = 0;
+            if (m->status) snprintf(w->err, sizeof w->err, "Laden fehlgeschlagen: %.120s", m->error ? m->error : "");
+            else if (x->open_after) { x->path = strdup(m->result); open_file(m->result); }
+            else snprintf(w->err, sizeof w->err, "Gespeichert: %.140s", m->result);
+            update_status(w);
+            return;
+        }
+}
+
+/* the preview arrived: cut into strips of line height, one list entry each,
+ * right under the message (after earlier pictures of the same message) */
+static void media_thumb(const AmxMsg *msg)
+{
+    char room[256] = "", eid[256] = "";
+    int idx = 0, i, k, mi = -1, lh, n;
+    ChatWin *w;
+    Media *m;
+    LONG entries, pos = -1, e;
+    if (!msg->result || sscanf(msg->result, "%255[^\n]\n%255[^\n]\n%d", room, eid, &idx) != 3) return;
+    if (!(w = chat_by_room(room))) return;
+    for (i = 0; i < w->n_media; i++)
+        if (!strcmp(w->media[i].eid, eid) && w->media[i].idx == idx) { mi = i; break; }
+    if (mi < 0) return;
+    m = &w->media[mi];
+    if (msg->status || !msg->pixels || msg->width < 1 || msg->height < 1) {
+        m->state = 3;
+        amx_log("no preview for %s: %s", m->name, msg->error ? msg->error : "-");
+        return;
+    }
+    lh = (int)xget(w->list, MUIA_NList_LineHeight);
+    if (lh < 8) lh = 12;
+    n = (msg->height + lh - 1) / lh;
+    if (!(m->obj = calloc(n, sizeof *m->obj)) || !(m->ad = calloc(n, sizeof *m->ad))) return;
+    /* where: after the message's text and its earlier pictures, before its reactions */
+    entries = (LONG)xget(w->list, MUIA_NList_Entries);
+    for (e = 0; e < entries; e++) {
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, e, &l);
+        if (!l || !l->eid || strcmp(l->eid, eid) || l->react) continue;
+        if (l->slice && w->media[l->midx].idx > idx) continue;
+        pos = e;
+    }
+    if (pos < 0) return;                          /* the message is no longer shown */
+    m->img0 = w->next_img;
+    for (k = 0; k < n; k++) {
+        int y, x, rows = (k + 1) * lh <= msg->height ? lh : msg->height - k * lh;
+        struct MUI_AlphaData *ad = malloc(sizeof *ad + sizeof(ULONG) * msg->width * lh);
+        char spec[24], text[48];
+        Line *l;
+        if (!ad) break;
+        ad->width = msg->width;
+        ad->height = lh;
+        for (y = 0; y < lh; y++)
+            for (x = 0; x < msg->width; x++)
+                ad->data[y * msg->width + x] = y < rows ? msg->pixels[(k * lh + y) * msg->width + x] : 0;
+        m->ad[k] = ad;
+        snprintf(spec, sizeof spec, "\33A[%08lx]", (unsigned long)ad);
+        m->obj[k] = TextObject, MUIA_Text_Contents, spec, MUIA_Text_SetMax, TRUE, MUIA_FixHeight, lh,
+                    MUIA_InnerLeft, 0, MUIA_InnerRight, 0, MUIA_InnerTop, 0, MUIA_InnerBottom, 0, End;
+        if (!m->obj[k]) break;
+        DoMethod(w->list, MUIM_NList_UseImage, m->obj[k], w->next_img, 0);
+        snprintf(text, sizeof text, "      \33o[%d@%ld]", w->next_img, CLICK_MEDIA | mi);
+        w->next_img++;
+        if (!(l = new_line(eid, text, strlen(text), 0))) break;
+        l->slice = 1;
+        l->midx = mi;
+        remember_line(w, l);
+        DoMethod(w->list, MUIM_NList_InsertSingle, l, pos + 1 + k);
+        w->lines++;
+        m->n_slices = k + 1;
+    }
+    m->state = 2;
+    if (pos + 1 + m->n_slices >= entries + m->n_slices - 1) DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
+    DoMethod(w->list, MUIM_NList_Redraw, MUIV_NList_Redraw_All);   /* no stale rows between the strips */
+}
+
+static void free_media(ChatWin *w)
+{
+    int i, k;
+    for (i = 0; i < w->n_media; i++) {
+        Media *m = &w->media[i];
+        for (k = 0; k < m->n_slices; k++) {
+            if (m->obj && m->obj[k]) MUI_DisposeObject(m->obj[k]);
+            if (m->ad) free(m->ad[k]);
+        }
+        free(m->obj); free(m->ad);
+        free(m->eid); free(m->media); free(m->name); free(m->type); free(m->path); free(m->saving);
+    }
+    free(w->media);
+    for (i = 0; i < w->n_links; i++) free(w->links[i]);
+    free(w->links);
+}
+
+/* the text of a message for the list: pictures/files and links clickable */
+static char *decorate(ChatWin *w, const AmxEvent *e, char *text)
+{
+    if (e->type != AMX_EV_MESSAGE) return text;
+    if (e->media && e->event_id) {
+        char *t = media_text(w, e, text);
+        if (t) { free(text); text = t; }
+    }
+    return linkify(w, text);
+}
+
 static void chat_event(const AmxEvent *e)
 {
     ChatWin *w = e->room_id ? chat_by_room(e->room_id) : NULL;
@@ -1663,7 +2062,8 @@ static void chat_event(const AmxEvent *e)
         return;
     }
     if (e->type == AMX_EV_MESSAGE && e->event_id && w->n_undec) {
-        if ((text = format_event(e)) != NULL && replace_undecryptable(w, e, text)) {
+        if ((text = format_event(e)) != NULL && (text = decorate(w, e, text)) != NULL
+            && replace_undecryptable(w, e, text)) {
             free(text);
             note_newest(w, e);
             return;
@@ -1673,6 +2073,7 @@ static void chat_event(const AmxEvent *e)
     if (seen_before(w, e->event_id)) return;
     if (e->type == AMX_EV_MEMBERSHIP && e->history) return;     /* keep old history quiet */
     if (!(text = format_event(e))) return;
+    text = decorate(w, e, text);
     insert_text(w, e->event_id, text, e->history ? MUIV_NList_Insert_Top : MUIV_NList_Insert_Bottom,
                 e->type == AMX_EV_UNDECRYPTABLE && e->event_id, e->own);
     amx_log("  inserted (%ld lines)", (long)w->lines);
@@ -2037,6 +2438,12 @@ static void handle_result(const AmxMsg *m)
                         (STRPTR)"Verlassen hat nicht geklappt:\n%s", (ULONG)(m->error ? m->error : ""));
         set_online();
         break;
+    case TAG_THUMB:
+        media_thumb(m);
+        break;
+    case TAG_SAVE:
+        media_saved(m);
+        break;
     case TAG_REACT:
         if (m->status) amx_log("reaction failed: %s", m->error ? m->error : "-");
         break;
@@ -2301,7 +2708,7 @@ MakeStaticHook(rx_closechat_hook, rx_closechat_func);
 /* REACT room name: our reaction (thumbsup, heart, ...) to the newest message
  * of someone else; REACTIONS room: the reaction lines, "name count[*]" */
 static const char *const emo_names[N_EMO] = { "thumbsup", "thumbsdown", "heart", "smile", "joy",
-                                               "confused", "eyes", "tada", "rocket", "unknown" };
+                                               "confused", "eyes", "tada", "rocket", "unknown", "file", "link" };
 
 HOOKPROTONH(rx_react_func, LONG, Object *obj, ULONG *arg)
 {
@@ -2402,6 +2809,76 @@ HOOKPROTONH(rx_picker_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_picker_hook, rx_picker_func);
 
+/* MEDIA room: "name:state:strips" per attachment ("|"-separated; state 1
+ * loading, 2 shown, 3 no preview); SAVEMEDIA room n path; OPENMEDIA room n;
+ * LINKS room: the URLs; OPENLINK room n (rc 10 if no browser) */
+HOOKPROTONH(rx_media_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    char b[900] = "", one[160];
+    int i;
+    (void)obj;
+    if (!w) return 5;
+    for (i = 0; i < w->n_media; i++) {
+        snprintf(one, sizeof one, "%s%s:%d:%d", i ? "|" : "", w->media[i].name, w->media[i].state,
+                 w->media[i].n_slices);
+        strncat(b, one, sizeof b - strlen(b) - 1);
+    }
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_media_hook, rx_media_func);
+
+HOOKPROTONH(rx_savemedia_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w || !arg[1]) return 5;
+    save_media(w, (int)*(LONG *)arg[1], (char *)arg[2]);
+    return 0;
+}
+MakeStaticHook(rx_savemedia_hook, rx_savemedia_func);
+
+HOOKPROTONH(rx_openmedia_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w || !arg[1]) return 5;
+    open_media(w, (int)*(LONG *)arg[1]);
+    return 0;
+}
+MakeStaticHook(rx_openmedia_hook, rx_openmedia_func);
+
+HOOKPROTONH(rx_links_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    char b[900] = "";
+    int i;
+    (void)obj;
+    if (!w) return 5;
+    for (i = 0; i < w->n_links; i++) {
+        if (i) strncat(b, " ", sizeof b - strlen(b) - 1);
+        strncat(b, w->links[i], sizeof b - strlen(b) - 1);
+    }
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_links_hook, rx_links_func);
+
+HOOKPROTONH(rx_openlink_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w || !arg[1]) return 5;
+    return open_link(w, (int)*(LONG *)arg[1], 1) ? 0 : 10;
+}
+MakeStaticHook(rx_openlink_hook, rx_openlink_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
@@ -2420,6 +2897,11 @@ static struct MUI_Command rexx_cmds[] = {
     { "LEAVE",     "ROOM/F",          1, &rx_leave_hook,    { 0 } },
     { "LASTLINE",  "ROOM/F",          1, &rx_last_hook,     { 0 } },
     { "PICKER",    "ROOM/F",          1, &rx_picker_hook,   { 0 } },
+    { "MEDIA",     "ROOM/F",          1, &rx_media_hook,    { 0 } },
+    { "SAVEMEDIA", "ROOM/A,N/N/A,PATH/A", 3, &rx_savemedia_hook, { 0 } },
+    { "OPENMEDIA", "ROOM/A,N/N/A",    2, &rx_openmedia_hook, { 0 } },
+    { "LINKS",     "ROOM/F",          1, &rx_links_hook,    { 0 } },
+    { "OPENLINK",  "ROOM/A,N/N/A",    2, &rx_openlink_hook, { 0 } },
     { "RECOVERY",  "KEY/F",           1, &rx_recovery_hook, { 0 } },
     { "UNLOCK",    "PASS/F",          1, &rx_unlock_hook,   { 0 } },
     { "CHATSTATUS","ROOM/F",          1, &rx_chatstatus_hook, { 0 } },

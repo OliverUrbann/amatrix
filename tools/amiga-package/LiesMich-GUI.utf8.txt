@@ -55,6 +55,12 @@ Bedienung
                                    den in der Liste gewählten Raum
               Emojis im Text erscheinen als kleine Bilder; unbekannte als
               gelbes Gesicht mit Fragezeichen.
+              Bilder: eine kleine Vorschau unter der Nachricht; ein Klick
+              darauf öffnet das Bild mit dem Standardprogramm (Workbench /
+              DefIcons, sonst MultiView; Kopie in T:Amatrix).  Das Datei-
+              Symbol hinter dem Namen speichert Bild oder Datei, wohin du
+              willst.  Links sind unterstrichen; die Weltkugel dahinter
+              öffnet den Browser (openurl.library).
               Unten tippen, Return sendet.
               Reaktionen stehen unter der Nachricht, mit Anzahl (Personen);
               ähnliche Emojis zählen zusammen (alle Lach-Smileys, alle
@@ -66,7 +72,8 @@ Bedienung
 ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE, STATUS,
 CHATLINES, UNREADABLE, OLDER,
 FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS, CHATSTATUS,
-CLOSECHAT, REACT, REACTIONS, PICKER, LEAVE, LASTLINE, QUIT).
+CLOSECHAT, REACT, REACTIONS, PICKER, LEAVE, LASTLINE, MEDIA, SAVEMEDIA,
+OPENMEDIA, LINKS, OPENLINK, QUIT).
 
 Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
 schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem
