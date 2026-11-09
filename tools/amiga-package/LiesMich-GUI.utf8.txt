@@ -107,7 +107,7 @@ Benachrichtigungen, Ikonifizieren, Einstellungen
   Benachrichtigungen, in der Liste steht "(stumm)".
 - Menü "Ikonifizieren" (Amiga-I) oder das Ikonifizieren-Symbol im Fenster:
   Amatrix wird ein AppIcon auf der Workbench.  Bei ungelesenen Nachrichten
-  wechselt es zum blauen Icon (Icons/Amatrix-neu); der Fenstertitel zeigt
+  bekommt es ein rosa Ausrufezeichen (Icons/Amatrix-neu); der Fenstertitel zeigt
   die Zahl ungelesener Nachrichten.
 - Menü "Einstellungen ..." (Amiga-E): Benachrichtigungen an/aus, bei allen
   Nachrichten oder nur Direktnachrichten und Erwähnungen, Bildvorschau im
