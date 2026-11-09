@@ -70,6 +70,11 @@ int main(int argc, char **argv)
         }
     }
     MXT_OK(ok, "the peer deleted a message (redaction, or it came already deleted)");
+    e = mxt_find(AMX_EV_MESSAGE, room, a.peer, "**fett**");
+    MXT_OK(e && e->formatted && !strcmp(e->formatted, "<strong>fett</strong>") && e->mention,
+           "a formatted message: its HTML, and it mentions us");
+    e = mxt_find(AMX_EV_MESSAGE, room, a.peer, "Original");
+    MXT_OK(e && !e->formatted && !e->mention, "a plain one: neither");
     e = mxt_find(AMX_EV_MESSAGE, room, a.peer, "im Thread");
     MXT_OK(e && e->thread_root && !strcmp(e->thread_root, orig_id) && !e->reply_to,
            "a thread message: thread_root set, the fallback reply ignored");

@@ -340,6 +340,31 @@ async def scenario(ctx, amiga, srv, me):
     v = await preview("Alice", "Prima ")
     check(v and "?" not in v and v.count("\x1bA[") == 3, f"room list preview: emoji as pictures too ({v!r})")
 
+    # formatted messages (HTML from Element) and mentions
+    await p.c.room_send(dm, "m.room.message", {
+        "msgtype": "m.text", "body": "**Wichtig:** _bitte_ lesen\n- eins\n- zwei",
+        "format": "org.matrix.custom.html",
+        "formatted_body": "<p><strong>Wichtig:</strong> <em>bitte</em> lesen</p>\n<ul>\n<li>eins</li>\n<li>zwei</li>\n</ul>"},
+        ignore_unverified_devices=True)
+    await p.c.room_send(dm, "m.room.message", {
+        "msgtype": "m.text", "body": f"Hallo {me.user_id}, Code: `ls`",
+        "format": "org.matrix.custom.html",
+        "formatted_body": f'Hallo <a href="https://matrix.to/#/{me.user_id}">amiga</a>, Code: <code>ls</code>'
+                          '<script>x</script>\x1bo[3@1]',
+        "m.mentions": {"user_ids": [me.user_id]}}, ignore_unverified_devices=True)
+
+    async def rich(want):
+        async def f():
+            rc, r = await amiga.rexx("TEXTS Alice 6")
+            return want(r) and r
+        return await amiga.until(f, 120)
+    v = await rich(lambda r: "^bWichtig:^n ^ibitte^n lesen|- eins|- zwei" in r)
+    check(v, f"formatted message: bold, italic, list ({v!r})")
+    v = await rich(lambda r: "^b@^n " in r and "Hallo ^bamiga^n, Code: `ls`" in r)
+    check(v and "^o[3@1]" not in v, f"mention marked, pill bold, no codes from the sender ({v!r})")
+    await asyncio.sleep(2)
+    await amiga.shot("04g-formatted")
+
     # replies, edits, deleting, date separator
     async def texts(want, n=12):
         async def f():
@@ -354,7 +379,7 @@ async def scenario(ctx, amiga, srv, me):
     ev = next((e for e in p.events if getattr(e, "body", None) == "Klar doch"), None)
     rel = ((ev.source.get("content") or {}).get("m.relates_to") or {}) if ev else {}
     check(ok and rel.get("m.in_reply_to", {}).get("event_id"), "Alice gets it as a reply")
-    v = await texts(lambda r: "^i  \xbb Alice: Prima" in r and "Klar doch" in r)
+    v = await texts(lambda r: "^i  \xbb Alice: Hallo" in r and "Klar doch" in r)
     check(v, f"our reply shows the quote above it ({v!r})")
     mine = p.ids.get((dm, me.user_id, "Klar doch"))
     await p.c.room_send(dm, "m.room.message", {

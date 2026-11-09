@@ -101,12 +101,17 @@ $(B)/examples/%: examples/%.c $(B)/libamatrix.a $(B)/libolm.a
 clean:
 	rm -rf build
 
-.PHONY: gui all tests clean
+.PHONY: gui all tests clean richtext-test
+
+# unit test of the HTML converter of the GUI, on the build machine
+richtext-test:
+	cc -Wall -Wextra -g -fsanitize=address,undefined -Igui gui/richtext.c tests/gui/richtext_test.c -o build/richtext-test
+	build/richtext-test
 
 # ---------------------------------------------------------------- MUI client
 # (Amiga only; the MUI SDK comes from third_party/fetch-mui.sh)
 MUI_INC := third_party/mui/include
-GUI_SRC := gui/amatrix.c gui/mui_util.c
+GUI_SRC := gui/amatrix.c gui/mui_util.c gui/richtext.c
 GUI_CFLAGS = $(CFLAGS) -Wno-attributes -Wno-pointer-sign -finput-charset=UTF-8 -fexec-charset=ISO-8859-1 \
              -I$(MUI_INC) -Icore/include -Igui
 

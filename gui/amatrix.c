@@ -46,6 +46,7 @@
 #include <dos/dostags.h>
 #include <utility/tagitem.h>
 #include "openurl_inline.h"
+#include "richtext.h"
 #include <SDI_hook.h>
 #include "mui_util.h"
 #include "amatrix_async.h"
@@ -106,6 +107,8 @@ typedef struct Media {
 /* a message shown in a chat window: for quotes, edits, deleting */
 typedef struct ChatMsg {
     char *eid, *sender, *name, *body, *msgtype, *reply_to, *thread_root;   /* body: UTF-8 */
+    char *formatted;              /* its HTML form, if any */
+    int mention;
     double ts;
     int own, edited, redacted;
     double edit_ts;
@@ -120,7 +123,7 @@ typedef struct ChatWin {
     char *reply_eid, *edit_eid;
     ChatMsg *msgs;
     int n_msgs, cap_msgs;
-    struct PendingEdit { char *eid, *body, *msgtype; double ts; } *pedit;
+    struct PendingEdit { char *eid, *body, *msgtype, *formatted; double ts; } *pedit;
     int n_pedit, cap_pedit;
     long top_day, bottom_day;     /* date separators: day of the top / bottom message */
     char *thread_root;            /* a thread window: the thread's first message */
@@ -464,7 +467,7 @@ static void notify_event(const AmxEvent *e)
         char lp[100];
         const char *c = strchr(my_user, ':');
         snprintf(lp, sizeof lp, "%.*s", c ? (int)(c - my_user - 1) : (int)strlen(my_user), my_user + 1);
-        mention = strstr(e->body, my_user) || (lp[0] && strstr(e->body, lp));
+        mention = e->mention || strstr(e->body, my_user) || (lp[0] && strstr(e->body, lp));
     }
     if (!opt_notify_all && !r->direct && !mention) return;
     if (!herald_here()) return;
@@ -1026,9 +1029,16 @@ static char *local_emoji(const char *utf8)
  * 0 for NList (ESC o) */
 static char *local_emoji_as(const char *utf8, int mui)
 {
-    const unsigned char *p = (const unsigned char *)(utf8 ? utf8 : ""), *seg = p;
+    /* a sender's text must not carry MUI codes (clickable pictures, pens ...):
+     * every ESC is dropped; our own style marks (richtext.h) become ESC at the end */
+    char *clean = strdup(utf8 ? utf8 : ""), *cw, *cr;
+    const unsigned char *p, *seg;
     char *b = NULL;
     size_t n = 0, cap = 0;
+    if (!clean) return NULL;
+    for (cw = cr = clean; *cr; cr++) if (*cr != 27) *cw++ = *cr;
+    *cw = 0;
+    p = seg = (const unsigned char *)clean;
     sb_add(&b, &n, &cap, "", 0);
     while (*p) {
         int len, l2;
@@ -1070,6 +1080,15 @@ static char *local_emoji_as(const char *utf8, int mui)
             p += len;
     }
     sb_local(&b, &n, &cap, (const char *)seg, (const char *)p);
+    free(clean);
+    for (cr = b; cr && *cr; cr++)
+        if (*cr == RICH_MARK) {
+            if (mui != 2 && cr[1] && strchr("biun", cr[1])) *cr = 27;
+            else {                                /* Herald, or not one of ours: away with it */
+                memmove(cr, cr + (mui == 2 && cr[1] ? 2 : 1), strlen(cr + (mui == 2 && cr[1] ? 2 : 1)) + 1);
+                cr--;
+            }
+        }
     return b;
 }
 
@@ -1194,7 +1213,8 @@ HOOKPROTONH(room_disp_func, LONG, char **array, Room *r)
         if (r->invited)
             snprintf(text, sizeof text, "\33b%s\33n\n\33i%s", r->name, second);
         else if (r->unread)              /* unread: count, second line in normal colour */
-            snprintf(text, sizeof text, "\33b%s (%d)%s\33n\n\33i%s", r->name, r->unread, mu, second);
+            snprintf(text, sizeof text, "\33b%s (%d%s)%s\33n\n\33i%s", r->name, r->unread,
+                     r->highlights ? " @" : "", mu, second);
         else
             snprintf(text, sizeof text, "\33b%s%s\33n\n\33i\33P[808080]%s", r->name, mu, second);
     }
@@ -1800,17 +1820,24 @@ static int seen_before(ChatWin *w, const char *id)
 /* one event as text lines for the chat list (local charset, NList codes) */
 static char *format_event(const AmxEvent *e)
 {
-    char *name = local(e->sender_name ? e->sender_name : e->sender), *body, *out, tbuf[16] = "";
+    char *name = local(e->sender_name ? e->sender_name : e->sender), *body, *out, tbuf[32] = "";
     const char *mt = e->msgtype ? e->msgtype : "";
     size_t n;
     if (e->timestamp > 0) {
         time_t t = (time_t)(e->timestamp / 1000);
         struct tm *tm = localtime(&t);
-        if (tm) strftime(tbuf, sizeof tbuf, "%H:%M ", tm);
+        if (tm) strftime(tbuf, 16, "%H:%M ", tm);
     }
     switch (e->type) {
-    case AMX_EV_MESSAGE:
-        body = local_emoji(e->body);
+    case AMX_EV_MESSAGE: {
+        char *rich = e->formatted && !e->media ? amx_rich_from_html(e->formatted) : NULL;
+        body = local_emoji(rich && rich[0] ? rich : e->body);
+        free(rich);
+        if (e->mention && !e->own) {              /* it mentions us: "@" in front */
+            char t2[32];
+            snprintf(t2, sizeof t2, "\33b@\33n %s", tbuf);
+            strcpy(tbuf, t2);
+        }
         n = strlen(name) + strlen(body) + 64;
         out = malloc(n);
         if (!strcmp(mt, "m.emote"))
@@ -1825,6 +1852,7 @@ static char *format_event(const AmxEvent *e)
             snprintf(out, n, "%s\33b%s:\33n %s", tbuf, name, body);
         free(body);
         break;
+    }
     case AMX_EV_UNDECRYPTABLE:
         n = strlen(name) + 96 + (e->reason ? strlen(e->reason) : 0);
         out = malloc(n);
@@ -2459,6 +2487,8 @@ static ChatMsg *add_msg(ChatWin *w, const AmxEvent *e)
     m->sender = dupn(e->sender);
     m->name = dupn(e->sender_name ? e->sender_name : e->sender);
     m->body = dupn(e->body ? e->body : "");
+    m->formatted = dupn(e->formatted);
+    m->mention = e->mention;
     m->msgtype = dupn(e->msgtype);
     m->reply_to = dupn(e->reply_to);
     m->thread_root = dupn(e->thread_root);
@@ -2468,6 +2498,7 @@ static ChatMsg *add_msg(ChatWin *w, const AmxEvent *e)
     for (i = 0; i < w->n_pedit; i++)             /* an edit that came first (history) */
         if (!strcmp(w->pedit[i].eid, m->eid)) {
             free(m->body); m->body = dupn(w->pedit[i].body);
+            free(m->formatted); m->formatted = dupn(w->pedit[i].formatted);
             free(m->msgtype); m->msgtype = dupn(w->pedit[i].msgtype);
             m->edited = 1;
             m->edit_ts = w->pedit[i].ts;
@@ -2480,11 +2511,11 @@ static void free_msgs(ChatWin *w)
     int i;
     for (i = 0; i < w->n_msgs; i++) {
         ChatMsg *m = &w->msgs[i];
-        free(m->eid); free(m->sender); free(m->name); free(m->body); free(m->msgtype);
+        free(m->eid); free(m->sender); free(m->name); free(m->body); free(m->msgtype); free(m->formatted);
         free(m->reply_to); free(m->thread_root);
     }
     free(w->msgs);
-    for (i = 0; i < w->n_pedit; i++) { free(w->pedit[i].eid); free(w->pedit[i].body); free(w->pedit[i].msgtype); }
+    for (i = 0; i < w->n_pedit; i++) { free(w->pedit[i].eid); free(w->pedit[i].body); free(w->pedit[i].msgtype); free(w->pedit[i].formatted); }
     free(w->pedit);
     free(w->reply_eid);
     free(w->edit_eid);
@@ -2515,7 +2546,7 @@ static char *message_text(ChatWin *w, const AmxEvent *e, int edited, int redacte
 {
     char *text, *quote, *out;
     AmxEvent x = *e;
-    if (redacted) { x.msgtype = "m.notice"; x.body = "(Nachricht gel\xc3\xb6scht)"; x.media = NULL; }   /* UTF-8 */
+    if (redacted) { x.msgtype = "m.notice"; x.body = "(Nachricht gel\xc3\xb6scht)"; x.media = NULL; x.formatted = NULL; }   /* UTF-8 */
     if (!(text = format_event(&x))) return NULL;
     if (!redacted) text = decorate(w, &x, text);
     if (edited && !redacted && text) {
@@ -2545,6 +2576,8 @@ static void rerender(ChatWin *w, ChatMsg *m)
     e.sender = m->sender;
     e.sender_name = m->name;
     e.body = m->body;
+    e.formatted = m->formatted;
+    e.mention = m->mention;
     e.msgtype = m->msgtype;
     e.reply_to = m->reply_to;
     e.timestamp = m->ts;
@@ -2590,6 +2623,7 @@ static void edit_event(ChatWin *w, const AmxEvent *e)
         if (!m->sender || !e->sender || strcmp(m->sender, e->sender)) return;   /* only the author */
         if (m->edited && e->timestamp < m->edit_ts) return;                    /* an older edit */
         free(m->body); m->body = dupn(e->body);
+        free(m->formatted); m->formatted = dupn(e->formatted);
         free(m->msgtype); m->msgtype = dupn(e->msgtype);
         m->edited = 1;
         m->edit_ts = e->timestamp;
@@ -2600,6 +2634,7 @@ static void edit_event(ChatWin *w, const AmxEvent *e)
         if (!strcmp(w->pedit[i].eid, e->relates_to)) {
             if (e->timestamp < w->pedit[i].ts) return;
             free(w->pedit[i].body); w->pedit[i].body = dupn(e->body);
+            free(w->pedit[i].formatted); w->pedit[i].formatted = dupn(e->formatted);
             free(w->pedit[i].msgtype); w->pedit[i].msgtype = dupn(e->msgtype);
             w->pedit[i].ts = e->timestamp;
             return;
@@ -2612,6 +2647,7 @@ static void edit_event(ChatWin *w, const AmxEvent *e)
     }
     w->pedit[w->n_pedit].eid = dupn(e->relates_to);
     w->pedit[w->n_pedit].body = dupn(e->body);
+    w->pedit[w->n_pedit].formatted = dupn(e->formatted);
     w->pedit[w->n_pedit].msgtype = dupn(e->msgtype);
     w->pedit[w->n_pedit].ts = e->timestamp;
     w->n_pedit++;
@@ -2869,6 +2905,7 @@ static void chat_event_in(ChatWin *w, const AmxEvent *e)
         if (text && m && m->edited) {                    /* an edit came first: show the new text */
             AmxEvent x = *e;
             x.body = m->body;
+            x.formatted = m->formatted;
             x.msgtype = m->msgtype;
             free(text);
             text = message_text(w, &x, 1, e->redacted);

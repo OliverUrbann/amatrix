@@ -67,6 +67,12 @@ Bedienung
               "Thread: n Antworten"; ein Klick auf das Sprechblasen-
               Symbol öffnet den Thread in einem eigenen Fenster, was du
               dort schreibst, geht in den Thread.
+              Formatierte Nachrichten (aus Element): fett, kursiv und
+              unterstrichen werden so gezeigt, Listen, Zitate ("| "),
+              Überschriften und Code-Blöcke als eigene Zeilen, Links als
+              "Text (Adresse)".  Nachrichten, die dich erwähnen, haben
+              ein fettes "@" vor der Uhrzeit; in der Raumliste steht
+              dann "(3 @)".
               Emojis im Text erscheinen als kleine Bilder; unbekannte als
               gelbes Gesicht mit Fragezeichen.
               Bilder: eine kleine Vorschau unter der Nachricht; ein Klick

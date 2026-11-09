@@ -415,11 +415,22 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
             e.relates_to = amx__jstr(rel, "event_id");
             e.msgtype = amx__jstr(nc, "msgtype");
             e.body = amx__jstr(nc, "body") ? amx__jstr(nc, "body") : "";
+            if (amx__jstr(nc, "format") && !strcmp(amx__jstr(nc, "format"), "org.matrix.custom.html"))
+                e.formatted = amx__jstr(nc, "formatted_body");
         } else {
             e.type = AMX_EV_MESSAGE;
             e.msgtype = amx__jstr(content, "msgtype");
             e.body = amx__jstr(content, "body") ? amx__jstr(content, "body") : "";
             e.reply_to = amx__jstr(cJSON_GetObjectItemCaseSensitive(rel, "m.in_reply_to"), "event_id");
+            if (amx__jstr(content, "format") && !strcmp(amx__jstr(content, "format"), "org.matrix.custom.html"))
+                e.formatted = amx__jstr(content, "formatted_body");
+            {
+                const cJSON *mm = cJSON_GetObjectItemCaseSensitive(content, "m.mentions"), *u;
+                if (mm) {
+                    cJSON_ArrayForEach(u, cJSON_GetObjectItemCaseSensitive(mm, "user_ids"))
+                        if (cJSON_IsString(u) && c->user_id && !strcmp(u->valuestring, c->user_id)) e.mention = 1;
+                } else if (c->user_id && strstr(e.body, c->user_id)) e.mention = 1;
+            }
             if (rt && !strcmp(rt, "m.thread")) {
                 e.thread_root = amx__jstr(rel, "event_id");
                 if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(rel, "is_falling_back")))

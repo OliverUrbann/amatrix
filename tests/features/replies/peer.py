@@ -44,6 +44,10 @@ async def peer(ctx):
         "m.relates_to": {"rel_type": "m.thread", "event_id": orig, "is_falling_back": True,
                          "m.in_reply_to": {"event_id": orig}}}, ignore_unverified_devices=True)
 
+    await p.c.room_send(room, "m.room.message", {
+        "msgtype": "m.text", "body": "**fett**", "format": "org.matrix.custom.html",
+        "formatted_body": "<strong>fett</strong>", "m.mentions": {"user_ids": [ctx.target]}},
+        ignore_unverified_devices=True)
     await p.send(room, "fertig")
     # the client writes in the thread
     ok = await p.wait(lambda: p.got(room, ctx.target, "Thread-Antwort"), 180 * ctx.scale)

@@ -49,7 +49,7 @@ typedef struct Out {
 #endif
     struct Out *next;
     AmxMsg m;
-    char *own[20];                 /* strings owned by the message */
+    char *own[24];                 /* strings owned by the message */
     int n_own;
 } Out;
 
@@ -239,6 +239,7 @@ static void on_event(AmxClient *c, const AmxEvent *ev, void *ud)
     o->m.ev.media = own(o, ev->media);
     o->m.ev.reply_to = own(o, ev->reply_to);
     o->m.ev.thread_root = own(o, ev->thread_root);
+    o->m.ev.formatted = own(o, ev->formatted);
     put_out(a, o);
 }
 

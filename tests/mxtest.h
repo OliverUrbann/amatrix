@@ -93,8 +93,8 @@ MXT_FN void mxt_args(int argc, char **argv, MxtArgs *a)
 
 typedef struct {
     AmxEventType type;
-    char *room_id, *event_id, *sender, *body, *reason, *state_key, *relates_to, *media, *reply_to, *thread_root;
-    int redacted, thread_count;
+    char *room_id, *event_id, *sender, *body, *reason, *state_key, *relates_to, *media, *reply_to, *thread_root, *formatted;
+    int redacted, thread_count, mention;
     int encrypted, own, history;
     double timestamp;
 } MxtEvent;
@@ -124,6 +124,8 @@ MXT_FN void mxt_record(AmxClient *c, const AmxEvent *e, void *ud)
     m->thread_root = mxt_dup(e->thread_root);
     m->redacted = e->redacted;
     m->thread_count = e->thread_count;
+    m->formatted = mxt_dup(e->formatted);
+    m->mention = e->mention;
     m->encrypted = e->encrypted;
     m->own = e->own;
     m->history = e->history;

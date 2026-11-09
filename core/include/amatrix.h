@@ -56,6 +56,10 @@ typedef struct {
     const char *thread_root; /* AMX_EV_MESSAGE: the thread (its first message) this belongs to */
     int redacted;            /* AMX_EV_MESSAGE: the message was deleted (body is "") */
     int thread_count;        /* AMX_EV_MESSAGE: replies in the thread it starts (server's count) */
+    const char *formatted;   /* AMX_EV_MESSAGE / AMX_EV_EDIT: the HTML form of body
+                                (formatted_body, org.matrix.custom.html), or NULL */
+    int mention;             /* AMX_EV_MESSAGE: it mentions us (m.mentions, or our user
+                                ID in the text for senders without m.mentions) */
     const char *media;       /* AMX_EV_MESSAGE with attachments (msgtype m.image /
                                 m.file / m.video / m.audio / m.sticker, or a gallery):
                                 an opaque description for amx_media_*() (body is the
