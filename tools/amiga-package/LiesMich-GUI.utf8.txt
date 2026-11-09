@@ -88,7 +88,7 @@ CHATLINES, UNREADABLE, OLDER,
 FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS, CHATSTATUS,
 CLOSECHAT, REACT, REACTIONS, PICKER, LEAVE, LASTLINE, MEDIA, SAVEMEDIA,
 OPENMEDIA, LINKS, OPENLINK, REPLY, EDITLAST, DELETELAST, TEXTS, OPENTHREAD,
-THREADSAY, QUIT).
+THREADSAY, MUTE, QUIT; dazu MUIs eigene wie HIDE und SHOW).
 
 Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
 schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem
@@ -96,6 +96,22 @@ Passwort schützen (siehe oben) und nicht weitergeben.
 
 Was noch fehlt: Bilder/Dateien anzeigen und senden, andere Nutzer
 verifizieren.
+
+Benachrichtigungen, Ikonifizieren, Einstellungen
+------------------------------------------------
+- Benachrichtigungen kommen über Herald (Aminet: util/cdity/Herald).  Läuft
+  Herald nicht, gibt es keine.  Sie erscheinen für neue Nachrichten, wenn
+  das Fenster des Raums nicht vorne ist oder Amatrix ikonifiziert ist.  Ein
+  Doppelklick auf die Benachrichtigung öffnet den Chat.
+- Menü "Raum stummschalten" (Amiga-M) für den gewählten Raum: keine
+  Benachrichtigungen, in der Liste steht "(stumm)".
+- Menü "Ikonifizieren" (Amiga-I) oder das Ikonifizieren-Symbol im Fenster:
+  Amatrix wird ein AppIcon auf der Workbench.  Bei ungelesenen Nachrichten
+  wechselt es zum blauen Icon (Icons/Amatrix-neu); der Fenstertitel zeigt
+  die Zahl ungelesener Nachrichten.
+- Menü "Einstellungen ..." (Amiga-E): Benachrichtigungen an/aus, bei allen
+  Nachrichten oder nur Direktnachrichten und Erwähnungen, Bildvorschau im
+  Chat an/aus, ikonifiziert starten (auch mit dem Argument HIDE).
 
 Bekannte Fehler
 ---------------

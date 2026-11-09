@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Writes a classic (OS 2/3, 4 colour) Workbench tool icon for Amatrix.
 
-    make-icon.py OUT.info [STACK]
+    make-icon.py OUT.info [STACK] [new]
+
+"new": the AppIcon for unread messages - the bubble filled blue, "m" white.
 
 The picture is a speech bubble with an "m" (Matrix), drawn below as text:
 '.' = colour 0 (background), '#' = 1 (black), 'o' = 2 (white), '+' = 3 (blue).
@@ -51,10 +53,25 @@ def planes(art):
     return w, h, out
 
 
+def unread_art(art):
+    out = []
+    for y, row in enumerate(art):
+        r = list(row)
+        if 5 <= y <= 14:
+            for x in range(7, 33):
+                if r[x] == ".":
+                    r[x] = "+"
+                elif r[x] == "#" and 7 <= y <= 12 and 9 < x < 30:
+                    r[x] = "o"
+        out.append("".join(r))
+    return out
+
+
 def main():
     out = sys.argv[1]
     stack = int(sys.argv[2]) if len(sys.argv) > 2 else 65536
-    w, h, data = planes(ART)
+    art = unread_art(ART) if len(sys.argv) > 3 and sys.argv[3] == "new" else ART
+    w, h, data = planes(art)
     # struct Gadget (44 bytes)
     gadget = struct.pack(">IhhhhHHHIIIIIHI",
                          0, 0, 0, w, h + 1,

@@ -27,6 +27,7 @@ LOOP = """Stack 262144
 Assign AmiSSL: SYS:AmiSSL
 Assign LIBS: AmiSSL:Libs ADD
 {verbose}
+{herald}
 Run >NIL: Extra:Amatrix >SYS:gui-out.txt SERVER={server} USER={user} PASSWORD={password} DEBUG
 Lab loop
 If EXISTS Extra:go
@@ -656,6 +657,8 @@ async def scenario(ctx, amiga, srv, me):
         await amiga.shot("11-after-key")
         check(await rec.wait_signed(ctx, info, 120), "Element would show the Amiga device as verified")
 
+    await notify_part(ctx, amiga, p, dm, me)
+
     await store_part(ctx, amiga, online, bool(info))
 
     rc, _ = await amiga.rexx("NEWCHAT " + ctx.peer_user.user_id)
@@ -673,6 +676,47 @@ async def scenario(ctx, amiga, srv, me):
             rc, r = await amiga.rexx("ROOMLINE Amiga-Runde")
             return rc != "0"
         check(await amiga.until(gone, 60), "Amiga-Runde is no longer in the room list")
+
+
+async def herald(amiga, query):
+    """Asks Herald (in the emulator) something; '' if it is not running."""
+    res = os.path.join(amiga.extra, "res.txt")
+    if os.path.exists(res):
+        os.remove(res)
+    await amiga.rexx_raw(["options results", "if ~show('P', 'HERALD') then exit",
+                          "address HERALD", f"'{query}'", "say 'R=' || result"])
+    out = open(res, encoding="latin-1").read() if os.path.exists(res) else ""
+    return next((l[2:].strip() for l in out.splitlines() if l.startswith("R=")), "")
+
+
+async def notify_part(ctx, amiga, p, dm, me):
+    check = ctx.check
+    if not await herald(amiga, "HERALD_QUERY VERSION"):
+        check(True, "# Herald not in the emulator: notifications not tested")
+        return
+    unread0 = await herald(amiga, "HERALD_QUERY UNREAD")
+    rc, _ = await amiga.rexx("HIDE")                 # MUI: iconify (the AppIcon)
+    check(rc == "0", "iconified")
+    await p.send(dm, "Bist du noch da?")
+
+    async def notified():
+        apps = await herald(amiga, "HERALD_QUERY APPS")
+        n = await herald(amiga, "HERALD_QUERY UNREAD")
+        return "Amatrix" in apps and n.isdigit() and int(n) > int(unread0 or 0) and n
+    v = await amiga.until(notified, 90)
+    check(v, f"Herald shows a notification for the new message (unread {unread0} -> {v})")
+    await asyncio.sleep(2)
+    await amiga.shot("07-notification")
+    rc, _ = await amiga.rexx("MUTE Alice")
+    n1 = await herald(amiga, "HERALD_QUERY UNREAD")
+    await p.send(dm, "Stumm?")
+    await asyncio.sleep(15)
+    n2 = await herald(amiga, "HERALD_QUERY UNREAD")
+    check(n1 == n2, f"a muted room gives no notification ({n1} -> {n2})")
+    await amiga.rexx("MUTE Alice OFF")
+    rc, _ = await amiga.rexx(f"OPENCHAT {dm}")       # what Herald sends on a double-click
+    check(rc == "0", "the notification's back-message opens the chat (and uniconifies)")
+    await asyncio.sleep(2)
 
 
 async def main():
@@ -710,10 +754,22 @@ async def main():
         me, other, bob = srv.register("amiga"), srv.register("peer"), srv.register("bob")
         extra = tempfile.mkdtemp(prefix="amx-gui-")
         shutil.copy(os.path.join(TOP, "build", "amiga", "gui", "Amatrix"), os.path.join(extra, "Amatrix"))
+        mk = os.path.join(TOP, "tools", "amiga-package", "make-icon.py")   # icons: AppIcon when iconified
+        os.makedirs(os.path.join(extra, "Icons"), exist_ok=True)
+        subprocess.run([sys.executable, mk, os.path.join(extra, "Amatrix.info"), "65536"], check=False)
+        subprocess.run([sys.executable, mk, os.path.join(extra, "Icons", "Amatrix-neu.info"), "65536", "new"],
+                       check=False)
+        hsrc = os.path.join(TOP, "third_party", "herald", "Herald", "Files")
+        if not os.path.isdir(hsrc):
+            subprocess.run([os.path.join(TOP, "third_party", "fetch-herald.sh")], check=False)
+        herald = ""
+        if os.path.isdir(hsrc):                       # notifications: Herald in the emulator
+            shutil.copytree(hsrc, os.path.join(extra, "Herald"))
+            herald = "Run >NIL: Extra:Herald/Herald\nWait 3"
         script = os.path.join(extra, ".autotest")
         v = os.environ.get("AMX_VERBOSE")
         with open(script, "w", encoding="latin-1") as f:
-            f.write(LOOP.format(server=srv.https_url, user=me.localpart, password=me.password,
+            f.write(LOOP.format(server=srv.https_url, user=me.localpart, password=me.password, herald=herald,
                                 verbose=f"SetEnv AMX_VERBOSE {v}" if v else "UnSetEnv AMX_VERBOSE"))
         for fn in ("gui-out.txt",):
             if os.path.exists(os.path.join(sysdir, fn)):

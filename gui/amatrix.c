@@ -39,6 +39,9 @@
 #include <workbench/workbench.h>
 #include <workbench/startup.h>
 #include <proto/asl.h>
+#include <proto/rexxsyslib.h>
+#include <rexx/storage.h>
+#include <rexx/rxslib.h>
 #include <libraries/asl.h>
 #include <dos/dostags.h>
 #include <utility/tagitem.h>
@@ -66,7 +69,7 @@ static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.20
 
 enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
-    ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO, ID_UNLOCK_GO, ID_STOREPASS, ID_STOREPASS_SET, ID_STOREPASS_DEL, ID_LEAVE
+    ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO, ID_UNLOCK_GO, ID_STOREPASS, ID_STOREPASS_SET, ID_STOREPASS_DEL, ID_LEAVE, ID_MUTE, ID_SETTINGS, ID_ICONIFY, ID_SET_OK
 };
 enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TAG_AVATAR,
        TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY, TAG_UNLOCK, TAG_STOREPASS,
@@ -172,6 +175,10 @@ static Object *win_recovery, *str_recovery, *txt_recovery, *b_recovery;
 static int verified;               /* this device signed (this session) */
 static Object *win_unlock, *str_unlock, *txt_unlock, *b_unlock;
 static Object *win_storepass, *str_sp1, *str_sp2, *txt_sp, *b_sp_set, *b_sp_del;
+static Object *win_settings, *chk_notify, *cyc_notify, *chk_previews, *chk_iconified, *txt_herald, *b_set_ok;
+static const char *notify_modes[] = { "allen Nachrichten", "Direktnachrichten und Erwähnungen", NULL };
+static struct DiskObject *dob_app, *dob_new;   /* AppIcon: normal / unread messages */
+struct Library *IconBase;
 static int store_protected;        /* the store has a passphrase */
 static int store_protected_removing;
 static Object *win_join, *str_search, *lst_pub;
@@ -299,15 +306,55 @@ static char *fifo_pop(char **q, int *n)
     return r;
 }
 
-/* config: PROGDIR:Amatrix.prefs, two lines (server, user) */
+/* settings (Einstellungen) */
+static int opt_notify = 1;            /* notifications through Herald (if it is installed) */
+static int opt_notify_all = 1;        /* 1: every message, 0: direct chats and mentions only */
+static int opt_previews = 1;          /* picture previews in the chat */
+static int opt_iconified = 0;         /* start iconified (AppIcon on the Workbench) */
+static char **muted;                  /* rooms without notifications */
+static int n_muted;
+
+static int is_muted(const char *room)
+{
+    int i;
+    for (i = 0; room && i < n_muted; i++) if (!strcmp(muted[i], room)) return 1;
+    return 0;
+}
+
+static void set_muted(const char *room, int on)
+{
+    int i;
+    for (i = 0; i < n_muted; i++)
+        if (!strcmp(muted[i], room)) {
+            if (on) return;
+            free(muted[i]);
+            muted[i] = muted[--n_muted];
+            return;
+        }
+    if (on) {
+        char **t = realloc(muted, sizeof *t * (n_muted + 1));
+        if (t && (t[n_muted] = strdup(room)) != NULL) { muted = t; n_muted++; }
+        else if (t) muted = t;
+    }
+}
+
+/* config: PROGDIR:Amatrix.prefs - server, user, then key=value lines */
 static void load_prefs(void)
 {
-    char path[300], line[256];
+    char path[300], line[512];
     FILE *f;
     snprintf(path, sizeof path, "%sAmatrix.prefs", prog_dir);
     if (!(f = fopen(path, "r"))) return;
     if (fgets(line, sizeof line, f)) { line[strcspn(line, "\r\n")] = 0; cfg_server = xstrdup(line); }
     if (fgets(line, sizeof line, f)) { line[strcspn(line, "\r\n")] = 0; cfg_user = xstrdup(line); }
+    while (fgets(line, sizeof line, f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        if (!strncmp(line, "notify=", 7)) opt_notify = atoi(line + 7);
+        else if (!strncmp(line, "notify_all=", 11)) opt_notify_all = atoi(line + 11);
+        else if (!strncmp(line, "previews=", 9)) opt_previews = atoi(line + 9);
+        else if (!strncmp(line, "iconified=", 10)) opt_iconified = atoi(line + 10);
+        else if (!strncmp(line, "mute=", 5) && line[5]) set_muted(line + 5, 1);
+    }
     fclose(f);
     if (cfg_user && !*cfg_user) { free(cfg_user); cfg_user = NULL; }
 }
@@ -316,10 +363,133 @@ static void save_prefs(void)
 {
     char path[300];
     FILE *f;
+    int i;
     snprintf(path, sizeof path, "%sAmatrix.prefs", prog_dir);
     if (!(f = fopen(path, "w"))) return;
     fprintf(f, "%s\n%s\n", cfg_server ? cfg_server : "", cfg_user ? cfg_user : "");
+    fprintf(f, "notify=%d\nnotify_all=%d\npreviews=%d\niconified=%d\n", opt_notify, opt_notify_all, opt_previews,
+            opt_iconified);
+    for (i = 0; i < n_muted; i++) fprintf(f, "mute=%s\n", muted[i]);
     fclose(f);
+}
+
+/* ---------------------------------------------------------------- notifications (Herald) */
+
+/* Herald (Aminet util/cdity/Herald) shows notifications for any program
+ * through its ARexx port HERALD.  Optional: without it, none. */
+static int herald_registered;
+static time_t started_at;
+
+/* one ARexx command to a port, waiting for the answer; res gets RESULT */
+static LONG rexx_cmd(const char *portname, const char *cmd, char *res, size_t n)
+{
+    struct Library *RexxSysBase = OpenLibrary("rexxsyslib.library", 36);
+    struct MsgPort *reply, *port;
+    struct RexxMsg *rm;
+    LONG rc = -1;
+    if (res && n) res[0] = 0;
+    if (!RexxSysBase) return -1;
+    if ((reply = CreateMsgPort()) != NULL) {
+        if ((rm = CreateRexxMsg(reply, NULL, NULL)) != NULL) {
+            rm->rm_Args[0] = (STRPTR)CreateArgstring((STRPTR)cmd, strlen(cmd));
+            rm->rm_Action = RXCOMM | RXFF_RESULT;
+            Forbid();
+            if ((port = FindPort((STRPTR)portname)) != NULL) PutMsg(port, &rm->rm_Node);
+            Permit();
+            if (port) {
+                WaitPort(reply);
+                GetMsg(reply);
+                rc = rm->rm_Result1;
+                if (rc == 0 && rm->rm_Result2) {
+                    if (res && n) snprintf(res, n, "%s", (char *)rm->rm_Result2);
+                    DeleteArgstring((UBYTE *)rm->rm_Result2);
+                }
+            }
+            DeleteArgstring((UBYTE *)rm->rm_Args[0]);
+            DeleteRexxMsg(rm);
+        }
+        DeleteMsgPort(reply);
+    }
+    CloseLibrary(RexxSysBase);
+    return rc;
+}
+
+static int herald_here(void)
+{
+    struct MsgPort *p;
+    Forbid();
+    p = FindPort((STRPTR)"HERALD");
+    Permit();
+    return p != NULL;
+}
+
+/* a value for Herald's ReadArgs: " -> *", * -> ** */
+static void herald_quote(char *out, size_t n, const char *in)
+{
+    size_t k = 0;
+    for (; *in && k + 3 < n; in++) {
+        if (*in == '"' || *in == '*') out[k++] = '*';
+        out[k++] = *in == '\n' ? ' ' : *in;
+    }
+    out[k] = 0;
+}
+
+static void herald_register(void)
+{
+    char cmd[400], res[80];
+    if (herald_registered || !herald_here()) return;
+    snprintf(cmd, sizeof cmd, "REGISTERAPP APP=Amatrix AREXXPORT=AMATRIX.1 ICON=\"%sAmatrix\"", prog_dir);
+    rexx_cmd("HERALD", cmd, res, sizeof res);
+    herald_registered = 1;                    /* "already registered" is fine too */
+    amx_log("Herald: %s", res);
+}
+
+static char *local_emoji_as(const char *utf8, int mui);
+
+/* a new message from someone else: a notification, unless the room's window
+ * is in front, the room is muted or the user does not want them */
+static void notify_event(const AmxEvent *e)
+{
+    Room *r;
+    ChatWin *w;
+    char *name, *body, *title, cmd[1200], qt[200], qn[300], res[80], id[16];
+    int mention;
+    if (!opt_notify || e->type != AMX_EV_MESSAGE || e->own || e->history || !e->room_id || e->redacted) return;
+    if (e->timestamp > 0 && (time_t)(e->timestamp / 1000) < started_at - 60) return;   /* the backlog */
+    if (!(r = room_by_id(e->room_id)) || is_muted(r->id)) return;
+    w = chat_by_room(e->room_id);
+    if (w && xget(w->win, MUIA_Window_Activate) && !xget(app, MUIA_Application_Iconified)) return;
+    mention = 0;
+    if (my_user && e->body) {                             /* @user:server or the localpart */
+        char lp[100];
+        const char *c = strchr(my_user, ':');
+        snprintf(lp, sizeof lp, "%.*s", c ? (int)(c - my_user - 1) : (int)strlen(my_user), my_user + 1);
+        mention = strstr(e->body, my_user) || (lp[0] && strstr(e->body, lp));
+    }
+    if (!opt_notify_all && !r->direct && !mention) return;
+    if (!herald_here()) return;
+    herald_register();
+    name = local(e->sender_name ? e->sender_name : e->sender ? e->sender : "");
+    body = local_emoji_as(e->body ? e->body : "", 2);
+    title = local(r->name ? r->name : "Amatrix");
+    snprintf(id, sizeof id, "r%08lx", hash(r->id) & 0xffffffffUL);
+    herald_quote(qt, sizeof qt, title);
+    herald_quote(qn, sizeof qn, r->id);
+    snprintf(cmd, sizeof cmd, "NOTIFY APP=Amatrix ID=%s GROUP=%s UPDATE PRI=%d TITLE=\"%s\" "
+             "AREXXPORT=AMATRIX.1 BACKRXMSG=\"OPENCHAT %s\" TEXT=%s%s%s",
+             id, id, mention ? 6 : 2, qt, qn, r->direct ? "" : name, r->direct ? "" : ": ", body);
+    rexx_cmd("HERALD", cmd, res, sizeof res);
+    amx_log("Herald notify %s: %s", id, res);
+    free(name); free(body); free(title);
+}
+
+/* read: away with the room's notification */
+static void notify_close(const char *room)
+{
+    char cmd[120];
+    if (!herald_registered || !herald_here()) return;
+    snprintf(cmd, sizeof cmd, "HERALD_CLOSE APP=Amatrix ID=r%08lx", hash(room) & 0xffffffffUL);
+    rexx_cmd("HERALD", cmd, NULL, 0);
 }
 
 /* the store: one drawer per account */
@@ -852,7 +1022,8 @@ static char *local_emoji(const char *utf8)
     return local_emoji_as(utf8, 0);
 }
 
-/* mui: for MUI's List (ESC A with the ARGB data) instead of NList (ESC o) */
+/* mui: 1 for MUI's List (ESC A with the ARGB data), 2 for Herald (:shortcode:),
+ * 0 for NList (ESC o) */
 static char *local_emoji_as(const char *utf8, int mui)
 {
     const unsigned char *p = (const unsigned char *)(utf8 ? utf8 : ""), *seg = p;
@@ -881,9 +1052,15 @@ static char *local_emoji_as(const char *utf8, int mui)
             memcpy(key, p, (size_t)len);
             key[len] = 0;
             img = emo_index(key);
-            if (img < 0) img = EMO_UNKNOWN;
-            if (mui) snprintf(esc, sizeof esc, "\33A[%08lx]", (unsigned long)&emo_img[img].ad);
-            else snprintf(esc, sizeof esc, "\33o[%d]", img);
+            if (mui == 2) {                               /* Herald: its :shortcodes: */
+                static const char *const sc[] = { ":thumbsup:", ":thumbsdown:", ":heart:", ":smile:", ":joy:",
+                                                  ":confused:", ":eyes:", ":tada:", ":rocket:" };
+                snprintf(esc, sizeof esc, "%s", img >= 0 && img < EMO_UNKNOWN ? sc[img] : "");
+            } else {
+                if (img < 0) img = EMO_UNKNOWN;
+                if (mui) snprintf(esc, sizeof esc, "\33A[%08lx]", (unsigned long)&emo_img[img].ad);
+                else snprintf(esc, sizeof esc, "\33o[%d]", img);
+            }
             sb_add(&b, &n, &cap, esc, strlen(esc));
             p = seg = q;
         } else if (is_emoji_mod(cp) || cp == 0x200D) {        /* stray: e.g. a keycap's parts */
@@ -1012,12 +1189,15 @@ HOOKPROTONH(room_disp_func, LONG, char **array, Room *r)
     if (!r) { array[0] = array[1] = array[2] = ""; return 0; }
     snprintf(img, sizeof img, "\33A[%08lx]", (unsigned long)&image_for(r)->ad);
     second_line(r, second, sizeof second);
-    if (r->invited)
-        snprintf(text, sizeof text, "\33b%s\33n\n\33i%s", r->name, second);
-    else if (r->unread)                  /* unread: count, second line in normal colour */
-        snprintf(text, sizeof text, "\33b%s (%d)\33n\n\33i%s", r->name, r->unread, second);
-    else
-        snprintf(text, sizeof text, "\33b%s\33n\n\33i\33P[808080]%s", r->name, second);
+    {
+        const char *mu = is_muted(r->id) ? "\33n\33i (stumm)" : "";
+        if (r->invited)
+            snprintf(text, sizeof text, "\33b%s\33n\n\33i%s", r->name, second);
+        else if (r->unread)              /* unread: count, second line in normal colour */
+            snprintf(text, sizeof text, "\33b%s (%d)%s\33n\n\33i%s", r->name, r->unread, mu, second);
+        else
+            snprintf(text, sizeof text, "\33b%s%s\33n\n\33i\33P[808080]%s", r->name, mu, second);
+    }
     time_text(r->last_ts, when, sizeof when);
     snprintf(when + strlen(when), sizeof when - strlen(when), "\n ");
     array[0] = img;
@@ -1039,6 +1219,21 @@ static void free_rooms(Room *l, int n)
 
 static void open_chat(const char *room_id);
 static void open_chat_ex(const char *room_id, const char *thread_root);
+
+/* unread messages (rooms not muted): main window title and AppIcon */
+static void show_unread_total(void)
+{
+    static char title[40];
+    static int shown = -1;
+    int i, total = 0;
+    for (i = 0; i < n_rooms; i++) if (!rooms[i].invited && !is_muted(rooms[i].id)) total += rooms[i].unread;
+    if (total == shown) return;
+    shown = total;
+    if (total) snprintf(title, sizeof title, "Amatrix (%d)", total);
+    else snprintf(title, sizeof title, "Amatrix");
+    set(win_main, MUIA_Window_Title, title);
+    if (dob_app && dob_new) set(app, MUIA_Application_DiskObject, total ? dob_new : dob_app);
+}
 
 static void update_rooms(const AmxMsg *m)
 {
@@ -1082,6 +1277,7 @@ static void update_rooms(const AmxMsg *m)
     }
     set(lst_rooms, MUIA_List_Active, pos);
     set(lst_rooms, MUIA_List_Quiet, FALSE);
+    show_unread_total();
     free(active);
     request_avatars();
     for (w = chats; w; w = w->next) { w->mark_pending = 0; update_status(w); }
@@ -1420,6 +1616,7 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
     unsigned long h;
     LONG left, top, width;
     amx_log("open_chat %s %s", room_id, thread_root ? thread_root : "");
+    notify_close(room_id);
 
     if (w) {
         set(w->win, MUIA_Window_Open, TRUE);
@@ -1476,6 +1673,7 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
                 Child, w->busy = TextObject,
                     MUIA_Text_Contents, "",
                     MUIA_Text_PreParse, "\33r",
+                    MUIA_Text_SetMin, FALSE,   /* long errors: no wider window */
                     MUIA_Weight, 100,
                 End,
             End,
@@ -1488,7 +1686,10 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
             End,
             Child, w->modegrp = HGroup,
                 MUIA_ShowMe, FALSE,
-                Child, w->modetext = TextObject, MUIA_Text_Contents, "", MUIA_Weight, 100, End,
+                /* SetMin FALSE: a long quote must not make the window wider than the
+                 * screen - MUI would close it */
+                Child, w->modetext = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE,
+                    MUIA_Weight, 100, End,
                 Child, w->modex = SimpleButton("_Abbrechen"),
             End,
             Child, w->input = BetterStringObject,
@@ -1926,7 +2127,7 @@ static char *media_text(ChatWin *w, const AmxEvent *e, const char *text)
         if (mi < 0) break;
         q = out + strlen(out);
         snprintf(q, len - strlen(out), " \33o[%d@%ld]", EMO_FILE, CLICK_SAVE | mi);
-        if (is_picture(&w->media[mi])) {
+        if (opt_previews && is_picture(&w->media[mi])) {
             char key[300];
             snprintf(key, sizeof key, "%s\n%s\n%d", w->room_id, e->event_id, i);
             w->media[mi].state = 1;
@@ -2028,7 +2229,6 @@ static int open_link(ChatWin *w, int li, int quiet)
  * as its argument; without one, MultiView (datatypes) */
 static void open_file(const char *path)
 {
-    struct Library *IconBase = OpenLibrary("icon.library", 37);
     struct Library *WorkbenchBase = OpenLibrary("workbench.library", 44);
     struct DiskObject *dob = IconBase ? GetDiskObjectNew((STRPTR)path) : NULL;
     char tool[256] = "", cmd[600];
@@ -2057,7 +2257,6 @@ static void open_file(const char *path)
         amx_log("  started from the shell: %ld", (long)rc);
         if (rc == -1) { if (in) Close(in); if (out) Close(out); }
     } else amx_log("  started by Workbench");
-    if (IconBase) CloseLibrary(IconBase);
 }
 
 static void open_media(ChatWin *w, int mi)
@@ -3106,7 +3305,7 @@ static void handle_net(void)
     AmxMsg *m;
     while (A && (m = amx_async_get(A)) != NULL) {
         switch (m->type) {
-        case AMX_MSG_EVENT:  chat_event(&m->ev); break;
+        case AMX_MSG_EVENT:  chat_event(&m->ev); notify_event(&m->ev); break;
         case AMX_MSG_ROOMS:  update_rooms(m); break;
         case AMX_MSG_RESULT: handle_result(m); break;
         case AMX_MSG_STATE:
@@ -3134,7 +3333,13 @@ HOOKPROTONH(rx_openchat_func, LONG, Object *obj, ULONG *arg)
     (void)obj;
     if (!r) return 5;
     if (r->invited) return 10;
+    if (xget(app, MUIA_Application_Iconified)) set(app, MUIA_Application_Iconified, FALSE);
     open_chat(r->id);
+    {
+        ChatWin *w = chat_by_room(r->id);
+        if (w) DoMethod(w->win, MUIM_Window_ToFront);
+    }
+    notify_close(r->id);
     return 0;
 }
 MakeStaticHook(rx_openchat_hook, rx_openchat_func);
@@ -3613,6 +3818,18 @@ HOOKPROTONH(rx_texts_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_texts_hook, rx_texts_func);
 
+HOOKPROTONH(rx_mute_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    (void)obj;
+    if (!r) return 5;
+    set_muted(r->id, arg[1] == 0);                /* MUTE room [OFF] */
+    save_prefs();
+    DoMethod(lst_rooms, MUIM_List_Redraw, MUIV_List_Redraw_All);
+    return 0;
+}
+MakeStaticHook(rx_mute_hook, rx_mute_func);
+
 static struct MUI_Command rexx_cmds[] = {
     { "OPENCHAT",  "ROOM/F",          1, &rx_openchat_hook, { 0 } },
     { "SAY",       "ROOM/A,TEXT/A/F", 2, &rx_say_hook,      { 0 } },
@@ -3631,6 +3848,7 @@ static struct MUI_Command rexx_cmds[] = {
     { "LEAVE",     "ROOM/F",          1, &rx_leave_hook,    { 0 } },
     { "LASTLINE",  "ROOM/F",          1, &rx_last_hook,     { 0 } },
     { "PICKER",    "ROOM/F",          1, &rx_picker_hook,   { 0 } },
+    { "MUTE",      "ROOM/A,OFF/S",    2, &rx_mute_hook,     { 0 } },
     { "MEDIA",     "ROOM/F",          1, &rx_media_hook,    { 0 } },
     { "SAVEMEDIA", "ROOM/A,N/N/A,PATH/A", 3, &rx_savemedia_hook, { 0 } },
     { "OPENMEDIA", "ROOM/A,N/N/A",    2, &rx_openmedia_hook, { 0 } },
@@ -3659,9 +3877,12 @@ static struct NewMenu menu[] = {
     { NM_ITEM,  (STRPTR)"Neuer Chat ...",    (STRPTR)"N", 0, 0, (APTR)ID_NEWCHAT },
     { NM_ITEM,  (STRPTR)"Neuer Raum ...",    NULL, 0, 0, (APTR)ID_NEWROOM },
     { NM_ITEM,  (STRPTR)"Raum verlassen ...", (STRPTR)"L", 0, 0, (APTR)ID_LEAVE },
+    { NM_ITEM,  (STRPTR)"Raum stummschalten", (STRPTR)"M", 0, 0, (APTR)ID_MUTE },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Sicherheitsschlüssel eingeben ...", (STRPTR)"S", 0, 0, (APTR)ID_RECOVERY },
     { NM_ITEM,  (STRPTR)"Passwort für Amatrix-Daten ...", (STRPTR)"P", 0, 0, (APTR)ID_STOREPASS },
+    { NM_ITEM,  (STRPTR)"Einstellungen ...", (STRPTR)"E", 0, 0, (APTR)ID_SETTINGS },
+    { NM_ITEM,  (STRPTR)"Ikonifizieren",     (STRPTR)"I", 0, 0, (APTR)ID_ICONIFY },
     { NM_ITEM,  (STRPTR)"Abmelden",          NULL, 0, 0, (APTR)ID_LOGOUT },
     { NM_ITEM,  (STRPTR)"Über Amatrix ...",  (STRPTR)"?", 0, 0, (APTR)ID_ABOUT },
     { NM_ITEM,  (STRPTR)"Beenden",           (STRPTR)"Q", 0, 0, (APTR)MUIV_Application_ReturnID_Quit },
@@ -3679,6 +3900,7 @@ static Object *build_app(void)
         MUIA_Application_Description, "Matrix-Client",
         MUIA_Application_Base, "AMATRIX",
         MUIA_Application_Commands, rexx_cmds,
+        MUIA_Application_DiskObject, dob_app,
         MUIA_Application_Menustrip, MUI_MakeObject(MUIO_MenustripNM, (ULONG)menu, 0),
 
         SubWindow, win_main = WindowObject,
@@ -3786,6 +4008,48 @@ static Object *build_app(void)
             End,
         End,
 
+        SubWindow, win_settings = WindowObject,
+            MUIA_Window_Title, "Amatrix - Einstellungen",
+            MUIA_Window_ID, MAKE_ID('A','M','X','S'),
+            WindowContents, VGroup,
+                Child, VGroup, GroupFrameT("Benachrichtigungen"),
+                    Child, txt_herald = TextObject, MUIA_Text_Contents, "", End,
+                    Child, ColGroup(2),
+                        Child, Label1("Benachrichtigen"),
+                        Child, HGroup,
+                            Child, chk_notify = CheckMark(TRUE),
+                            Child, HSpace(0),
+                        End,
+                        Child, Label1("bei"),
+                        Child, cyc_notify = CycleObject, MUIA_Cycle_Entries, notify_modes, End,
+                    End,
+                    Child, TextObject, MUIA_Text_Contents,
+                        "\33iEinzelne Räume: Menü \"Raum stummschalten\"", End,
+                End,
+                Child, VGroup, GroupFrameT("Chat"),
+                    Child, ColGroup(2),
+                        Child, Label1("Bildvorschau im Chat"),
+                        Child, HGroup,
+                            Child, chk_previews = CheckMark(TRUE),
+                            Child, HSpace(0),
+                        End,
+                    End,
+                    Child, TextObject, MUIA_Text_Contents,
+                        "\33iOhne Vorschau öffnet ein Klick auf das Datei-Symbol\nnoch immer das Bild.", End,
+                End,
+                Child, VGroup, GroupFrameT("Start"),
+                    Child, ColGroup(2),
+                        Child, Label1("Ikonifiziert starten"),
+                        Child, HGroup,
+                            Child, chk_iconified = CheckMark(FALSE),
+                            Child, HSpace(0),
+                        End,
+                    End,
+                End,
+                Child, b_set_ok = SimpleButton("_Speichern"),
+            End,
+        End,
+
         SubWindow, win_storepass = WindowObject,
             MUIA_Window_Title, "Passwort für Amatrix-Daten",
             MUIA_Window_ID, MAKE_ID('A','M','X','P'),
@@ -3849,6 +4113,9 @@ static Object *build_app(void)
     DoMethod(b_sp_del, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_STOREPASS_DEL);
     DoMethod(win_storepass, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_storepass, 3,
              MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(win_settings, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_settings, 3,
+             MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(b_set_ok, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_SET_OK);
     DoMethod(str_recovery, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2,
              MUIM_Application_ReturnID, ID_RECOVERY_GO);
     DoMethod(win_recovery, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_recovery, 3,
@@ -3974,6 +4241,40 @@ static void handle_id(ULONG id)
         join_selected();
         set(win_join, MUIA_Window_Open, FALSE);
         break;
+    case ID_MUTE: {
+        Room *r = NULL;
+        DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
+        if (!r) {
+            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
+                        (STRPTR)"Bitte erst einen Raum in der Liste auswählen.", 0);
+            break;
+        }
+        set_muted(r->id, !is_muted(r->id));
+        save_prefs();
+        DoMethod(lst_rooms, MUIM_List_Redraw, MUIV_List_Redraw_All);
+        break;
+    }
+    case ID_SETTINGS:
+        set(txt_herald, MUIA_Text_Contents, herald_here()
+            ? "Benachrichtigungen erscheinen über Herald."
+            : "\33bHerald läuft nicht\33n - ohne Herald (Aminet: util/cdity/Herald)\nzeigt Amatrix keine Benachrichtigungen.");
+        set(chk_notify, MUIA_Selected, opt_notify);
+        set(cyc_notify, MUIA_Cycle_Active, opt_notify_all ? 0 : 1);
+        set(chk_previews, MUIA_Selected, opt_previews);
+        set(chk_iconified, MUIA_Selected, opt_iconified);
+        set(win_settings, MUIA_Window_Open, TRUE);
+        break;
+    case ID_SET_OK:
+        opt_notify = xget(chk_notify, MUIA_Selected) != 0;
+        opt_notify_all = xget(cyc_notify, MUIA_Cycle_Active) == 0;
+        opt_previews = xget(chk_previews, MUIA_Selected) != 0;
+        opt_iconified = xget(chk_iconified, MUIA_Selected) != 0;
+        save_prefs();
+        set(win_settings, MUIA_Window_Open, FALSE);
+        break;
+    case ID_ICONIFY:
+        set(app, MUIA_Application_Iconified, TRUE);
+        break;
     case ID_LEAVE: {
         Room *r = NULL;
         DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
@@ -3998,7 +4299,7 @@ static void handle_id(ULONG id)
 int main(int argc, char **argv)
 {
     struct RDArgs *rda = NULL;
-    LONG args[4] = { 0, 0, 0, 0 };
+    LONG args[5] = { 0, 0, 0, 0, 0 };
     ULONG sigs = 0, id;
     int i;
 
@@ -4017,7 +4318,15 @@ int main(int argc, char **argv)
     if (!NameFromLock(GetProgramDir(), (STRPTR)prog_dir, sizeof prog_dir - 2)) strcpy(prog_dir, "PROGDIR:");
     if (prog_dir[strlen(prog_dir) - 1] != ':') strcat(prog_dir, "/");
     load_prefs();
-    if (argc > 0) rda = ReadArgs((STRPTR)"SERVER/K,USER/K,PASSWORD/K,DEBUG/S", args, NULL);
+    started_at = time(NULL);
+    if ((IconBase = OpenLibrary("icon.library", 37)) != NULL) {     /* for iconifying: the AppIcon */
+        char ip[320];
+        snprintf(ip, sizeof ip, "%sAmatrix", prog_dir);
+        dob_app = GetDiskObject((STRPTR)ip);
+        snprintf(ip, sizeof ip, "%sIcons/Amatrix-neu", prog_dir);
+        dob_new = GetDiskObject((STRPTR)ip);
+    }
+    if (argc > 0) rda = ReadArgs((STRPTR)"SERVER/K,USER/K,PASSWORD/K,DEBUG/S,HIDE/S", args, NULL);
     if (args[3]) {
         char lp[300];
         snprintf(lp, sizeof lp, "%sAmatrix.log", prog_dir);
@@ -4038,6 +4347,7 @@ int main(int argc, char **argv)
         return 20;
     }
     set(win_main, MUIA_Window_Open, TRUE);
+    if ((opt_iconified || args[4]) && dob_app) set(app, MUIA_Application_Iconified, TRUE);
 
     if (cfg_server && cfg_user) do_login(cfg_server, cfg_user, (char *)args[2]);
     else { set_status("Nicht angemeldet", NULL, NULL); show_login(NULL); }
@@ -4066,6 +4376,9 @@ int main(int argc, char **argv)
     amx_free_public_rooms(pub, n_pub);
     free(my_user); free(cfg_server); free(cfg_user); free(pending_open); free(invite_room); free(pending_password);
     if (rda) FreeArgs(rda);
+    if (dob_app) FreeDiskObject(dob_app);
+    if (dob_new) FreeDiskObject(dob_new);
+    if (IconBase) CloseLibrary(IconBase);
     CloseLibrary(MUIMasterBase);
     return 0;
 }
