@@ -145,7 +145,7 @@ cJSON *amx__api(AmxClient *c, const char *method, const char *path, const cJSON 
     if ((st = http_request(method, url, c->token, b, timeout_s, &r)) != 0) {
         if (st == -2) *status = -1;     /* interrupted, not an error */
         else {
-            amx__fail(c, "network error on %s %s: %s", method, path, http_last_error());
+            amx__fail(c, "network error: %s (%s %s)", http_last_error()[0] ? http_last_error() : "?", method, path);
             *status = 0;
         }
     } else {

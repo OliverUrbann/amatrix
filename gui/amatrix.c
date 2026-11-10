@@ -151,7 +151,7 @@ typedef struct ChatWin {
     int n_react, cap_react;
     Object *emo[N_EMO_MAX];       /* the reaction pictures, as NList images (ESC o[n]) */
     int sending, inviting, loading_older;
-    char err[160];                /* last error, shown until the next action */
+    char err[320];                /* last error, shown until the next action */
 } ChatWin;
 
 /* a picture for the room list: raw ARGB that MUI 5 draws itself (ESC A) */
@@ -231,6 +231,7 @@ static void set_status(const char *fmt, const char *a, const char *b)
 {
     snprintf(status_buf, sizeof status_buf, fmt, a ? a : "", b ? b : "");
     set(txt_status, MUIA_Text_Contents, status_buf);
+    set(txt_status, MUIA_ShortHelp, status_buf);     /* the full text, also when cut off */
 }
 
 /* "Online - user (verifiziert)": the one place for it, so no path forgets the suffix */
@@ -274,7 +275,7 @@ static ChatWin *chat_thread(const char *room, const char *root)
  * something runs (the window stays usable) */
 static void update_status(ChatWin *w)
 {
-    static char t[200];
+    static char t[340];
     const Room *r = room_by_id(w->room_id);
     struct Window *iw;
     int busy = w->loading || w->sending || w->inviting;
@@ -284,6 +285,7 @@ static void update_status(ChatWin *w)
     else if (w->err[0]) snprintf(t, sizeof t, "\33b%s", w->err);
     else snprintf(t, sizeof t, "%s", !r ? "" : r->encrypted ? "Ende-zu-Ende-verschlüsselt" : "nicht verschlüsselt");
     set(w->busy, MUIA_Text_Contents, t);
+    set(w->busy, MUIA_ShortHelp, w->err[0] ? w->err : NULL);   /* full error text */
     if ((iw = (struct Window *)xget(w->win, MUIA_Window_Window)) != NULL)
         SetWindowPointer(iw, WA_BusyPointer, busy, WA_PointerDelay, busy, TAG_DONE);
 }
@@ -2357,7 +2359,7 @@ static void media_saved(const AmxMsg *m)
             free(x->saving);
             x->saving = NULL;
             w->err[0] = 0;
-            if (m->status) snprintf(w->err, sizeof w->err, "Laden fehlgeschlagen: %.120s", m->error ? m->error : "");
+            if (m->status) snprintf(w->err, sizeof w->err, "Laden fehlgeschlagen: %.280s", m->error ? m->error : "");
             else if (x->open_after) { x->path = strdup(m->result); open_file(m->result); }
             else snprintf(w->err, sizeof w->err, "Gespeichert: %.140s", m->result);
             update_status(w);
@@ -2935,7 +2937,7 @@ static void history_done(const AmxMsg *m)
     if (!w) return;
     w->loading = 0;
     w->loading_older = 0;
-    if (m->status) snprintf(w->err, sizeof w->err, "Verlauf: %.140s", m->error ? m->error : "Fehler");
+    if (m->status) snprintf(w->err, sizeof w->err, "Verlauf: %.290s", m->error ? m->error : "Fehler");
     update_status(w);
     w->at_start = m->status == 0 && m->at_start;
     set(w->older, MUIA_Disabled, w->at_start);
@@ -3965,6 +3967,7 @@ static Object *build_app(void)
                 End,
                 Child, txt_status = TextObject,
                     MUIA_Text_Contents, "",
+                    MUIA_Text_SetMin, FALSE,         /* a long error must not widen the window */
                     MUIA_Font, MUIV_Font_Tiny,
                 End,
             End,
