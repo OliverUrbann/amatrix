@@ -40,8 +40,15 @@ void http_cleanup(void)
 int http_request(const char *method, const char *url, const char *bearer,
                  const char *body, long timeout_s, HttpResponse *out)
 {
+    return http_request_bin(method, url, bearer, NULL, body, body ? strlen(body) : 0, timeout_s, out);
+}
+
+int http_request_bin(const char *method, const char *url, const char *bearer,
+                     const char *content_type, const void *body, size_t len,
+                     long timeout_s, HttpResponse *out)
+{
     struct curl_slist *hdr = NULL;
-    char auth[1024];
+    char auth[1024], ct[160];
     Buf b = { NULL, 0 };
     CURLcode rc;
 
@@ -53,7 +60,8 @@ int http_request(const char *method, const char *url, const char *bearer,
     curl_easy_setopt(g_curl, CURLOPT_WRITEDATA, &b);
     curl_easy_setopt(g_curl, CURLOPT_TIMEOUT, timeout_s);
     curl_easy_setopt(g_curl, CURLOPT_USERAGENT, "Amatrix/0.1");
-    hdr = curl_slist_append(hdr, "Content-Type: application/json");
+    snprintf(ct, sizeof ct, "Content-Type: %s", content_type ? content_type : "application/json");
+    hdr = curl_slist_append(hdr, ct);
     if (bearer) {
         snprintf(auth, sizeof auth, "Authorization: Bearer %s", bearer);
         hdr = curl_slist_append(hdr, auth);
@@ -61,7 +69,7 @@ int http_request(const char *method, const char *url, const char *bearer,
     curl_easy_setopt(g_curl, CURLOPT_HTTPHEADER, hdr);
     if (body) {
         curl_easy_setopt(g_curl, CURLOPT_POSTFIELDS, body);
-        curl_easy_setopt(g_curl, CURLOPT_POSTFIELDSIZE, (long)strlen(body));
+        curl_easy_setopt(g_curl, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)len);
     }
     rc = curl_easy_perform(g_curl);
     curl_slist_free_all(hdr);

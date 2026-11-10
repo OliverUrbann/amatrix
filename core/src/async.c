@@ -193,6 +193,9 @@ void amx_async_msg_free(AmxMsg *m)
     for (i = 0; i < o->n_own; i++) free(o->own[i]);
     if (m->rooms) amx_free_rooms(m->rooms, m->n);
     if (m->pub) amx_free_public_rooms(m->pub, m->n);
+    if (m->members) amx_free_members(m->members, m->n);
+    if (m->devices) amx_free_devices(m->devices, m->n);
+    if (m->settings) { amx_free_room_settings(m->settings); free(m->settings); }
     free(m->pixels);
     free(o);
 }
@@ -381,6 +384,127 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
         r = amx_send_reply(a->c, c->s1, c->s3 && c->s3[0] ? c->s3 : NULL, c->s4 && c->s4[0] ? c->s4 : NULL,
                            c->s2, &out);
         break;
+    case AMX_CMD_MEMBERS: {
+        AmxMember *l = NULL;
+        int n = amx_room_members(a->c, c->s1, &l);
+        Out *o = new_out(AMX_MSG_RESULT);
+        if (o) {
+            o->m.cmd = AMX_CMD_MEMBERS;
+            o->m.tag = c->tag;
+            o->m.status = n < 0 ? -1 : 0;
+            o->m.result = own(o, c->s1);
+            o->m.members = n > 0 ? l : NULL;
+            o->m.n = n > 0 ? n : 0;
+            if (n < 0) o->m.error = own(o, amx_error(a->c));
+            if (n == 0) amx_free_members(l, 0);
+            put_out(a, o);
+        } else amx_free_members(l, n > 0 ? n : 0);
+        return;
+    }
+    case AMX_CMD_ROOM_SETTINGS: {
+        AmxRoomSettings *st = calloc(1, sizeof *st);
+        Out *o = new_out(AMX_MSG_RESULT);
+        r = st ? amx_room_settings(a->c, c->s1, st) : -1;
+        if (o) {
+            o->m.cmd = AMX_CMD_ROOM_SETTINGS;
+            o->m.tag = c->tag;
+            o->m.status = r;
+            o->m.result = own(o, c->s1);
+            if (r) { o->m.error = own(o, amx_error(a->c)); free(st); }
+            else o->m.settings = st;
+            put_out(a, o);
+        } else if (st) { amx_free_room_settings(st); free(st); }
+        return;
+    }
+    case AMX_CMD_ROOM_SET:
+        r = amx_set_room_setting(a->c, c->s1, c->s2, c->s3);
+        post_result(a, c, r, c->s1);
+        return;
+    case AMX_CMD_MODERATE:
+        if (!strcmp(c->s3, "kick")) r = amx_kick(a->c, c->s1, c->s2, c->s4);
+        else if (!strcmp(c->s3, "ban")) r = amx_ban(a->c, c->s1, c->s2, c->s4);
+        else if (!strcmp(c->s3, "unban")) r = amx_unban(a->c, c->s1, c->s2);
+        else r = amx_set_power(a->c, c->s1, c->s2, c->i1);
+        post_result(a, c, r, c->s1);
+        return;
+    case AMX_CMD_PROFILE: {
+        char *nm = NULL, *av = NULL;
+        Out *o = new_out(AMX_MSG_RESULT);
+        r = amx_get_profile(a->c, NULL, &nm, &av);
+        if (o) {
+            o->m.cmd = AMX_CMD_PROFILE;
+            o->m.tag = c->tag;
+            o->m.status = r;
+            o->m.result = own(o, nm);
+            o->m.result2 = own(o, av);
+            if (r) o->m.error = own(o, amx_error(a->c));
+            put_out(a, o);
+        }
+        free(nm);
+        free(av);
+        return;
+    }
+    case AMX_CMD_SET_PROFILE:
+        r = !strcmp(c->s1, "avatar") ? amx_set_avatar(a->c, c->s2) : amx_set_displayname(a->c, c->s2);
+        post_result(a, c, r, c->s1);
+        return;
+    case AMX_CMD_URL_PREVIEW: {
+        char *t = NULL, *d = NULL, *im = NULL;
+        Out *o = new_out(AMX_MSG_RESULT);
+        r = amx_url_preview(a->c, c->s1, &t, &d, &im);
+        if (o) {
+            o->m.cmd = AMX_CMD_URL_PREVIEW;
+            o->m.tag = c->tag;
+            o->m.status = r;
+            o->m.result = own(o, c->s2);
+            o->m.result2 = own(o, c->s1);
+            o->m.title = own(o, t);
+            o->m.description = own(o, d);
+            o->m.image = own(o, im);
+            if (r) o->m.error = own(o, amx_error(a->c));
+            put_out(a, o);
+        }
+        free(t); free(d); free(im);
+        return;
+    }
+    case AMX_CMD_DEVICES: {
+        AmxDevice *l = NULL;
+        int n = amx_devices(a->c, &l);
+        Out *o = new_out(AMX_MSG_RESULT);
+        if (o) {
+            o->m.cmd = AMX_CMD_DEVICES;
+            o->m.tag = c->tag;
+            o->m.status = n < 0 ? -1 : 0;
+            o->m.devices = n > 0 ? l : NULL;
+            o->m.n = n > 0 ? n : 0;
+            if (n < 0) o->m.error = own(o, amx_error(a->c));
+            if (n == 0) amx_free_devices(l, 0);
+            put_out(a, o);
+        } else amx_free_devices(l, n > 0 ? n : 0);
+        return;
+    }
+    case AMX_CMD_DEVICE_RENAME:
+        r = amx_rename_device(a->c, c->s1, c->s2);
+        post_result(a, c, r, c->s1);
+        return;
+    case AMX_CMD_DEVICE_DELETE:
+        r = amx_delete_device(a->c, c->s1, c->s2);
+        if (c->s2) memset(c->s2, 0, strlen(c->s2));
+        post_result(a, c, r, c->s1);
+        return;
+    case AMX_CMD_HISTORY_CACHE:
+        amx_set_history_cache(a->c, c->i1);
+        return;
+    case AMX_CMD_TYPING:
+        amx_send_typing(a->c, c->s1, c->i1);
+        return;
+    case AMX_CMD_PRIVATE_RECEIPTS:
+        amx_set_private_receipts(a->c, c->i1);
+        return;
+    case AMX_CMD_SEND_FILE:
+        r = amx_send_file(a->c, c->s1, c->s2, c->s4 && c->s4[0] ? c->s4 : NULL, c->s3 && c->s3[0] ? c->s3 : NULL,
+                          &out);
+        break;
     case AMX_CMD_EDIT:
         r = amx_send_edit(a->c, c->s1, c->s3, c->s2, &out);
         break;
@@ -403,7 +527,9 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
         r = amx_create_room(a->c, &c->opt, &out);
         break;
     case AMX_CMD_LOAD_HISTORY: {
-        int n = amx_load_history(a->c, c->s1, c->i1, c->i2, &at_start);
+        int n;
+        if (c->i2) amx_cached_history(a->c, c->s1);      /* at once, before the network */
+        n = amx_load_history(a->c, c->s1, c->i1, c->i2, &at_start);
         Out *o = new_out(AMX_MSG_RESULT);
         if (o) {
             o->m.cmd = AMX_CMD_LOAD_HISTORY;
@@ -818,3 +944,75 @@ int amx_async_edit(AmxAsync *a, const char *room_id, const char *event_id, const
 int amx_async_load_thread(AmxAsync *a, const char *room_id, const char *root, int limit, int from_newest,
                           unsigned long tag)
 { return cmd(a, AMX_CMD_LOAD_THREAD, tag, room_id, root, limit, from_newest); }
+
+int amx_async_send_file(AmxAsync *a, const char *room_id, const char *path, const char *name,
+                        const char *thread_root, unsigned long tag)
+{
+    Cmd *c = calloc(1, sizeof *c);
+    if (!c) return -1;
+    c->cmd = AMX_CMD_SEND_FILE;
+    c->tag = tag;
+    c->s1 = dup0(room_id);
+    c->s2 = dup0(path);
+    c->s3 = dup0(thread_root);
+    c->s4 = dup0(name);
+    put_cmd(a, c);
+    return 0;
+}
+
+int amx_async_typing(AmxAsync *a, const char *room_id, long ms)
+{ return cmd(a, AMX_CMD_TYPING, 0, room_id, NULL, (int)ms, 0); }
+int amx_async_private_receipts(AmxAsync *a, int on)
+{ return cmd(a, AMX_CMD_PRIVATE_RECEIPTS, 0, NULL, NULL, on, 0); }
+
+int amx_async_members(AmxAsync *a, const char *room_id, unsigned long tag)
+{ return cmd(a, AMX_CMD_MEMBERS, tag, room_id, NULL, 0, 0); }
+int amx_async_room_settings(AmxAsync *a, const char *room_id, unsigned long tag)
+{ return cmd(a, AMX_CMD_ROOM_SETTINGS, tag, room_id, NULL, 0, 0); }
+
+int amx_async_room_set(AmxAsync *a, const char *room_id, const char *what, const char *value, unsigned long tag)
+{
+    Cmd *c = calloc(1, sizeof *c);
+    if (!c) return -1;
+    c->cmd = AMX_CMD_ROOM_SET;
+    c->tag = tag;
+    c->s1 = dup0(room_id);
+    c->s2 = dup0(what);
+    c->s3 = dup0(value);
+    put_cmd(a, c);
+    return 0;
+}
+
+int amx_async_moderate(AmxAsync *a, const char *room_id, const char *user, const char *action,
+                       const char *reason, int level, unsigned long tag)
+{
+    Cmd *c = calloc(1, sizeof *c);
+    if (!c) return -1;
+    c->cmd = AMX_CMD_MODERATE;
+    c->tag = tag;
+    c->s1 = dup0(room_id);
+    c->s2 = dup0(user);
+    c->s3 = dup0(action);
+    c->s4 = dup0(reason);
+    c->i1 = level;
+    put_cmd(a, c);
+    return 0;
+}
+
+int amx_async_profile(AmxAsync *a, unsigned long tag)
+{ return cmd(a, AMX_CMD_PROFILE, tag, NULL, NULL, 0, 0); }
+int amx_async_set_profile(AmxAsync *a, const char *what, const char *value, unsigned long tag)
+{ return cmd(a, AMX_CMD_SET_PROFILE, tag, what, value, 0, 0); }
+
+int amx_async_url_preview(AmxAsync *a, const char *url, const char *key, unsigned long tag)
+{ return cmd(a, AMX_CMD_URL_PREVIEW, tag, url, key, 0, 0); }
+
+int amx_async_devices(AmxAsync *a, unsigned long tag)
+{ return cmd(a, AMX_CMD_DEVICES, tag, NULL, NULL, 0, 0); }
+int amx_async_device_rename(AmxAsync *a, const char *device_id, const char *name, unsigned long tag)
+{ return cmd(a, AMX_CMD_DEVICE_RENAME, tag, device_id, name, 0, 0); }
+int amx_async_device_delete(AmxAsync *a, const char *device_id, const char *password, unsigned long tag)
+{ return cmd(a, AMX_CMD_DEVICE_DELETE, tag, device_id, password, 0, 0); }
+
+int amx_async_history_cache(AmxAsync *a, int on)
+{ return cmd(a, AMX_CMD_HISTORY_CACHE, 0, NULL, NULL, on, 0); }

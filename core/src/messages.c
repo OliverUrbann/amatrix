@@ -48,7 +48,7 @@ int amx_mark_read(AmxClient *c, const char *room_id, const char *event_id)
     char *er = http_escape(room_id), *path = amx__malloc(strlen(er) + 40);
     sprintf(path, "/rooms/%s/read_markers", er);
     cJSON_AddStringToObject(b, "m.fully_read", event_id);
-    cJSON_AddStringToObject(b, "m.read", event_id);
+    cJSON_AddStringToObject(b, c->private_receipts ? "m.read.private" : "m.read", event_id);
     r = amx__api_ok(c, "POST", path, b);
     cJSON_Delete(b);
     free(path);
@@ -126,4 +126,44 @@ int amx_send_edit(AmxClient *c, const char *room_id, const char *event_id, const
     r = send_event(c, room_id, "m.room.message", ct, event_id_out);
     cJSON_Delete(ct);
     return r;
+}
+
+int amx_send_file(AmxClient *c, const char *room_id, const char *path, const char *name,
+                  const char *thread_root, char **event_id_out)
+{
+    int enc = amx__room_encrypted(c, room_id), r;
+    cJSON *ct;
+    if (event_id_out) *event_id_out = NULL;
+    if (enc < 0) return -1;
+    if (!(ct = amx__file_content(c, path, name, enc))) return -1;
+    if (thread_root) {
+        cJSON *rel = cJSON_AddObjectToObject(ct, "m.relates_to");
+        cJSON_AddStringToObject(rel, "rel_type", "m.thread");
+        cJSON_AddStringToObject(rel, "event_id", thread_root);
+        cJSON_AddTrueToObject(rel, "is_falling_back");
+        cJSON_AddStringToObject(cJSON_AddObjectToObject(rel, "m.in_reply_to"), "event_id", thread_root);
+    }
+    r = send_event(c, room_id, "m.room.message", ct, event_id_out);
+    cJSON_Delete(ct);
+    return r;
+}
+
+void amx_set_private_receipts(AmxClient *c, int on) { c->private_receipts = on != 0; }
+
+int amx_send_typing(AmxClient *c, const char *room_id, long ms)
+{
+    cJSON *b = cJSON_CreateObject(), *r;
+    char *er = http_escape(room_id), *eu = http_escape(c->user_id ? c->user_id : ""), *path;
+    path = amx__malloc(strlen(er) + strlen(eu) + 32);
+    sprintf(path, "/rooms/%s/typing/%s", er, eu);
+    if (ms > 0) {
+        cJSON_AddTrueToObject(b, "typing");
+        cJSON_AddNumberToObject(b, "timeout", (double)ms);
+    } else cJSON_AddFalseToObject(b, "typing");
+    r = amx__api_ok(c, "PUT", path, b);
+    cJSON_Delete(b);
+    free(path); free(er); free(eu);
+    if (!r) return -1;
+    cJSON_Delete(r);
+    return 0;
 }

@@ -45,12 +45,15 @@ struct AmxClient {
     cJSON *hist;                   /* room -> pagination token for amx_load_history */
     cJSON *backup;                 /* backup.json: key backup version + private key */
     cJSON *bk_done;                /* "room|session" -> {n: tries, t: next try} for the backup */
+    cJSON *hc;                     /* history cache (history_cache.json), loaded when needed */
+    int hc_dirty, hc_off, hc_emitting;
     cJSON *kreq;                   /* "room|session" -> key request sent to our devices (this run) */
     unsigned char skey[32];        /* store key (passphrase), if skey_set */
     int skey_set;
     OlmUtility *util;
     AmxEventFn fn; void *ud;
     int verbose;
+    int private_receipts;       /* m.read.private instead of m.read */
     int interruptible;          /* async layer: /sync long poll may be woken up */
     unsigned long txn;
     char err[512];
@@ -103,6 +106,10 @@ void  amx__handle_to_device(AmxClient *c, const cJSON *ev);
 void  amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev, int history);
 void  amx__retry_pending(AmxClient *c);
 void  amx__fetch_missing_keys(AmxClient *c);
+cJSON *amx__file_content(AmxClient *c, const char *path, const char *name, int enc);
+void amx__hcache_note(AmxClient *c, const AmxEvent *e);
+void amx__hcache_save(AmxClient *c);
+void amx__hcache_forget(AmxClient *c, const char *room_id);
 char *amx__media_json(const cJSON *content, const char *msgtype);   /* JSON array; NULL if none */   /* backup + key requests for pending events */
 
 /* crypto_send.c */

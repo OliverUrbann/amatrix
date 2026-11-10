@@ -106,6 +106,8 @@ int amx_leave(AmxClient *c, const char *room_id)
     if (!r) {
         amx__room_forget(c, room_id);
         amx__rooms_save(c);
+        amx__hcache_forget(c, room_id);
+        amx__hcache_save(c);
         cJSON_DeleteItemFromObjectCaseSensitive(c->outbound, room_id);   /* no reuse after re-join */
         amx__save_json(c, "megolm_out.json", c->outbound);
     }

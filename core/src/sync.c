@@ -1,6 +1,70 @@
 /* /sync: one round, dispatching to-device, invites, timelines, key upkeep. */
 #include "amx_internal.h"
 
+/* m.typing and m.receipt of a joined room */
+static void handle_ephemeral(AmxClient *c, const char *room_id, const cJSON *events)
+{
+    const cJSON *ev, *x, *rt, *u;
+    cJSON_ArrayForEach(ev, events) {
+        const char *type = amx__jstr(ev, "type");
+        const cJSON *ct = cJSON_GetObjectItemCaseSensitive(ev, "content");
+        AmxEvent e;
+        memset(&e, 0, sizeof e);
+        e.room_id = room_id;
+        if (type && !strcmp(type, "m.typing")) {
+            size_t n = 1;
+            char *ids, *names;
+            cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(ct, "user_ids"))
+                if (cJSON_IsString(x)) n += strlen(x->valuestring) + 1;
+            ids = amx__malloc(n);
+            names = amx__malloc(n * 2 + 1);
+            ids[0] = names[0] = 0;
+            cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(ct, "user_ids"))
+                if (cJSON_IsString(x) && (!c->user_id || strcmp(x->valuestring, c->user_id))) {
+                    const char *nm = amx__member_name(c, room_id, x->valuestring);
+                    char lp[128];
+                    if (!nm) {                              /* the localpart */
+                        const char *s = x->valuestring[0] == '@' ? x->valuestring + 1 : x->valuestring;
+                        size_t k = strcspn(s, ":");
+                        if (k >= sizeof lp) k = sizeof lp - 1;
+                        memcpy(lp, s, k);
+                        lp[k] = 0;
+                        nm = lp;
+                    }
+                    if (ids[0]) { strcat(ids, "\n"); }
+                    strcat(ids, x->valuestring);
+                    if (strlen(names) + strlen(nm) + 2 < n * 2 + 1) {
+                        if (names[0]) strcat(names, "\n");
+                        strcat(names, nm);
+                    }
+                }
+            e.type = AMX_EV_TYPING;
+            e.state_key = ids;
+            e.body = names;
+            amx__emit(c, &e);
+            free(ids);
+            free(names);
+        } else if (type && !strcmp(type, "m.receipt")) {
+            cJSON_ArrayForEach(x, ct) {                    /* event ID -> receipt types */
+                cJSON_ArrayForEach(rt, x) {
+                    if (strcmp(rt->string, "m.read") && strcmp(rt->string, "m.read.private")) continue;
+                    cJSON_ArrayForEach(u, rt) {               /* user -> {ts, thread_id} */
+                        const cJSON *ts = cJSON_GetObjectItemCaseSensitive(u, "ts");
+                        const char *thr = amx__jstr(u, "thread_id");
+                        if (c->user_id && !strcmp(u->string, c->user_id)) continue;
+                        if (thr && strcmp(thr, "main")) continue;   /* a thread's own receipt */
+                        e.type = AMX_EV_RECEIPT;
+                        e.event_id = x->string;
+                        e.sender = u->string;
+                        e.timestamp = cJSON_IsNumber(ts) ? ts->valuedouble : 0;
+                        amx__emit(c, &e);
+                    }
+                }
+            }
+        }
+    }
+}
+
 static void handle_state(AmxClient *c, const char *room_id, const cJSON *events)
 {
     const cJSON *ev;
@@ -56,7 +120,10 @@ int amx_sync(AmxClient *c, long timeout_ms)
 
     cJSON_ArrayForEach(room, cJSON_GetObjectItemCaseSensitive(
                                  cJSON_GetObjectItemCaseSensitive(r, "rooms"), "leave"))
+    {
         amx__room_forget(c, room->string);
+        amx__hcache_forget(c, room->string);
+    }
 
     cJSON_ArrayForEach(room, cJSON_GetObjectItemCaseSensitive(
                                  cJSON_GetObjectItemCaseSensitive(r, "rooms"), "invite")) {
@@ -83,8 +150,11 @@ int amx_sync(AmxClient *c, long timeout_ms)
         cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(
                                   cJSON_GetObjectItemCaseSensitive(room, "timeline"), "events"))
             amx__handle_room_event(c, room->string, x, 0);
+        handle_ephemeral(c, room->string, cJSON_GetObjectItemCaseSensitive(
+                                              cJSON_GetObjectItemCaseSensitive(room, "ephemeral"), "events"));
     }
     amx__rooms_save(c);
+    amx__hcache_save(c);
     amx__fetch_missing_keys(c);           /* keys still missing: backup, our other devices */
 
     x = cJSON_GetObjectItemCaseSensitive(
@@ -148,6 +218,7 @@ int amx_load_history(AmxClient *c, const char *room_id, int limit, int from_newe
         if (at_start) *at_start = 1;
     }
     cJSON_Delete(r);
+    amx__hcache_save(c);
     return n;
 }
 
@@ -208,5 +279,6 @@ int amx_load_thread(AmxClient *c, const char *room_id, const char *root, int lim
     amx__fetch_missing_keys(c);
     cJSON_Delete(r);
     free(esc); free(resc); free(key);
+    amx__hcache_save(c);
     return n;
 }

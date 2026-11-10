@@ -178,6 +178,14 @@ async def store_part(ctx, amiga, online, was_verified=False):
     check(st, f"right passphrase: online again with the saved login ({st})")
     if was_verified:
         check("verifiziert" in (st or ""), f"after a restart still verified ({st!r})")
+    if os.environ.get("AMX_GUI_ONLY") != "store":       # the history cache: messages at once
+        rc, _ = await amiga.rexx("OPENCHAT Alice", "CHATCACHED Alice")
+
+        async def cached():
+            rc, r = await amiga.rexx("CHATCACHED Alice")
+            return r.isdigit() and int(r) > 0 and r
+        v = await amiga.until(cached, 60)
+        check(v, f"after the restart the chat shows cached messages first ({v!r})")
 
 
 
@@ -238,6 +246,60 @@ async def scenario(ctx, amiga, srv, me):
     got = await p.wait(lambda: p.got(dm, me.user_id, "Hallo Alice, hier schreibt der Amiga. Grüße! äöü"), 180)
     check(got, "peer received it, decrypted, umlauts intact")
     await asyncio.sleep(3)                  # our own message's echo is in
+    rc, _ = await amiga.rexx("COPY Alice")
+    rc2, v = await amiga.rexx("CLIP")
+    check(rc == "0" and v == "Hallo Alice, hier schreibt der Amiga. Grüße! äöü",
+          f"newest message copied to the clipboard, umlauts in Latin-1 ({v!r})")
+
+    # link preview (the server fetches the page; in encrypted rooms only when switched on)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("lp", os.path.join(TOP, "tests", "features", "link_preview", "peer.py"))
+    lp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lp)
+    web = lp.serve()
+    await amiga.rexx("SETOPTION linkprev_enc 1")
+    await p.send(dm, f"Hier: http://127.0.0.1:{web.server_port}/seite.html")
+
+    async def preview_line():
+        rc, r = await amiga.rexx("PREVIEWS Alice")
+        return "Amiga-Seite" in r and r
+    v = await amiga.until(preview_line, 90)
+    check(v and "Alles über den Amiga" in v, f"link preview under the message ({v!r})")
+    await amiga.shot("03d-link-preview")
+    web.shutdown()
+
+    # typing and read receipts
+    from nio import TypingNoticeEvent
+    peer_typing = []
+    p.c.add_ephemeral_callback(lambda r_, ev: peer_typing.append(list(ev.users)), TypingNoticeEvent)
+    await p.c.room_typing(dm, True, 30000)
+
+    async def typing():
+        rc, r = await amiga.rexx("TYPING Alice")
+        return r == "Alice" and r
+    check(await amiga.until(typing, 60), "\"Alice tippt ...\" in the chat window")
+    await amiga.shot("03b-typing")
+    await p.c.room_typing(dm, False)
+
+    async def no_typing():
+        rc, r = await amiga.rexx("TYPING Alice")
+        return rc == "0" and r == ""
+    check(await amiga.until(no_typing, 60), "and gone when she stops")
+    await amiga.rexx("TYPE Alice Ich schreibe gerade")
+    ok = await p.wait(lambda: any(me.user_id in t for t in peer_typing), 60)
+    check(ok, "typing in the input field: Alice sees us typing")
+    await amiga.rexx('TYPE Alice')
+    ok = await p.wait(lambda: peer_typing and me.user_id not in peer_typing[-1], 60)
+    check(ok, "input emptied: typing stopped")
+    eid = p.ids.get((dm, me.user_id, "Hallo Alice, hier schreibt der Amiga. Grüße! äöü"))
+    if eid:
+        await p.c.room_read_markers(dm, eid, eid)
+
+    async def read():
+        rc, r = await amiga.rexx("READ Alice")
+        return r.isdigit() and int(r) >= 1 and r
+    check(eid and await amiga.until(read, 60), "Alice read our message: a check mark")
+    await amiga.shot("03c-read")
     n0 = await lines_dm()
     await p.send(dm, "Wie geht es dir?")
 
@@ -293,7 +355,8 @@ async def scenario(ctx, amiga, srv, me):
     v = await amiga.until(shown, 180)
     check(v, f"picture shown as a preview in strips, file listed ({v!r})")
     rc, v = await amiga.rexx("LINKS Alice")
-    check(v == "https://www.amiga.org/forum http://www.aminet.net", f"links found, sentence end left out ({v!r})")
+    check(v.endswith(" https://www.amiga.org/forum http://www.aminet.net") or v == "https://www.amiga.org/forum http://www.aminet.net",
+          f"links found, sentence end left out ({v!r})")
     await asyncio.sleep(3)
     await amiga.shot("04c-picture-link")
     shot = _Image.open(os.path.join(SHOTS, "04c-picture-link.png")).convert("RGB")
@@ -327,6 +390,56 @@ async def scenario(ctx, amiga, srv, me):
     async def saved():
         return os.path.exists(target) and open(target, "rb").read() == txt
     check(await amiga.until(saved, 120), "file downloaded and decrypted (SAVEMEDIA)")
+
+    # sending: a picture (as if chosen in the requester / dropped as an icon)
+    # and an Amiga file without extension
+    from nio import RoomEncryptedImage, RoomEncryptedFile, DownloadResponse
+    from nio.crypto.attachments import decrypt_attachment
+    sent = {}
+
+    def on_att(room_, ev):
+        if room_.room_id == dm:
+            sent[ev.body] = ev
+    p.c.add_event_callback(on_att, RoomEncryptedImage)
+    p.c.add_event_callback(on_att, RoomEncryptedFile)
+    pic = png(160, 120, (30, 160, 60))
+    open(os.path.join(amiga.extra, "Gruen.png"), "wb").write(pic)
+    rdm = b"Amatrix sendet eine Datei\n" * 50
+    open(os.path.join(amiga.extra, "LiesMich"), "wb").write(rdm)
+    rc1, _ = await amiga.rexx("SENDFILE Alice Extra:Gruen.png")
+    rc2, _ = await amiga.rexx("SENDFILE Alice Extra:LiesMich")
+    check(rc1 == "0" and rc2 == "0", f"two files sent (SENDFILE rc {rc1}, {rc2})")
+    ok = await p.wait(lambda: "Gruen.png" in sent and "LiesMich" in sent, 180)
+    check(ok, f"peer got both ({sorted(sent)})")
+
+    async def fetched(name):
+        ev = sent.get(name)
+        if not ev:
+            return None
+        r = await p.c.download(mxc=ev.url)
+        if not isinstance(r, DownloadResponse):
+            return None
+        f = ev.source["content"]["file"]
+        return decrypt_attachment(r.body, f["key"]["k"], f["hashes"]["sha256"], f["iv"])
+    if ok:
+        c1 = sent["Gruen.png"].source["content"]
+        check(await fetched("Gruen.png") == pic and c1["msgtype"] == "m.image"
+              and c1["info"].get("w") == 160 and c1["info"].get("h") == 120,
+              f"picture arrives intact as m.image 160x120 ({c1.get('msgtype')}, {c1.get('info')})")
+        c2 = sent["LiesMich"].source["content"]
+        check(await fetched("LiesMich") == rdm and c2["msgtype"] == "m.file",
+              f"file arrives intact as m.file ({c2.get('msgtype')})")
+
+    async def own_media():
+        rc, r = await amiga.rexx("MEDIA Alice")
+        return "Gruen.png" in r and "LiesMich" in r and r
+    v = await amiga.until(own_media, 120)
+    check(v, f"our own attachments show up in the chat ({v!r})")
+    rc, _ = await amiga.rexx("SENDFILE Alice Extra:gibtsnicht")
+    await asyncio.sleep(8)
+    rc, v = await amiga.rexx("CHATSTATUS Alice")
+    check("nicht gesendet" in v, f"a missing file: error in the status line ({v!r})")
+    await amiga.shot("04e-sent-files")
 
     # emoji in the text: our pictures, unknown ones the yellow "?" face
     await p.send(dm, "Prima \U0001F602 und \U0001F984 und \u2764\ufe0f")
@@ -548,6 +661,29 @@ async def scenario(ctx, amiga, srv, me):
             return r == "0"
         check(await amiga.until(readable, 120), f"{name}: every message decrypted (late keys replace the placeholder)")
 
+    # members and room settings (we created Amiga-Runde: we may change everything)
+    if new:
+        rc, _ = await amiga.rexx("ROOMINFO Amiga-Runde")
+
+        async def members(want="Alice:Mitglied"):
+            rc, r = await amiga.rexx("MEMBERS")
+            return want in r and ("Gründer" in r or "Admin" in r) and r
+        v = await amiga.until(members, 90)
+        check(v, f"room window: member list, we found/administer it, Alice a member ({v!r})")
+        rc, v = await amiga.rexx("INFOSTATE")
+        check(v.startswith("Amiga-Runde|") and "|1|" in v, f"room window: settings shown ({v!r})")
+        await amiga.shot("06b-room-info")
+        rc, _ = await amiga.rexx("INFOSET topic Rund um den Amiga")
+        ok = await p.wait(lambda: p.c.rooms[new].topic == "Rund um den Amiga", 90)
+        check(ok, "topic changed in the room window, Alice sees it")
+        rc, _ = await amiga.rexx("INFOMEMBER 1 role 1")
+        ok = await p.wait(lambda: p.c.rooms[new].power_levels.get_user_level(p.user.user_id) == 50, 90)
+        rc2, v = await amiga.rexx("INFOSTATE")
+        check(ok, f"Alice made a moderator (rc {rc}, {v!r})")
+        v = await amiga.until(lambda: members("Alice:Moderator"), 60)
+        check(v, f"the list shows her new role ({v!r})")
+        await amiga.rexx("INFOMEMBER 1 role 0")
+
 
     # a room with a long, mixed history from before we joined (like a real
     # account on a new device): nothing of it is decryptable for us
@@ -691,6 +827,53 @@ async def scenario(ctx, amiga, srv, me):
     await asyncio.sleep(5)
     await amiga.shot("07-end")
 
+    # sessions: the list, rename the other one, sign it out (password)
+    rc, _ = await amiga.rexx("SESSIONS")
+
+    async def sessions(n=2):
+        rc, r = await amiga.rexx("SESSIONLIST")
+        parts = [x for x in r.split("|") if x]
+        return len(parts) >= n and ":current" in r and parts
+    v = await amiga.until(sessions, 60)
+    check(v, f"sessions window lists ours and the other ({v!r})")
+    if v:
+        idx = next(i for i, x in enumerate(v) if not x.endswith(":current"))
+        await amiga.rexx(f"SESSIONSET {idx} NAME Testgeraet")
+        v2 = await amiga.until(lambda: sessions(), 60)
+        check(v2 and any(x.startswith("Testgeraet:") for x in v2), f"renamed ({v2!r})")
+        await amiga.shot("07b-sessions")
+        n0 = len(v)
+        idx = next(i for i, x in enumerate(v2 or v) if x.startswith("Testgeraet:"))
+        await amiga.rexx(f"SESSIONSET {idx} PASSWORD {me.password}")
+
+        async def fewer():
+            rc, r = await amiga.rexx("SESSIONLIST")
+            parts = [x for x in r.split("|") if x]
+            return parts and len(parts) < n0 and "Testgeraet" not in r and parts
+        v3 = await amiga.until(fewer, 60)
+        check(v3, f"the other session signed out ({v3!r})")
+
+    # own profile: name and picture
+    from nio import ProfileGetResponse
+    rc, _ = await amiga.rexx("PROFILE NAME Amiga-Fan")
+
+    async def prof(cond):
+        r = await p.c.get_profile(me.user_id)
+        return isinstance(r, ProfileGetResponse) and cond(r)
+    check(await amiga.until(lambda: prof(lambda r: r.displayname == "Amiga-Fan"), 90),
+          "profile window: new display name, Alice sees it")
+    open(os.path.join(amiga.extra, "ich.png"), "wb").write(png(64, 64, (200, 40, 40)))
+    rc, _ = await amiga.rexx("PROFILE PICTURE Extra:ich.png")
+    check(await amiga.until(lambda: prof(lambda r: str(r.avatar_url).startswith("mxc://")), 90),
+          "profile picture uploaded and set")
+
+    async def shown():
+        rc, r = await amiga.rexx("PROFILESTATE")
+        return r.startswith("Amiga-Fan|1|") and r
+    v = await amiga.until(shown, 60)
+    check(v, f"profile window shows name and picture ({v!r})")
+    await amiga.shot("07c-profile")
+
     # leave the room created in the GUI for good: window closes, room gone
     if new:
         rc, _ = await amiga.rexx("LEAVE Amiga-Runde")
@@ -829,7 +1012,8 @@ async def main():
         dbg = os.path.join(extra, "Amatrix.log")
         if os.path.exists(dbg):              # the interesting lines of the DEBUG log
             for line in open(dbg, encoding="latin-1").read().splitlines():
-                if "open file" in line or "open link" in line or "saved attachment" in line or "started" in line:
+                if any(k in line for k in ("open file", "open link", "saved attachment", "started", "moderate",
+                                           "room change", "INFOMEMBER", "sending file")):
                     log(f"# amatrix log: {line}")
         alive = os.path.exists(os.path.join(extra, "Amatrix"))
         ctx.check(alive, "program still there at the end")

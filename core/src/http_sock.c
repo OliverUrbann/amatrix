@@ -101,11 +101,18 @@ void http_cleanup(void) { net_cleanup(); }
 int http_request(const char *method, const char *url, const char *bearer,
                  const char *body, long timeout_s, HttpResponse *out)
 {
+    return http_request_bin(method, url, bearer, NULL, body, body ? strlen(body) : 0, timeout_s, out);
+}
+
+int http_request_bin(const char *method, const char *url, const char *bearer,
+                     const char *content_type, const void *body, size_t blen,
+                     long timeout_s, HttpResponse *out)
+{
     char host[256], err[160], tmp[8192], val[64];
     const char *p, *path;
     char *hdr, *sep;
     int port, tls;
-    size_t n, blen = body ? strlen(body) : 0;
+    size_t n;
     long r;
     net_conn *c;
     Buf b = { NULL, 0, 0 };
@@ -131,13 +138,14 @@ int http_request(const char *method, const char *url, const char *bearer,
         return interruptible && net_wake_pending() ? -2 : -1;
     }
 
-    hdr = malloc(strlen(path) + strlen(host) + (bearer ? strlen(bearer) : 0) + 400);
+    if (!content_type) content_type = "application/json";
+    hdr = malloc(strlen(path) + strlen(host) + (bearer ? strlen(bearer) : 0) + strlen(content_type) + 400);
     if (!hdr) { net_close(c); return -1; }
     n = sprintf(hdr, "%s %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: Amatrix/0.1\r\n"
                      "Accept: application/json\r\nConnection: close\r\n", method, path, host);
     if (bearer) n += sprintf(hdr + n, "Authorization: Bearer %s\r\n", bearer);
-    if (body)   n += sprintf(hdr + n, "Content-Type: application/json\r\nContent-Length: %lu\r\n",
-                             (unsigned long)blen);
+    if (body)   n += sprintf(hdr + n, "Content-Type: %s\r\nContent-Length: %lu\r\n",
+                             content_type, (unsigned long)blen);
     else if (strcmp(method, "GET")) n += sprintf(hdr + n, "Content-Length: 0\r\n");
     n += sprintf(hdr + n, "\r\n");
     if (net_write(c, hdr, n) || (blen && net_write(c, body, blen))) {

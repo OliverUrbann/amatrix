@@ -29,12 +29,12 @@ def ensure_venv():
     """Create the venv with Synapse and matrix-nio[e2e] if it is missing."""
     py = venv_python()
     if os.path.exists(py):
-        r = subprocess.run([py, "-c", "import synapse, nio, olm"], capture_output=True)
+        r = subprocess.run([py, "-c", "import synapse, nio, olm, lxml, bs4"], capture_output=True)
         if r.returncode == 0:
             return py
     print(f"[server] creating Python environment in {VENV} (once, takes a few minutes)", flush=True)
     subprocess.run([sys.executable, "-m", "venv", VENV], check=True)
-    subprocess.run([py, "-m", "pip", "install", "-q", f"matrix-synapse=={SYNAPSE_VERSION}",
+    subprocess.run([py, "-m", "pip", "install", "-q", f"matrix-synapse[url-preview]=={SYNAPSE_VERSION}",
                     "matrix-nio[e2e]"], check=True)
     return py
 
@@ -100,6 +100,10 @@ presence:
 # newer Synapse lets only admins publish rooms to the directory by default
 room_list_publication_rules:
   - action: allow
+# link previews: the tests serve their pages on 127.0.0.1
+url_preview_enabled: true
+url_preview_ip_range_blacklist: ["10.0.0.0/8"]
+url_preview_ip_range_whitelist: ["127.0.0.1/32"]
 """
         for rc in ["rc_message", "rc_registration", "rc_key_requests", "rc_3pid_validation",
                    "rc_admin_redaction", "rc_media_create", "rc_delayed_event_mgmt"]:

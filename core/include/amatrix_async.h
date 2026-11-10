@@ -40,7 +40,10 @@ typedef enum {
     AMX_CMD_INVITE, AMX_CMD_CREATE_ROOM, AMX_CMD_LOAD_HISTORY, AMX_CMD_PUBLIC_ROOMS,
     AMX_CMD_AVATAR, AMX_CMD_MARK_READ, AMX_CMD_RECOVERY, AMX_CMD_STORE_UNLOCK, AMX_CMD_STORE_PASS,
     AMX_CMD_REACT, AMX_CMD_REDACT, AMX_CMD_MEDIA_THUMB, AMX_CMD_MEDIA_SAVE,
-    AMX_CMD_SEND_REPLY, AMX_CMD_EDIT, AMX_CMD_LOAD_THREAD
+    AMX_CMD_SEND_REPLY, AMX_CMD_EDIT, AMX_CMD_LOAD_THREAD, AMX_CMD_SEND_FILE, AMX_CMD_TYPING,
+    AMX_CMD_PRIVATE_RECEIPTS, AMX_CMD_MEMBERS, AMX_CMD_ROOM_SETTINGS, AMX_CMD_ROOM_SET, AMX_CMD_MODERATE, AMX_CMD_PROFILE,
+    AMX_CMD_SET_PROFILE, AMX_CMD_URL_PREVIEW, AMX_CMD_DEVICES, AMX_CMD_DEVICE_RENAME,
+    AMX_CMD_DEVICE_DELETE, AMX_CMD_HISTORY_CACHE
 } AmxCmd;
 
 typedef enum {
@@ -72,6 +75,11 @@ typedef struct {
                                      over; LOGIN: device verified */
     int size;
     int width, height;            /* MEDIA_THUMB: pixels is width x height; result = the key */
+    AmxMember *members;           /* MEMBERS: n entries (freed with the message); result = room */
+    AmxRoomSettings *settings;    /* ROOM_SETTINGS (freed with the message); result = room */
+    const char *result2;          /* PROFILE: result = display name, result2 = picture (mxc://) */
+    AmxDevice *devices;           /* DEVICES: n entries (freed with the message) */
+    const char *title, *description, *image;   /* URL_PREVIEW (result = the caller's key, result2 = URL) */
 } AmxMsg;
 
 /* Starts the network process for one account (store_dir as for
@@ -116,6 +124,35 @@ int amx_async_redact(AmxAsync *a, const char *room_id, const char *event_id, uns
 /* amx_load_thread(); result = the root, count/at_start as for LOAD_HISTORY */
 int amx_async_load_thread(AmxAsync *a, const char *room_id, const char *root, int limit, int from_newest,
                           unsigned long tag);
+/* sends a file (amx_send_file); name (UTF-8) and thread_root may be NULL;
+ * the result carries the event ID */
+int amx_async_send_file(AmxAsync *a, const char *room_id, const char *path, const char *name,
+                        const char *thread_root, unsigned long tag);
+/* amx_send_typing (no result message); amx_set_private_receipts */
+int amx_async_typing(AmxAsync *a, const char *room_id, long ms);
+int amx_async_private_receipts(AmxAsync *a, int on);
+/* the member list / settings of a room (results carry members, settings and
+ * the room ID); ROOM_SET: amx_set_room_setting; MODERATE: action "kick",
+ * "ban", "unban" (reason may be NULL) or "power" (level) */
+int amx_async_members(AmxAsync *a, const char *room_id, unsigned long tag);
+int amx_async_room_settings(AmxAsync *a, const char *room_id, unsigned long tag);
+int amx_async_room_set(AmxAsync *a, const char *room_id, const char *what, const char *value, unsigned long tag);
+int amx_async_moderate(AmxAsync *a, const char *room_id, const char *user, const char *action,
+                       const char *reason, int level, unsigned long tag);
+/* our profile (result/result2); SET_PROFILE: what "name" or "avatar" (value:
+ * a picture file) */
+int amx_async_profile(AmxAsync *a, unsigned long tag);
+int amx_async_set_profile(AmxAsync *a, const char *what, const char *value, unsigned long tag);
+/* amx_url_preview; key (e.g. the event ID) comes back as result */
+int amx_async_url_preview(AmxAsync *a, const char *url, const char *key, unsigned long tag);
+/* our sessions (devices/n); rename; sign out (password, wiped after use);
+ * results carry the device ID */
+int amx_async_devices(AmxAsync *a, unsigned long tag);
+int amx_async_device_rename(AmxAsync *a, const char *device_id, const char *name, unsigned long tag);
+int amx_async_device_delete(AmxAsync *a, const char *device_id, const char *password, unsigned long tag);
+/* amx_set_history_cache (no result).  LOAD_HISTORY from the newest first
+ * delivers the cached messages (cached = 1), then the server's. */
+int amx_async_history_cache(AmxAsync *a, int on);
 /* amx_send_reply() / amx_send_edit(); result = the new event ID */
 int amx_async_send_reply(AmxAsync *a, const char *room_id, const char *reply_to, const char *thread_root,
                          const char *body, unsigned long tag);

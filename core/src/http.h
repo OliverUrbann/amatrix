@@ -25,6 +25,10 @@ void http_cleanup(void);
  * -2 when interrupted (see http_interruptible). */
 int  http_request(const char *method, const char *url, const char *bearer,
                   const char *body, long timeout_s, HttpResponse *out);
+/* the same with any body: content_type (NULL = application/json), len bytes */
+int  http_request_bin(const char *method, const char *url, const char *bearer,
+                      const char *content_type, const void *body, size_t len,
+                      long timeout_s, HttpResponse *out);
 void http_response_free(HttpResponse *r);
 
 /* While on, a wake-up of the network process (net_set_wakeup) aborts the

@@ -451,3 +451,240 @@ int amx_media_save(AmxClient *c, const char *media, int index, const char *path)
     LOG(c, "saved attachment to %s", path);
     return 0;
 }
+
+/* ---------------------------------------------------------------- sending */
+
+static char *b64enc(const unsigned char *d, size_t n, int url)
+{
+    const char *tab = url ? "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+                          : "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    char *o = amx__malloc(n * 4 / 3 + 4), *q = o;
+    size_t i;
+    for (i = 0; i + 2 < n; i += 3) {
+        unsigned long v = (unsigned long)d[i] << 16 | (unsigned long)d[i + 1] << 8 | d[i + 2];
+        *q++ = tab[v >> 18 & 63]; *q++ = tab[v >> 12 & 63]; *q++ = tab[v >> 6 & 63]; *q++ = tab[v & 63];
+    }
+    if (n - i == 1) {
+        unsigned long v = (unsigned long)d[i] << 16;
+        *q++ = tab[v >> 18 & 63]; *q++ = tab[v >> 12 & 63];
+    } else if (n - i == 2) {
+        unsigned long v = (unsigned long)d[i] << 16 | (unsigned long)d[i + 1] << 8;
+        *q++ = tab[v >> 18 & 63]; *q++ = tab[v >> 12 & 63]; *q++ = tab[v >> 6 & 63];
+    }
+    *q = 0;
+    return o;
+}
+
+static int ext_is(const char *name, const char *ext)
+{
+    const char *dot = strrchr(name, '.');
+    size_t i;
+    if (!dot || strlen(dot + 1) != strlen(ext)) return 0;
+    for (i = 0; ext[i]; i++) {
+        char ch = dot[1 + i];
+        if (ch >= 'A' && ch <= 'Z') ch += 32;
+        if (ch != ext[i]) return 0;
+    }
+    return 1;
+}
+
+/* the MIME type of a file, by its name (Amiga files often have none: then
+ * by content for pictures) */
+static const char *guess_mime(const char *name, const unsigned char *d, size_t n)
+{
+    static const char *const tab[][2] = {
+        { "jpg", "image/jpeg" }, { "jpeg", "image/jpeg" }, { "png", "image/png" }, { "gif", "image/gif" },
+        { "webp", "image/webp" }, { "bmp", "image/bmp" }, { "iff", "image/x-ilbm" }, { "ilbm", "image/x-ilbm" },
+        { "svg", "image/svg+xml" }, { "txt", "text/plain" }, { "guide", "text/plain" }, { "readme", "text/plain" },
+        { "html", "text/html" }, { "htm", "text/html" }, { "pdf", "application/pdf" },
+        { "lha", "application/x-lha" }, { "lzh", "application/x-lha" }, { "lzx", "application/x-lzx" },
+        { "zip", "application/zip" }, { "gz", "application/gzip" }, { "tar", "application/x-tar" },
+        { "adf", "application/x-amiga-disk-format" }, { "mp3", "audio/mpeg" }, { "ogg", "audio/ogg" },
+        { "wav", "audio/wav" }, { "8svx", "audio/x-8svx" }, { "mod", "audio/x-mod" },
+        { "mp4", "video/mp4" }, { "webm", "video/webm" }, { "avi", "video/x-msvideo" }, { "mov", "video/quicktime" },
+    };
+    size_t i;
+    for (i = 0; i < sizeof tab / sizeof tab[0]; i++)
+        if (ext_is(name, tab[i][0])) return tab[i][1];
+    if (n >= 8 && !memcmp(d, "\x89PNG\r\n\x1a\n", 8)) return "image/png";
+    if (n >= 3 && d[0] == 0xff && d[1] == 0xd8 && d[2] == 0xff) return "image/jpeg";
+    if (n >= 6 && (!memcmp(d, "GIF87a", 6) || !memcmp(d, "GIF89a", 6))) return "image/gif";
+    if (n >= 12 && !memcmp(d, "FORM", 4) && !memcmp(d + 8, "ILBM", 4)) return "image/x-ilbm";
+    return "application/octet-stream";
+}
+
+/* upload data to the media repository; the mxc:// URI (malloc'd) or NULL */
+static char *upload(AmxClient *c, const void *data, size_t len, const char *name, const char *mime)
+{
+    char *esc = http_escape(name), *url = amx__malloc(strlen(c->hs) + strlen(esc) + 64), *mxc = NULL;
+    HttpResponse r;
+    sprintf(url, "%s/_matrix/media/v3/upload?filename=%s", c->hs, esc);
+    free(esc);
+    LOG2(c, "> POST /_matrix/media/v3/upload (%lu bytes, %s)", (unsigned long)len, mime);
+    if (http_request_bin("POST", url, c->token, mime, data, len, 900, &r) != 0) {
+        free(url);
+        amx__fail(c, "network error: %s (upload)", http_last_error());
+        return NULL;
+    }
+    free(url);
+    if (r.status == 200) {
+        cJSON *j = r.body ? cJSON_Parse(r.body) : NULL;
+        const char *u = amx__jstr(j, "content_uri");
+        if (u && !strncmp(u, "mxc://", 6)) mxc = amx__strdup(u);
+        else amx__fail(c, "upload: no content_uri in the answer");
+        cJSON_Delete(j);
+    } else {
+        cJSON *j = r.body ? cJSON_Parse(r.body) : NULL;
+        const char *code = amx__jstr(j, "errcode"), *msg = amx__jstr(j, "error");
+        if (r.status == 413) amx__fail(c, "the file is too large for the server");
+        else amx__fail(c, "upload: HTTP %ld %s %s", r.status, code ? code : "", msg ? msg : "");
+        cJSON_Delete(j);
+    }
+    http_response_free(&r);
+    return mxc;
+}
+
+#define MAX_SEND (100L * 1024 * 1024)
+
+/* the content of an m.image/m.file/... message for the file at path, the file
+ * uploaded (AES-256-CTR encrypted first when enc); NULL on error */
+cJSON *amx__file_content(AmxClient *c, const char *path, const char *name, int enc)
+{
+    FILE *f = fopen(path, "rb");
+    unsigned char *d = NULL;
+    long n;
+    const char *mime, *msgtype;
+    char *mxc;
+    cJSON *ct, *info;
+    int iw = 0, ih = 0, ich = 0;
+
+    if (!f) { amx__fail(c, "cannot open %s", path); return NULL; }
+    if (fseek(f, 0, SEEK_END) || (n = ftell(f)) < 0 || fseek(f, 0, SEEK_SET)) {
+        fclose(f);
+        amx__fail(c, "cannot read %s", path);
+        return NULL;
+    }
+    if (n > MAX_SEND) { fclose(f); amx__fail(c, "%s is too large (over 100 MB)", path); return NULL; }
+    d = amx__malloc(n ? n : 1);
+    if (n && fread(d, 1, n, f) != (size_t)n) { fclose(f); free(d); amx__fail(c, "cannot read %s", path); return NULL; }
+    fclose(f);
+    if (!name || !*name) {
+        const char *s1 = strrchr(path, '/'), *s2 = strrchr(path, ':');
+        name = s1 > s2 ? s1 + 1 : s2 ? s2 + 1 : path;
+    }
+    mime = guess_mime(name, d, n);
+    msgtype = !strncmp(mime, "image/", 6) ? "m.image" : !strncmp(mime, "video/", 6) ? "m.video"
+            : !strncmp(mime, "audio/", 6) ? "m.audio" : "m.file";
+    if (!strcmp(msgtype, "m.image") && !stbi_info_from_memory(d, (int)n, &iw, &ih, &ich))
+        iw = ih = 0;
+    /* pictures other clients cannot show (IFF, BMP, ...) are sent as files */
+    if (!strcmp(msgtype, "m.image") && strcmp(mime, "image/png") && strcmp(mime, "image/jpeg")
+        && strcmp(mime, "image/gif") && strcmp(mime, "image/webp"))
+        msgtype = "m.file";
+
+    ct = cJSON_CreateObject();
+    cJSON_AddStringToObject(ct, "msgtype", msgtype);
+    cJSON_AddStringToObject(ct, "body", name);
+    cJSON_AddStringToObject(ct, "filename", name);
+    info = cJSON_AddObjectToObject(ct, "info");
+    cJSON_AddStringToObject(info, "mimetype", mime);
+    cJSON_AddNumberToObject(info, "size", (double)n);
+    if (iw > 0 && ih > 0) {
+        cJSON_AddNumberToObject(info, "w", iw);
+        cJSON_AddNumberToObject(info, "h", ih);
+    }
+    if (enc) {
+        unsigned char *key = amx__random(32), *rnd = amx__random(8), iv[16], hash[32];
+        unsigned char *ct_data = amx__malloc(n + 16);
+        EVP_CIPHER_CTX *x = EVP_CIPHER_CTX_new();
+        int l1 = 0, l2 = 0, ok;
+        cJSON *file, *jk, *ops;
+        char *s;
+        memset(iv, 0, sizeof iv);
+        memcpy(iv, rnd, 8);                   /* the low 64 bits are the counter */
+        free(rnd);
+        ok = x && EVP_EncryptInit_ex(x, EVP_aes_256_ctr(), NULL, key, iv) == 1
+             && EVP_EncryptUpdate(x, ct_data, &l1, d, (int)n) == 1
+             && EVP_EncryptFinal_ex(x, ct_data + l1, &l2) == 1;
+        if (x) EVP_CIPHER_CTX_free(x);
+        free(d);
+        if (!ok) {
+            OPENSSL_cleanse(key, 32);
+            free(key); free(ct_data); cJSON_Delete(ct);
+            amx__fail(c, "encryption of the attachment failed");
+            return NULL;
+        }
+        SHA256(ct_data, (size_t)n, hash);
+        mxc = upload(c, ct_data, (size_t)n, name, "application/octet-stream");
+        free(ct_data);
+        if (!mxc) { OPENSSL_cleanse(key, 32); free(key); cJSON_Delete(ct); return NULL; }
+        file = cJSON_AddObjectToObject(ct, "file");
+        cJSON_AddStringToObject(file, "v", "v2");
+        cJSON_AddStringToObject(file, "url", mxc);
+        jk = cJSON_AddObjectToObject(file, "key");
+        cJSON_AddStringToObject(jk, "kty", "oct");
+        ops = cJSON_AddArrayToObject(jk, "key_ops");
+        cJSON_AddItemToArray(ops, cJSON_CreateString("encrypt"));
+        cJSON_AddItemToArray(ops, cJSON_CreateString("decrypt"));
+        cJSON_AddStringToObject(jk, "alg", "A256CTR");
+        s = b64enc(key, 32, 1);
+        cJSON_AddStringToObject(jk, "k", s);
+        OPENSSL_cleanse(s, strlen(s));
+        free(s);
+        cJSON_AddTrueToObject(jk, "ext");
+        OPENSSL_cleanse(key, 32);
+        free(key);
+        s = b64enc(iv, 16, 0); cJSON_AddStringToObject(file, "iv", s); free(s);
+        s = b64enc(hash, 32, 0);
+        cJSON_AddStringToObject(cJSON_AddObjectToObject(file, "hashes"), "sha256", s);
+        free(s);
+    } else {
+        mxc = upload(c, d, (size_t)n, name, mime);
+        free(d);
+        if (!mxc) { cJSON_Delete(ct); return NULL; }
+        cJSON_AddStringToObject(ct, "url", mxc);
+    }
+    LOG(c, "uploaded %s (%ld bytes, %s) as %s", name, n, mime, mxc);
+    free(mxc);
+    return ct;
+}
+
+/* ------------------------------------------------------------ link previews */
+
+int amx_url_preview(AmxClient *c, const char *url, char **title, char **description, char **image)
+{
+    static const char *const paths[] = { "/_matrix/client/v1/media/preview_url?url=", "/_matrix/media/v3/preview_url?url=" };
+    char *esc = http_escape(url), *full = amx__malloc(strlen(c->hs) + strlen(esc) + 80);
+    HttpResponse r;
+    cJSON *j = NULL;
+    int i, got = -1;
+    *title = *description = *image = NULL;
+    if (!c->token) { free(esc); free(full); return amx__fail(c, "not logged in"); }
+    for (i = 0; i < 2; i++) {
+        sprintf(full, "%s%s%s", c->hs, paths[i], esc);
+        LOG2(c, "> GET %s... (link preview)", paths[i]);
+        if (http_request("GET", full, c->token, NULL, 60, &r) != 0) {
+            amx__fail(c, "network error: %s (link preview)", http_last_error());
+            break;
+        }
+        if (r.status == 200) { j = r.body ? cJSON_Parse(r.body) : NULL; got = j ? 0 : -1; http_response_free(&r); break; }
+        if (i == 0 && (r.status == 404 || r.status == 400 || r.status == 405)) { http_response_free(&r); continue; }
+        amx__fail(c, "link preview: HTTP %ld", r.status);
+        http_response_free(&r);
+        break;
+    }
+    free(esc);
+    free(full);
+    if (got) { cJSON_Delete(j); return -1; }
+    {
+        const char *t = amx__jstr(j, "og:title"), *d = amx__jstr(j, "og:description");
+        const char *im = amx__jstr(j, "og:image"), *site = amx__jstr(j, "og:site_name");
+        if (!t) t = site;
+        if (t && *t) *title = amx__strdup(t);
+        if (d && *d) *description = amx__strdup(d);
+        if (im && !strncmp(im, "mxc://", 6)) *image = amx__strdup(im);
+    }
+    cJSON_Delete(j);
+    if (!*title && !*description) return amx__fail(c, "no preview for this page");
+    return 0;
+}

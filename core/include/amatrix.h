@@ -31,8 +31,12 @@ typedef enum {
                                message reacted to, body = the key (an emoji, UTF-8) */
     AMX_EV_REDACTION,       /* m.room.redaction: room_id, event_id, sender, relates_to = the event
                                removed (a message or a reaction) */
-    AMX_EV_EDIT             /* an edit (m.replace): room_id, event_id (of the edit), sender,
+    AMX_EV_EDIT,            /* an edit (m.replace): room_id, event_id (of the edit), sender,
                                relates_to = the message edited, msgtype/body = its new text */
+    AMX_EV_TYPING,          /* who is typing in room_id now (not us): state_key = their user
+                               IDs, body = their names, one per line; "" when nobody */
+    AMX_EV_RECEIPT          /* a read receipt (not ours): room_id, sender = the reader, event_id
+                               = the newest event read, timestamp */
 } AmxEventType;
 
 typedef struct {
@@ -60,6 +64,7 @@ typedef struct {
                                 (formatted_body, org.matrix.custom.html), or NULL */
     int mention;             /* AMX_EV_MESSAGE: it mentions us (m.mentions, or our user
                                 ID in the text for senders without m.mentions) */
+    int cached;              /* AMX_EV_MESSAGE from the local history cache (amx_cached_history) */
     const char *media;       /* AMX_EV_MESSAGE with attachments (msgtype m.image /
                                 m.file / m.video / m.audio / m.sticker, or a gallery):
                                 an opaque description for amx_media_*() (body is the
@@ -220,12 +225,87 @@ int amx_send_reply(AmxClient *c, const char *room_id, const char *reply_to, cons
 int amx_send_edit(AmxClient *c, const char *room_id, const char *event_id, const char *body,
                   char **event_id_out);
 
+/* Sends the file at path (a picture as m.image with its size, else m.file/
+ * m.video/m.audio); name shown to others (NULL: the file name); encrypted
+ * in encrypted rooms; with thread_root inside that thread. */
+int amx_send_file(AmxClient *c, const char *room_id, const char *path, const char *name,
+                  const char *thread_root, char **event_id_out);
+
+/* ------------------------------------------------- members and settings */
+
+typedef struct {
+    char *user_id, *name, *avatar_url;    /* name: display name (UTF-8) or localpart */
+    char *membership;                     /* "join", "invite", "ban" */
+    int power;                            /* power level: 100 admin, 50 moderator,
+                                             AMX_POWER_CREATOR a creator (room version 12+) */
+} AmxMember;
+#define AMX_POWER_CREATOR 1000000
+/* The room's members (joined first, by power, then name); count or -1. */
+int  amx_room_members(AmxClient *c, const char *room_id, AmxMember **list);
+void amx_free_members(AmxMember *list, int n);
+
+typedef struct {
+    char *name, *topic, *avatar_url;      /* NULL if not set (UTF-8) */
+    char *join_rule;                      /* "public", "invite", "knock", ... */
+    char *history;                        /* "shared", "invited", "joined", "world_readable" */
+    int encrypted;
+    int my_power;                         /* our power level in the room */
+    int level_name, level_topic, level_avatar, level_join_rules, level_history, level_encryption,
+        level_power, level_invite, level_kick, level_ban, level_redact;    /* needed for each */
+} AmxRoomSettings;
+int  amx_room_settings(AmxClient *c, const char *room_id, AmxRoomSettings *s);
+void amx_free_room_settings(AmxRoomSettings *s);
+/* what: "name", "topic", "join_rule" (public/invite/knock), "history"
+ * (shared/invited/joined/world_readable), "encryption" (value ignored, cannot
+ * be undone), "avatar" (value: a picture file, uploaded). */
+int  amx_set_room_setting(AmxClient *c, const char *room_id, const char *what, const char *value);
+int  amx_kick(AmxClient *c, const char *room_id, const char *user, const char *reason);
+int  amx_ban(AmxClient *c, const char *room_id, const char *user, const char *reason);
+int  amx_unban(AmxClient *c, const char *room_id, const char *user);
+int  amx_set_power(AmxClient *c, const char *room_id, const char *user, int level);
+
+/* A profile (user NULL: our own): display name and picture (mxc://), each
+ * NULL if not set; free() them. */
+int  amx_get_profile(AmxClient *c, const char *user, char **name, char **avatar_url);
+int  amx_set_displayname(AmxClient *c, const char *name);
+/* the picture file (PNG, JPEG, GIF) uploaded as our profile picture */
+int  amx_set_avatar(AmxClient *c, const char *path);
+
+/* The local history cache: the newest messages of a room as stored the last
+ * time (decrypted; edits and deletions applied), delivered as events with
+ * history = 1 and cached = 1, newest first; returns how many.  On by default;
+ * off deletes it. */
+int  amx_cached_history(AmxClient *c, const char *room_id);
+void amx_set_history_cache(AmxClient *c, int on);
+
+/* Our sessions (devices): the one in use first, then by last activity. */
+typedef struct {
+    char *device_id, *name, *last_seen_ip;  /* name / ip may be NULL */
+    double last_seen_ts;                    /* ms, 0 if unknown */
+    int current;                            /* this is us */
+    int verified;                           /* 1 cross-signed, 0 not, -1 no encryption keys */
+} AmxDevice;
+int  amx_devices(AmxClient *c, AmxDevice **list);
+void amx_free_devices(AmxDevice *list, int n);
+int  amx_rename_device(AmxClient *c, const char *device_id, const char *name);
+/* signs another session out; the server asks for our password */
+int  amx_delete_device(AmxClient *c, const char *device_id, const char *password);
+
+/* The server's preview of a web page (Open Graph): title, description and
+ * picture (mxc://), each NULL if missing; free() them.  -1 if the server has
+ * none (previews off, page unreachable). */
+int  amx_url_preview(AmxClient *c, const char *url, char **title, char **description, char **image);
+
 /* Removes an event (a message or a reaction of ours); reason may be NULL. */
 int amx_redact(AmxClient *c, const char *room_id, const char *event_id, const char *reason);
 
 /* Marks the room as read up to event_id (read receipt + fully-read marker);
  * the server's unread count for the room drops to 0. */
 int amx_mark_read(AmxClient *c, const char *room_id, const char *event_id);
+/* Read receipts others do not see (m.read.private) from now on, or public again. */
+void amx_set_private_receipts(AmxClient *c, int on);
+/* "typing" for ms milliseconds in room_id (0: stopped typing). */
+int amx_send_typing(AmxClient *c, const char *room_id, long ms);
 
 /* Sends m.text; encrypted if the room is.  event_id_out may be NULL. */
 int amx_send_text(AmxClient *c, const char *room_id, const char *body, char **event_id_out);
