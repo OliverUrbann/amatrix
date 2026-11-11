@@ -31,6 +31,12 @@ int amx_create_room(AmxClient *c, const AmxRoomOptions *o, char **room_id_out)
     cJSON *req = cJSON_CreateObject(), *r;
     *room_id_out = NULL;
     cJSON_AddStringToObject(req, "preset", o->is_public ? "public_chat" : "private_chat");
+    if (o->is_space) {
+        cJSON *pl = cJSON_AddObjectToObject(req, "power_level_content_override");
+        cJSON_AddStringToObject(cJSON_AddObjectToObject(req, "creation_content"), "type", "m.space");
+        cJSON_AddNumberToObject(pl, "events_default", 100);   /* a space has no chat */
+        cJSON_AddNumberToObject(pl, "invite", 0);
+    }
     if (o->is_public) cJSON_AddStringToObject(req, "visibility", "public");
     if (o->name) cJSON_AddStringToObject(req, "name", o->name);
     if (o->topic) cJSON_AddStringToObject(req, "topic", o->topic);

@@ -620,3 +620,160 @@ int amx_knock(AmxClient *c, const char *room, const char *reason)
     LOG(c, "knocked on %s", room);
     return 0;
 }
+
+/* ------------------------------------------------- before joining; spaces */
+
+static void summary_from(AmxRoomSummary *s, const cJSON *j)
+{
+    const char *v;
+    const cJSON *x;
+    memset(s, 0, sizeof *s);
+    if ((v = amx__jstr(j, "room_id"))) s->room_id = amx__strdup(v);
+    if ((v = amx__jstr(j, "name")) && *v) s->name = amx__strdup(v);
+    if ((v = amx__jstr(j, "topic")) && *v) s->topic = amx__strdup(v);
+    if ((v = amx__jstr(j, "canonical_alias")) && *v) s->alias = amx__strdup(v);
+    if ((v = amx__jstr(j, "avatar_url")) && *v) s->avatar_url = amx__strdup(v);
+    s->join_rule = amx__strdup((v = amx__jstr(j, "join_rule")) ? v : "public");
+    x = cJSON_GetObjectItemCaseSensitive(j, "num_joined_members");
+    s->members = cJSON_IsNumber(x) ? x->valueint : 0;
+    s->is_space = (v = amx__jstr(j, "room_type")) && !strcmp(v, "m.space");
+    s->world_readable = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(j, "world_readable"));
+    v = amx__jstr(j, "membership");
+    s->joined = v && !strcmp(v, "join");
+}
+
+int amx_room_summary(AmxClient *c, const char *room, AmxRoomSummary *s)
+{
+    static const char *const paths[] = { "/_matrix/client/v1/room_summary/", "/_matrix/client/unstable/im.nheko.summary/rooms/",
+                                         "/_matrix/client/unstable/im.nheko.summary/summary/" };
+    char *esc = http_escape(room), *full = amx__malloc(strlen(c->hs) + strlen(esc) + 80);
+    HttpResponse r;
+    int i, ok = -1;
+    memset(s, 0, sizeof *s);
+    for (i = 0; i < 3 && ok < 0; i++) {
+        sprintf(full, "%s%s%s", c->hs, paths[i], esc);
+        if (i == 1) strcat(full, "/summary");
+        LOG2(c, "> GET %s (room summary)", full + strlen(c->hs));
+        if (http_request("GET", full, c->token, NULL, 60, &r) != 0) {
+            amx__fail(c, "network error: %s (room summary)", http_last_error());
+            break;
+        }
+        if (r.status == 200) {
+            cJSON *j = r.body ? cJSON_Parse(r.body) : NULL;
+            if (j) { summary_from(s, j); ok = 0; }
+            cJSON_Delete(j);
+        } else if (r.status == 403 || (r.status == 404 && r.body && strstr(r.body, "M_NOT_FOUND") && !strstr(r.body, "Unrecognized"))) {
+            amx__fail(c, "the room is private or unknown");
+            http_response_free(&r);
+            break;
+        }
+        LOG2(c, "< %ld", r.status);
+        http_response_free(&r);
+    }
+    free(esc);
+    free(full);
+    if (ok < 0 && !c->err[0]) amx__fail(c, "the server has no room preview");
+    return ok;
+}
+
+void amx_free_room_summary(AmxRoomSummary *s)
+{
+    free(s->room_id); free(s->name); free(s->topic); free(s->alias); free(s->join_rule); free(s->avatar_url);
+    memset(s, 0, sizeof *s);
+}
+
+int amx_space_rooms(AmxClient *c, const char *space_id, int depth, AmxRoomSummary **out)
+{
+    char *esc = http_escape(space_id), *p = amx__malloc(strlen(esc) + 80);
+    cJSON *r;
+    const cJSON *x;
+    AmxRoomSummary *l;
+    int n = 0;
+    *out = NULL;
+    sprintf(p, "/_matrix/client/v1/rooms/%s/hierarchy?limit=100&max_depth=%d", esc, depth < 1 ? 1 : depth);
+    free(esc);
+    {   /* a v1 path: not under /_matrix/client/v3 */
+        char *full = amx__malloc(strlen(c->hs) + strlen(p) + 4);
+        HttpResponse h;
+        sprintf(full, "%s%s", c->hs, p);
+        free(p);
+        if (http_request("GET", full, c->token, NULL, 60, &h) != 0) {
+            free(full);
+            return amx__fail(c, "network error: %s (space)", http_last_error());
+        }
+        free(full);
+        if (h.status != 200) {
+            long st = h.status;
+            http_response_free(&h);
+            return amx__fail(c, "space: HTTP %ld", st);
+        }
+        r = h.body ? cJSON_Parse(h.body) : NULL;
+        http_response_free(&h);
+    }
+    if (!r) return amx__fail(c, "space: bad answer");
+    l = amx__malloc(sizeof *l * (cJSON_GetArraySize(cJSON_GetObjectItemCaseSensitive(r, "rooms")) + 1));
+    cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(r, "rooms")) {
+        const cJSON *m;
+        summary_from(&l[n], x);
+        m = cJSON_GetObjectItemCaseSensitive(c->rooms, l[n].room_id ? l[n].room_id : "");
+        l[n].joined = m && amx__jstr(m, "m") && !strcmp(amx__jstr(m, "m"), "join");
+        n++;
+    }
+    cJSON_Delete(r);
+    *out = l;
+    return n;
+}
+
+void amx_free_space_rooms(AmxRoomSummary *l, int n)
+{
+    int i;
+    if (!l) return;
+    for (i = 0; i < n; i++) amx_free_room_summary(&l[i]);
+    free(l);
+}
+
+static int put_state_key(AmxClient *c, const char *room_id, const char *type, const char *key, cJSON *content)
+{
+    char *er = http_escape(room_id), *et = http_escape(type), *ek = http_escape(key), *p;
+    cJSON *r;
+    p = amx__malloc(strlen(er) + strlen(et) + strlen(ek) + 32);
+    sprintf(p, "/rooms/%s/state/%s/%s", er, et, ek);
+    free(er); free(et); free(ek);
+    r = amx__api_ok(c, "PUT", p, content);
+    cJSON_Delete(content);
+    free(p);
+    if (!r) return -1;
+    cJSON_Delete(r);
+    return 0;
+}
+
+int amx_space_add(AmxClient *c, const char *space_id, const char *room_id, int on)
+{
+    const char *srv = c->user_id ? strchr(c->user_id, ':') : NULL;
+    cJSON *ct = cJSON_CreateObject();
+    char err[512];
+    if (on) cJSON_AddItemToArray(cJSON_AddArrayToObject(ct, "via"), cJSON_CreateString(srv ? srv + 1 : "localhost"));
+    if (put_state_key(c, space_id, "m.space.child", room_id, ct)) return -1;
+    snprintf(err, sizeof err, "%s", c->err);
+    ct = cJSON_CreateObject();                 /* the room's side; optional (needs power there) */
+    if (on) cJSON_AddItemToArray(cJSON_AddArrayToObject(ct, "via"), cJSON_CreateString(srv ? srv + 1 : "localhost"));
+    if (put_state_key(c, room_id, "m.space.parent", space_id, ct)) snprintf(c->err, sizeof c->err, "%s", err);
+    LOG(c, "space %s: %s %s", space_id, on ? "added" : "removed", room_id);
+    return 0;
+}
+
+int amx_report_event(AmxClient *c, const char *room_id, const char *event_id, const char *reason)
+{
+    char *er = http_escape(room_id), *ee = http_escape(event_id), *p = amx__malloc(strlen(er) + strlen(ee) + 32);
+    cJSON *b = cJSON_CreateObject(), *r;
+    sprintf(p, "/rooms/%s/report/%s", er, ee);
+    free(er); free(ee);
+    cJSON_AddStringToObject(b, "reason", reason ? reason : "");
+    r = amx__api_ok(c, "POST", p, b);
+    cJSON_Delete(b);
+    free(p);
+    if (!r) return -1;
+    cJSON_Delete(r);
+    LOG(c, "reported %s", event_id);
+    return 0;
+}

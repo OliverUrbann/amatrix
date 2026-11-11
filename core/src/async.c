@@ -196,6 +196,10 @@ void amx_async_msg_free(AmxMsg *m)
     if (m->members) amx_free_members(m->members, m->n);
     if (m->devices) amx_free_devices(m->devices, m->n);
     if (m->hits) amx_free_search(m->hits, m->n);
+    if (m->summary) {
+        if (m->cmd == AMX_CMD_SPACE_ROOMS) amx_free_space_rooms(m->summary, m->n);
+        else { amx_free_room_summary(m->summary); free(m->summary); }
+    }
     if (m->settings) { amx_free_room_settings(m->settings); free(m->settings); }
     free(m->pixels);
     free(o);
@@ -623,6 +627,46 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
     case AMX_CMD_ROOM_NICK:
         r = amx_set_room_nick(a->c, c->s1, c->s2);
         post_result(a, c, r, c->s1);
+        return;
+    case AMX_CMD_ROOM_SUMMARY: {
+        AmxRoomSummary *sm = calloc(1, sizeof *sm);
+        Out *o = new_out(AMX_MSG_RESULT);
+        r = sm ? amx_room_summary(a->c, c->s1, sm) : -1;
+        if (o) {
+            o->m.cmd = AMX_CMD_ROOM_SUMMARY;
+            o->m.tag = c->tag;
+            o->m.status = r;
+            o->m.result = own(o, c->s1);
+            if (r) { o->m.error = own(o, amx_error(a->c)); free(sm); }
+            else o->m.summary = sm;
+            put_out(a, o);
+        } else if (sm) { amx_free_room_summary(sm); free(sm); }
+        return;
+    }
+    case AMX_CMD_SPACE_ROOMS: {
+        AmxRoomSummary *l = NULL;
+        int n = amx_space_rooms(a->c, c->s1, 2, &l);
+        Out *o = new_out(AMX_MSG_RESULT);
+        if (o) {
+            o->m.cmd = AMX_CMD_SPACE_ROOMS;
+            o->m.tag = c->tag;
+            o->m.status = n < 0 ? -1 : 0;
+            o->m.result = own(o, c->s1);
+            o->m.summary = n > 0 ? l : NULL;
+            o->m.n = n > 0 ? n : 0;
+            if (n < 0) o->m.error = own(o, amx_error(a->c));
+            if (n == 0) amx_free_space_rooms(l, 0);
+            put_out(a, o);
+        } else amx_free_space_rooms(l, n > 0 ? n : 0);
+        return;
+    }
+    case AMX_CMD_SPACE_ADD:
+        r = amx_space_add(a->c, c->s1, c->s2, c->i1);
+        post_result(a, c, r, c->s1);
+        return;
+    case AMX_CMD_REPORT:
+        r = amx_report_event(a->c, c->s1, c->s2, c->s3);
+        post_result(a, c, r, c->s2);
         return;
     case AMX_CMD_HISTORY_CACHE:
         amx_set_history_cache(a->c, c->i1);
@@ -1230,3 +1274,22 @@ int amx_async_knock(AmxAsync *a, const char *room, const char *reason, unsigned 
 
 int amx_async_upgrade(AmxAsync *a, const char *room_id, const char *version, unsigned long tag)
 { return cmd(a, AMX_CMD_UPGRADE, tag, room_id, version, 0, 0); }
+
+int amx_async_room_summary(AmxAsync *a, const char *room, unsigned long tag)
+{ return cmd(a, AMX_CMD_ROOM_SUMMARY, tag, room, NULL, 0, 0); }
+int amx_async_space_rooms(AmxAsync *a, const char *space_id, unsigned long tag)
+{ return cmd(a, AMX_CMD_SPACE_ROOMS, tag, space_id, NULL, 0, 0); }
+int amx_async_space_add(AmxAsync *a, const char *space_id, const char *room_id, int on, unsigned long tag)
+{ return cmd(a, AMX_CMD_SPACE_ADD, tag, space_id, room_id, on, 0); }
+int amx_async_report(AmxAsync *a, const char *room_id, const char *event_id, const char *reason, unsigned long tag)
+{
+    Cmd *c = calloc(1, sizeof *c);
+    if (!c) return -1;
+    c->cmd = AMX_CMD_REPORT;
+    c->tag = tag;
+    c->s1 = dup0(room_id);
+    c->s2 = dup0(event_id);
+    c->s3 = dup0(reason);
+    put_cmd(a, c);
+    return 0;
+}

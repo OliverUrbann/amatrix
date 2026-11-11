@@ -136,6 +136,7 @@ typedef struct {
     int is_public;              /* public room (preset public_chat), else private */
     int encrypted;              /* enable m.megolm.v1.aes-sha2 */
     int is_direct;              /* direct chat (marks the room as DM for invitees) */
+    int is_space;               /* a space (a group of rooms) instead of a chat */
 } AmxRoomOptions;
 
 int amx_create_room(AmxClient *c, const AmxRoomOptions *o, char **room_id_out);  /* caller frees */
@@ -311,6 +312,26 @@ int  amx_unban(AmxClient *c, const char *room_id, const char *user);
 /* Asks to join a room whose join rule is "knock" (ID or #alias); someone
  * there lets us in by inviting us (a knock is refused with a kick). */
 int  amx_knock(AmxClient *c, const char *room, const char *reason);
+
+/* What a room is, before joining it (room ID or #alias): name, topic,
+ * members, join rule, whether it is a space and whether its history can be
+ * read without joining (then amx_load_history works on it).  -1 if the
+ * server knows nothing about it. */
+typedef struct {
+    char *room_id, *name, *topic, *alias, *join_rule, *avatar_url;   /* UTF-8, may be NULL */
+    int members, is_space, world_readable, joined;
+} AmxRoomSummary;
+int  amx_room_summary(AmxClient *c, const char *room, AmxRoomSummary *s);
+void amx_free_room_summary(AmxRoomSummary *s);
+/* The rooms of a space (and of its sub-spaces, depth levels deep; the space
+ * itself first).  Count or -1. */
+int  amx_space_rooms(AmxClient *c, const char *space_id, int depth, AmxRoomSummary **list);
+void amx_free_space_rooms(AmxRoomSummary *list, int n);
+/* Puts a room into a space (or takes it out): m.space.child in the space,
+ * m.space.parent in the room when we may set it. */
+int  amx_space_add(AmxClient *c, const char *space_id, const char *room_id, int on);
+/* Reports a message to the server's admins (reason may be NULL). */
+int  amx_report_event(AmxClient *c, const char *room_id, const char *event_id, const char *reason);
 int  amx_set_power(AmxClient *c, const char *room_id, const char *user, int level);
 
 /* A profile (user NULL: our own): display name and picture (mxc://), each

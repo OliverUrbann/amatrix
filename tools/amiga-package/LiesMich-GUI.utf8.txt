@@ -135,6 +135,48 @@ Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
 schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem
 Passwort schützen (siehe oben) und nicht weitergeben.
 
+Weitere Funktionen (wie in Element)
+-----------------------------------
+- Befehle im Eingabefeld: /help zeigt alle (/me, /shrug, /spoiler, /plain,
+  /html, /nick, /myroomnick, /topic, /roomname, /invite, /join, /knock,
+  /part, /ignore, /unignore, /whois, /upgraderoom, /jumptodate ...).
+- Formatieren beim Schreiben wie Markdown: *kursiv*, **fett**, `Code`,
+  Listen, > Zitat.  :smile: und andere Kürzel werden zu Emojis.  Ein
+  angefangener @Name oder :kürzel wird mit der Tab-Taste vervollständigt
+  (aus @Name wird eine echte Erwähnung).
+- Pfeil nach oben in leerem Eingabefeld: die eigene letzte Nachricht
+  bearbeiten.  Was beim Schließen eines Chatfensters noch im Feld steht,
+  bleibt als Entwurf (Raumliste: "Entwurf: ...").
+- Umfragen: werden mit ihren Antworten angezeigt, ein Klick stimmt ab;
+  Menü "Umfrage erstellen ..." (Amiga-U), eigene Umfragen beenden.
+- Standorte: als Text mit Link zu OpenStreetMap.
+- Sprachnachrichten: "[Sprachnachricht 0:12]"; ein Klick speichert sie und
+  spielt sie ab.  Ist opusdec (Aminet mus/edit/opus-tools) in C: oder in
+  der Amatrix-Schublade, wird daraus zuerst eine WAV-Datei.
+- Menü: "Zitieren" (Amiga-Z), "Weiterleiten ..." (Amiga-W), "Link zur
+  Nachricht kopieren", "Anpinnen an/aus" (angepinnte Nachrichten stehen
+  in einer Leiste über dem Verlauf), "Bearbeitungsverlauf ...", "Nachricht
+  melden ..." (an die Admins des Servers), "Chat exportieren ..." (Text
+  oder HTML), "Space durchstöbern ..." (die Räume eines Space: beitreten,
+  Vorschau, markierten Raum hinzufügen/herausnehmen), "Konto ..."
+  (Passwort ändern, Konto deaktivieren).
+- Ungelesenes: beim Öffnen eines Chats steht über der ersten ungelesenen
+  Nachricht eine Markierung.  /jumptodate TT.MM.JJJJ springt zu einem Tag.
+- Benachrichtigungen pro Raum auf dem Server (Raum-Fenster: Standard, alle,
+  nur Erwähnungen, aus) und Stichwörter in den Einstellungen - gilt auch
+  für deine anderen Geräte.
+- Nutzer ignorieren (/ignore, Liste in den Einstellungen); eine Einladung
+  ablehnen und den Absender gleich blockieren.
+- Anklopfen: in Räumen "auf Anfrage" um Einlass bitten (/knock); wer
+  anklopft, steht im Raum-Fenster und kann eingelassen werden.
+- Ein ersetzter Raum (Raum-Upgrade) zeigt eine Leiste zum neuen Raum.
+- Raum betreten: unter der Liste steht, was der markierte Raum ist; mit
+  "Vorschau" liest man den Verlauf, ohne beizutreten (wenn der Raum das
+  erlaubt).  "Neuer Raum ..." kann auch einen Space anlegen.
+- Unter einer Nachricht steht "gelesen von ...", wer bis dahin gelesen hat.
+- Einstellungen: Beitritte/Austritte/Namensänderungen zeigen, 24-Stunden-
+  Uhr, kompakte Darstellung, "Zeigen, wer was gelesen hat".
+
 Nicht geplant: andere Geräte per Emoji-Vergleich verifizieren (der
 Sicherheitsschlüssel genügt), Sprach- und Videoanrufe.
 

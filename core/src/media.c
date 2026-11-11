@@ -159,6 +159,9 @@ static cJSON *media_item(const cJSON *content, const char *msgtype)
         return NULL;
     }
     cJSON_AddStringToObject(m, "type", msgtype);
+    if (cJSON_GetObjectItemCaseSensitive(content, "org.matrix.msc3245.voice")
+        || cJSON_GetObjectItemCaseSensitive(content, "m.voice"))
+        cJSON_AddTrueToObject(m, "voice");                       /* a voice message */
     if (amx__jstr(content, "body")) cJSON_AddStringToObject(m, "name", amx__jstr(content, "body"));
     if (amx__jstr(content, "filename")) cJSON_ReplaceItemInObject(m, "name", cJSON_CreateString(amx__jstr(content, "filename")));
     if (info) {
@@ -169,6 +172,8 @@ static cJSON *media_item(const cJSON *content, const char *msgtype)
             cJSON_AddNumberToObject(m, "w", x->valuedouble);
         if ((x = cJSON_GetObjectItemCaseSensitive(info, "h")) && cJSON_IsNumber(x))
             cJSON_AddNumberToObject(m, "h", x->valuedouble);
+        if ((x = cJSON_GetObjectItemCaseSensitive(info, "duration")) && cJSON_IsNumber(x))
+            cJSON_AddNumberToObject(m, "duration", x->valuedouble);       /* ms */
         if (amx__jstr(info, "thumbnail_url")) cJSON_AddStringToObject(m, "tmxc", amx__jstr(info, "thumbnail_url"));
         if ((f = cJSON_GetObjectItemCaseSensitive(info, "thumbnail_file")) && cJSON_IsObject(f))
             cJSON_AddItemToObject(m, "tfile", cJSON_Duplicate(f, 1));
@@ -218,6 +223,7 @@ const char *amx_media_info(const char *media, int index, const char *field, char
     const char *r = NULL;
     if (x && cJSON_IsString(x)) { snprintf(buf, size, "%s", x->valuestring); r = buf; }
     else if (x && cJSON_IsNumber(x)) { snprintf(buf, size, "%.0f", x->valuedouble); r = buf; }
+    else if (x && cJSON_IsBool(x)) { snprintf(buf, size, "%d", cJSON_IsTrue(x) ? 1 : 0); r = buf; }
     cJSON_Delete(m);
     return r;
 }

@@ -27,6 +27,10 @@ private Synapse started by the tests.
 | sessions | ✔ | ✔ | ✔ |
 | history_cache | ✔ | ✔ | ✔ |
 | organize | ✔ | ✔ | ✔ |
+| polls | ✔ | ✔ | |
+| message_tools | ✔ | ✔ | |
+| notify_rules | ✔ | ✔ | |
+| spaces_report | ✔ | ✔ | |
 | tls_verify | ✔ | ✔ | ✔ |
 | room_list | ✔ | ✔ | ✔ |
 | directory | ✔ | ✔ | ✔ |

@@ -48,7 +48,8 @@ typedef enum {
     AMX_CMD_SEND_MSG, AMX_CMD_ROOM_NICK, AMX_CMD_PROFILE_OF,
     AMX_CMD_IGNORED, AMX_CMD_IGNORE, AMX_CMD_PIN, AMX_CMD_FETCH_EVENT, AMX_CMD_FORWARD, AMX_CMD_EDITS, AMX_CMD_ROOM_NOTIFY,
     AMX_CMD_KEYWORDS, AMX_CMD_KEYWORD, AMX_CMD_PASSWORD,
-    AMX_CMD_DEACTIVATE, AMX_CMD_KNOCK, AMX_CMD_UPGRADE
+    AMX_CMD_DEACTIVATE, AMX_CMD_KNOCK, AMX_CMD_UPGRADE, AMX_CMD_ROOM_SUMMARY, AMX_CMD_SPACE_ROOMS,
+    AMX_CMD_SPACE_ADD, AMX_CMD_REPORT
 } AmxCmd;
 
 typedef enum {
@@ -84,6 +85,7 @@ typedef struct {
     AmxRoomSettings *settings;    /* ROOM_SETTINGS (freed with the message); result = room */
     const char *result2;          /* PROFILE: result = display name, result2 = picture (mxc://) */
     AmxDevice *devices;           /* DEVICES: n entries (freed with the message) */
+    AmxRoomSummary *summary;      /* ROOM_SUMMARY: one; SPACE_ROOMS: n (freed with the message) */
     AmxSearchHit *hits;           /* SEARCH: n entries (freed with the message); result = the term */
     const char *title, *description, *image;   /* URL_PREVIEW (result = the caller's key, result2 = URL) */
 } AmxMsg;
@@ -206,6 +208,12 @@ int amx_async_media_thumbnail(AmxAsync *a, const char *media, int index, const c
                               int max_h, unsigned long tag);
 /* amx_media_save(); result = path */
 int amx_async_media_save(AmxAsync *a, const char *media, int index, const char *path, unsigned long tag);
+/* a room before joining (summary, result = the room asked for); the rooms of
+ * a space (summary/n); a room into/out of a space; report a message */
+int amx_async_room_summary(AmxAsync *a, const char *room, unsigned long tag);
+int amx_async_space_rooms(AmxAsync *a, const char *space_id, unsigned long tag);
+int amx_async_space_add(AmxAsync *a, const char *space_id, const char *room_id, int on, unsigned long tag);
+int amx_async_report(AmxAsync *a, const char *room_id, const char *event_id, const char *reason, unsigned long tag);
 
 #ifdef __cplusplus
 }

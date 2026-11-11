@@ -298,7 +298,8 @@ async def scenario(ctx, amiga, srv, me):
                         {"m.relates_to": ref, "org.matrix.msc3381.poll.end": {}, "org.matrix.msc1767.text": "Ende"},
                         ignore_unverified_devices=True)
     v = await amiga.until(lambda: rows(["Pizza\33n  (1)", "Pasta\33n  (1) <X>", "2 Stimmen - beendet"]), 90)
-    check(v, f"her vote counted, our choice marked, poll ended ({v!r})")
+    rc, now = await amiga.rexx("POLLROWS Alice")
+    check(v, f"her vote counted, our choice marked, poll ended ({v!r}; now {now!r})")
     await amiga.shot("03e-poll")
     await amiga.rexx('POLL Alice "Welcher Amiga?" "A500|A1200|Vampire"')
     ok = await p.wait(lambda: any(e.get("type") == "org.matrix.msc3381.poll.start" and
@@ -410,7 +411,50 @@ async def scenario(ctx, amiga, srv, me):
         rc, r = await amiga.rexx("READ Alice")
         return r.isdigit() and int(r) >= 1 and r
     check(eid and await amiga.until(read, 60), "Alice read our message: a check mark")
+
+    async def readers():
+        rc, r = await amiga.rexx("READERS Alice")
+        return "gelesen von Alice" in r and r
+    v = await amiga.until(readers, 60)
+    check(v, f"and \"gelesen von Alice\" under it ({v!r})")
     await amiga.shot("03c-read")
+
+    # reporting a message to the admins
+    await amiga.rexx("MARK Alice Hier: http")
+    await amiga.rexx("ACTION Alice report Spam")
+
+    async def reported():
+        rc, r = await amiga.rexx("CHATSTATUS Alice")
+        return "Gemeldet" in r and r
+    v = await amiga.until(reported, 60)
+    check(v, f"message reported to the server's admins ({v!r})")
+
+    # a public room before joining: what it is, its history
+    from nio import RoomCreateResponse as RCR2, RoomVisibility, RoomPreset
+    pubr = await p.c.room_create(visibility=RoomVisibility.public, alias="lesesaal", name="Lesesaal",
+                                 preset=RoomPreset.public_chat,
+                                 initial_state=[{"type": "m.room.history_visibility", "state_key": "",
+                                                 "content": {"history_visibility": "world_readable"}}])
+    if isinstance(pubr, RCR2):
+        await p.sync(1000)
+        await p.send(pubr.room_id, "Willkommen im Lesesaal")
+        await amiga.rexx("SUMMARY #lesesaal:" + p.user.user_id.split(":", 1)[1])
+
+        async def info():
+            rc, r = await amiga.rexx("PUBINFO")
+            return "ohne Beitritt lesbar" in r and r
+        v = await amiga.until(info, 60)
+        check(v, f"directory: what the room is before joining ({v!r})")
+        await amiga.rexx("PREVIEW " + pubr.room_id)
+
+        async def prev_line():
+            rc, r = await amiga.rexx("LASTLINE Vorschau")
+            return "Willkommen im Lesesaal" in r and r
+        v = await amiga.until(prev_line, 90)
+        rc, st = await amiga.rexx("CHATSTATUS Vorschau")
+        rc2, ll = await amiga.rexx("LASTLINE Vorschau")
+        check(v, f"preview window shows its history without joining ({v!r}; status rc {rc} {st!r}, last rc {rc2} {ll!r})")
+        await amiga.shot("03e-preview")
     n0 = await lines_dm()
     await p.send(dm, "Wie geht es dir?")
 
@@ -501,6 +545,23 @@ async def scenario(ctx, amiga, srv, me):
     async def saved():
         return os.path.exists(target) and open(target, "rb").read() == txt
     check(await amiga.until(saved, 120), "file downloaded and decrypted (SAVEMEDIA)")
+
+    # a voice message: label with its length
+    import io as io_
+    up, _ = await p.c.upload(io_.BytesIO(b"OggS" + bytes(200)), content_type="audio/ogg", filename="stimme.ogg",
+                             filesize=204)
+    await p.c.room_send(dm, "m.room.message", {
+        "msgtype": "m.audio", "body": "stimme.ogg", "url": up.content_uri,
+        "info": {"mimetype": "audio/ogg", "duration": 12000, "size": 204},
+        "org.matrix.msc3245.voice": {}, "org.matrix.msc1767.audio": {"duration": 12000}},
+        ignore_unverified_devices=True)
+
+    async def voice():
+        rc, r = await amiga.rexx("LASTLINE Alice")
+        return "Sprachnachricht 0:12" in r and r
+    v = await amiga.until(voice, 90)
+    check(v, f"voice message shown with its length ({v!r})")
+
 
     # sending: a picture (as if chosen in the requester / dropped as an icon)
     # and an Amiga file without extension
@@ -823,7 +884,8 @@ async def scenario(ctx, amiga, srv, me):
         rc, r = await amiga.rexx("EDITHIST")
         return r.count("|") >= 1 and "Klar doch, gerne" in r and r
     v = await amiga.until(hist, 60)
-    check(v, f"edit history: original and edit ({v!r})")
+    rc, now = await amiga.rexx("EDITHIST")
+    check(v, f"edit history: original and edit ({v!r}; now {now!r})")
 
 
     # spaces, the room filter, favourites, message search
@@ -847,6 +909,13 @@ async def scenario(ctx, amiga, srv, me):
         check(v, f"space chosen: only its room in the list ({v!r})")
         rc, _ = await amiga.rexx("CHATSTATUS Hobbys")
         check(rc != "0", "no chat window for the space itself")
+        await amiga.rexx("SPACEWIN Hobbys")
+
+        async def spacelist():
+            rc, r = await amiga.rexx("SPACELIST")
+            return "Kaffeeklatsch:joined" in r and r
+        v = await amiga.until(spacelist, 60)
+        check(v, f"space window: its rooms ({v!r})")
         await amiga.shot("06c-space")
         await amiga.rexx("SPACE")
     rc, v = await amiga.rexx("ROOMS")
@@ -910,7 +979,8 @@ async def scenario(ctx, amiga, srv, me):
         mm = re.search(r"\((\d+)", r)
         return mm and int(mm.group(1)) >= 3 and r
     v = await amiga.until(unread3, 90)
-    check(v, f"unread messages in the group ({v!r})")
+    rc, now = await amiga.rexx("ROOMLINE Kaffeeklatsch")
+    check(v, f"unread messages in the group ({v!r}; now {now!r})")
     await amiga.rexx("OPENCHAT Kaffeeklatsch")
 
     async def marker():
@@ -990,7 +1060,7 @@ async def scenario(ctx, amiga, srv, me):
     async def has45():
         rc, r = await amiga.rexx("FIRSTLINE Archiv")
         n = await archiv_lines()
-        return n >= 45 and n
+        return n >= 45 and "Nachricht 01" in r and n      # cached messages alone are already 40
     n1 = await amiga.until(lambda: archiv_lines(), 180)
     await asyncio.sleep(20)                  # let live messages and the first history page settle
     n1 = await archiv_lines()
@@ -1077,7 +1147,9 @@ async def scenario(ctx, amiga, srv, me):
         rc2, line = await amiga.rexx("ROOMLINE Kaffeeklatsch")
         return r == str(n) and (n != 3 or "stumm" in line) and (r, line)
     v = await amiga.until(lambda: level(3), 60)
-    check(v, f"group set to off on the server, shown as muted ({v!r})")
+    rc, now = await amiga.rexx("NOTIFYLEVEL Kaffeeklatsch")
+    rc, now2 = await amiga.rexx("ROOMLINE Kaffeeklatsch")
+    check(v, f"group set to off on the server, shown as muted ({v!r}; now {now!r} {now2!r})")
     await amiga.rexx("NOTIFYLEVEL Kaffeeklatsch 0")
     check(await amiga.until(lambda: level(0), 60), "and back to the default")
     await amiga.rexx("KEYWORD Amiga")
@@ -1301,7 +1373,8 @@ async def main():
         if os.path.exists(dbg):              # the interesting lines of the DEBUG log
             for line in open(dbg, encoding="latin-1").read().splitlines():
                 if any(k in line for k in ("open file", "open link", "saved attachment", "started", "moderate",
-                                           "room change", "INFOMEMBER", "sending file")):
+                                           "room change", "INFOMEMBER", "sending file", "lookup event",
+                                           "decode")):
                     log(f"# amatrix log: {line}")
         alive = os.path.exists(os.path.join(extra, "Amatrix"))
         ctx.check(alive, "program still there at the end")
