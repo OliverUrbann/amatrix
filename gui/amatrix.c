@@ -136,6 +136,7 @@ typedef struct ChatWin {
     Object *win, *list, *input, *older, *invite, *leave, *reactb, *replyb, *editb, *delb, *attachb, *infob;
     int uploading;                /* files on their way up */
     int n_cached;                 /* messages shown from the local history cache */
+    int older_msgs, older_tries;  /* messages shown before "older" was pressed; pages tried */
     int preview;                  /* a room we have not joined: reading only */
     struct { char *user, *eid; } *readers;   /* who has read up to which message (receipts) */
     int n_readers;
@@ -2056,8 +2057,10 @@ static void edit_newest_own(ChatWin *w)
 
 HOOKPROTONH(uparrow_func, LONG, Object *obj, ULONG *param)
 {
+    ChatWin *w = (ChatWin *)param[0];
     (void)obj;
-    edit_newest_own((ChatWin *)param[0]);
+    amx_log("cursor up in %s (active %d)", w->room_id, (int)(xget(w->win, MUIA_Window_ActiveObject) == (ULONG)w->input));
+    edit_newest_own(w);
     return 0;
 }
 MakeStaticHook(uparrow_hook, uparrow_func);
@@ -2264,9 +2267,12 @@ HOOKPROTONH(chat_older_func, LONG, Object *obj, ULONG *param)
 {
     ChatWin *w = (ChatWin *)param[0];
     (void)obj;
+    amx_log("older pressed: loading %d at_start %d msgs %d", w->loading, w->at_start, w->n_msgs);
     if (!w->loading && !w->at_start) {
         w->loading = 1;
         w->loading_older = 1;
+        w->older_msgs = w->n_msgs;
+        w->older_tries = 0;
         w->err[0] = 0;
         set(w->older, MUIA_Disabled, TRUE);
         if (w->thread_root) amx_async_load_thread(A, w->room_id, w->thread_root, OLDER_PAGE, 0, TAG_THREAD);
@@ -3945,6 +3951,8 @@ static void close_chat(ChatWin *w)
     ChatWin **p;
     int i;
     typing_stop(w);
+    amx_log("close_chat %s thread %s edit %s text '%s'", w->room_id, w->thread_root ? w->thread_root : "-",
+            w->edit_eid ? w->edit_eid : "-", (char *)xget(w->input, MUIA_String_Contents));
     if (!w->thread_root && !w->edit_eid) {          /* unsent text: a draft for next time */
         char *t = (char *)xget(w->input, MUIA_String_Contents);
         if ((t && *t) || draft_of(w->room_id)) {
@@ -5082,6 +5090,7 @@ static void start_reply(ChatWin *w, ChatMsg *m)
 
 static void start_edit(ChatWin *w, ChatMsg *m)
 {
+    amx_log("start_edit %s", m && m->eid ? m->eid : "-");
     char *l = local(m->body);
     clear_mode(w);
     w->edit_eid = strdup(m->eid);
@@ -5115,6 +5124,7 @@ HOOKPROTONH(chat_edit_func, LONG, Object *obj, ULONG *param)
     ChatWin *w = (ChatWin *)param[0];
     ChatMsg *m = marked_msg(w);
     (void)obj;
+    amx_log("edit button");
     if (m && m->own && !m->redacted) start_edit(w, m);
     return 0;
 }
@@ -5553,6 +5563,12 @@ static void history_done(const AmxMsg *m)
     amx_log("history_done %s status %d count %d at_start %d", m->result ? m->result : "-", m->status, m->count,
             m->at_start);
     if (!w) return;
+    if (w->loading_older && !m->status && !m->at_start && w->n_msgs < w->older_msgs + OLDER_PAGE / 2
+        && ++w->older_tries < 5) {
+        /* the page was shown already (local history cache): the next one */
+        amx_async_load_history(A, w->room_id, OLDER_PAGE, 0, TAG_HIST);
+        return;
+    }
     w->loading = 0;
     w->loading_older = 0;
     if (m->status) snprintf(w->err, sizeof w->err, "Verlauf: %.290s", m->error ? m->error : "Fehler");
@@ -6817,6 +6833,7 @@ HOOKPROTONH(rx_editlast_func, LONG, Object *obj, ULONG *arg)
     ChatMsg *m = w ? newest_msg(w, 1) : NULL;
     (void)obj;
     if (!m) return 5;
+    amx_log("ARexx EDITLAST");
     start_edit(w, m);
     set(w->input, MUIA_String_Contents, (char *)arg[1]);
     chat_send(w);
@@ -7457,7 +7474,8 @@ HOOKPROTONH(rx_mark_func, LONG, Object *obj, ULONG *arg)
     if (!w || !arg[1]) return 5;
     u = amx_from_local((char *)arg[1]);
     for (i = 0; u && i < w->n_msgs; i++)
-        if (w->msgs[i].body && strstr(w->msgs[i].body, u) && (!best || w->msgs[i].ts > best->ts)) best = &w->msgs[i];
+        if (!w->msgs[i].redacted && w->msgs[i].body && strstr(w->msgs[i].body, u) && (!best || w->msgs[i].ts > best->ts))
+            best = &w->msgs[i];
     free(u);
     if (!best || (k = line_of(w, best)) < 0) return 5;
     set(w->list, MUIA_NList_Active, k);
@@ -7611,6 +7629,7 @@ HOOKPROTONH(rx_editup_func, LONG, Object *obj, ULONG *arg)
     ChatWin *w = r ? chat_by_room(r->id) : NULL;
     (void)obj;
     if (!w) return 5;
+    amx_log("ARexx EDITUP");
     edit_newest_own(w);
     return 0;
 }
@@ -7741,7 +7760,7 @@ static struct MUI_Command rexx_cmds[] = {
     { "FAVOURITE", "ROOM/A,OFF/S",    2, &rx_fav_hook,      { 0 } },
     { "FIND",      "TERM/F",          1, &rx_find_hook,     { 0 } },
     { "HITS",      NULL,              0, &rx_hits_hook,     { 0 } },
-    { "PREVIEW",   "ROOM/A",          1, &rx_preview_hook,  { 0 } },
+    { "OPENPREVIEW", "ROOM/A",        1, &rx_preview_hook,  { 0 } },
     { "SUMMARY",   "ROOM/A",          1, &rx_summary_hook,  { 0 } },
     { "PUBINFO",   NULL,              0, &rx_pubinfo_hook,  { 0 } },
     { "SPACEWIN",  "NAME/F",          1, &rx_spacewin_hook, { 0 } },

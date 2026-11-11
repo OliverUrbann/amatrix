@@ -31,8 +31,9 @@ Assign LIBS: AmiSSL:Libs ADD
 Run >NIL: Extra:Amatrix >SYS:gui-out.txt SERVER={server} USER={user} PASSWORD={password} DEBUG
 Lab loop
 If EXISTS Extra:go
-  rx Extra:c.rexx >Extra:res.txt
   Delete Extra:go QUIET
+  rx Extra:c.rexx >Extra:res.txt
+  Echo "" >Extra:ok
 EndIf
 If EXISTS Extra:stop
   Skip end
@@ -51,12 +52,28 @@ class Amiga:
     def __init__(self, extra, log):
         self.extra, self.log, self.n = extra, log, 0
 
+    async def settle(self, secs=300):
+        """Waits until the script started before has finished (Extra:ok)."""
+        ok = os.path.join(self.extra, "ok")
+        end = time.time() + secs
+        while getattr(self, "running", False) and time.time() < end:
+            if os.path.exists(ok):
+                self.running = False
+                break
+            await asyncio.sleep(0.5)
+
     async def go(self, secs=60):
-        """Lets the Amiga run Extra:c.rexx (output to Extra:res.txt); waits until done."""
+        """Lets the Amiga run Extra:c.rexx (output to Extra:res.txt); waits until done.  A
+        script that takes longer is waited for before the next one is written."""
+        ok = os.path.join(self.extra, "ok")
+        if os.path.exists(ok):
+            os.remove(ok)
+        self.running = True
         open(os.path.join(self.extra, "go"), "w").close()
         end = time.time() + secs
         while time.time() < end:
-            if not os.path.exists(os.path.join(self.extra, "go")):
+            if os.path.exists(ok):
+                self.running = False
                 return True
             await asyncio.sleep(0.5)
         self.log(f"# amiga: rexx script not done in {secs}s")
@@ -64,6 +81,7 @@ class Amiga:
 
     async def rexx(self, *cmds, secs=60):
         """Sends ARexx commands to AMATRIX; returns RC and RESULT of the last."""
+        await self.settle()
         self.n += 1
         lines = ["/* */", "options results", "address 'AMATRIX.1'"]
         for c in cmds:
@@ -87,6 +105,7 @@ class Amiga:
 
     async def rexx_raw(self, lines, secs=60):
         """Runs an ARexx script as written (e.g. 'address command ...')."""
+        await self.settle()
         with open(os.path.join(self.extra, "c.rexx"), "w", encoding="latin-1") as f:
             f.write("/* */\n" + "\n".join(lines) + "\n")
         return await self.go(secs)
@@ -356,9 +375,19 @@ async def scenario(ctx, amiga, srv, me):
     rc, v = await amiga.rexx("LASTLINE Alice")
     check(re.search(r"\d\d:\d\d(AM|PM)", v or ""), f"12-hour clock ({v!r})")
     await amiga.rexx("SETOPTION 24h 1")
-    await amiga.rexx("TYPE Alice Ein Entwurf")
+    for _ in range(5):                      # right after re-rendering all windows the Amiga is busy
+        await amiga.rexx("TYPE Alice Ein Entwurf")
+        rc0, inp = await amiga.rexx("INPUT Alice")
+        if inp == "Ein Entwurf":
+            break
+        await asyncio.sleep(3)
     await amiga.rexx("CLOSECHAT Alice")
-    await asyncio.sleep(2)
+
+    async def closed():
+        rc, r = await amiga.rexx("CHATSTATUS Alice")
+        return rc != "0"
+    await amiga.until(closed, 30)
+    ctx.diag(f"input before closing: {inp!r}")
     rc, v = await amiga.rexx("DRAFT Alice")
     rc2, line = await amiga.rexx("ROOMLINE Alice")
     check(v == "Ein Entwurf" and "Entwurf" in line, f"closed with text: kept as a draft, shown in the list ({v!r}, {line!r})")
@@ -445,7 +474,7 @@ async def scenario(ctx, amiga, srv, me):
             return "ohne Beitritt lesbar" in r and r
         v = await amiga.until(info, 60)
         check(v, f"directory: what the room is before joining ({v!r})")
-        await amiga.rexx("PREVIEW " + pubr.room_id)
+        await amiga.rexx("OPENPREVIEW " + pubr.room_id)
 
         async def prev_line():
             rc, r = await amiga.rexx("LASTLINE Vorschau")
@@ -877,12 +906,12 @@ async def scenario(ctx, amiga, srv, me):
                                       and "<blockquote>" in e["content"].get("formatted_body", "")
                                       for e in seen_src), 90)
         check(ok, "quoted: the quote above our answer")
-    await amiga.rexx("MARK Alice Klar doch, gerne")
+    await amiga.rexx("MARK Alice Sehr sch\xf6n")             # Alice's edited answer (ours was deleted)
     await amiga.rexx("ACTION Alice edithist")
 
     async def hist():
         rc, r = await amiga.rexx("EDITHIST")
-        return r.count("|") >= 1 and "Klar doch, gerne" in r and r
+        return r.count("|") >= 1 and "Sehr sch\xf6n" in r and r
     v = await amiga.until(hist, 60)
     rc, now = await amiga.rexx("EDITHIST")
     check(v, f"edit history: original and edit ({v!r}; now {now!r})")
@@ -1070,7 +1099,12 @@ async def scenario(ctx, amiga, srv, me):
     await amiga.shot("08-archiv-before")
     rc, _ = await amiga.rexx("OLDER Archiv")
     check(rc == "0", "pressed 'Ältere Nachrichten laden'")
-    n2 = await amiga.until(has45, 120)
+    n2 = await amiga.until(has45, 60)
+    for _ in range(2):                      # the cache may have shown part of a page: press again
+        if n2:
+            break
+        await amiga.rexx("OLDER Archiv")
+        n2 = await amiga.until(has45, 60)
     rc, first2 = await amiga.rexx("FIRSTLINE Archiv")
     check(n2 and "Nachricht 01" in first2, f"older messages loaded on top ({n2} lines, top: {first2!r})")
     async def archiv_readable():
@@ -1373,7 +1407,8 @@ async def main():
         if os.path.exists(dbg):              # the interesting lines of the DEBUG log
             for line in open(dbg, encoding="latin-1").read().splitlines():
                 if any(k in line for k in ("open file", "open link", "saved attachment", "started", "moderate",
-                                           "room change", "INFOMEMBER", "sending file", "lookup event",
+                                           "room change", "INFOMEMBER", "sending file", "lookup event", "close_chat", "cursor up", "start_edit", "ARexx", "edit button", "older pressed",
+                                           "history_done",
                                            "decode")):
                     log(f"# amatrix log: {line}")
         alive = os.path.exists(os.path.join(extra, "Amatrix"))

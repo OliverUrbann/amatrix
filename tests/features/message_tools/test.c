@@ -103,6 +103,23 @@ int main(int argc, char **argv)
     MXT_OK(e && amx_load_edits(c, ra, e->event_id) >= 2 && count_lookup_edits(e->event_id, mark) == 2,
            "edit history: both versions");
 
+    {   /* our own reply, edited by us: the original and the edit come back */
+        char *r1 = NULL, *r2 = NULL;
+        int j, got_orig = 0;
+        MXT_OK(e && amx_send_reply(c, ra, e->event_id, NULL, "Meine Antwort", &r1) == 0 && r1, "our reply");
+        MXT_OK(r1 && amx_send_edit(c, ra, r1, "Meine Antwort, bearbeitet", &r2) == 0, "our edit of it");
+        for (j = 0; j < 3; j++) amx_sync(c, 500);
+        mark = mxt_n_ev;
+        MXT_OK(r1 && amx_fetch_event(c, ra, r1) == 0, "fetched our original");
+        for (j = mark; j < mxt_n_ev; j++)
+            if (mxt_ev[j].type == AMX_EV_MESSAGE && mxt_ev[j].lookup && mxt_ev[j].body && !strcmp(mxt_ev[j].body, "Meine Antwort"))
+                got_orig = 1;
+        MXT_OK(got_orig, "the original's text (not empty)");
+        mark = mxt_n_ev;
+        MXT_OK(r1 && amx_load_edits(c, ra, r1) >= 1 && count_lookup_edits(r1, mark) == 1, "our edit in its history");
+        free(r1); free(r2);
+    }
+
     MXT_OK(amx_ignore_user(c, a.peer, 1) == 0, "ignoring the peer");
     ign = amx_ignored_users(c);
     MXT_OK(ign && strstr(ign, a.peer), "it is on the list");
