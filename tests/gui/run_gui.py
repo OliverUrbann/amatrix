@@ -685,6 +685,51 @@ async def scenario(ctx, amiga, srv, me):
         await amiga.rexx("INFOMEMBER 1 role 0")
 
 
+    # spaces, the room filter, favourites, message search
+    from nio import RoomCreateResponse as RCR
+    sp = await p.c.room_create(space=True, name="Hobbys", invite=[me.user_id])
+    check(isinstance(sp, RCR), "peer: space created")
+    if isinstance(sp, RCR):
+        await p.c.room_put_state(sp.room_id, "m.space.child", {"via": [p.user.user_id.split(":", 1)[1]]},
+                                 state_key=room)
+
+        async def space_invite():
+            rc, r = await amiga.rexx("ACCEPT Hobbys")
+            return rc == "0"
+        check(await amiga.until(space_invite, 120), "accepted the space invitation")
+
+        async def in_space():
+            rc, _ = await amiga.rexx("SPACE Hobbys")
+            rc2, r = await amiga.rexx("ROOMS")
+            return rc == "0" and r == "Kaffeeklatsch" and r
+        v = await amiga.until(in_space, 120)
+        check(v, f"space chosen: only its room in the list ({v!r})")
+        await amiga.shot("06c-space")
+        await amiga.rexx("SPACE")
+    rc, v = await amiga.rexx("ROOMS")
+    check("Hobbys" not in v and "Alice" in v, f"all rooms again, the space itself not among them ({v!r})")
+    await amiga.rexx("FILTER kaffee")
+    rc, v = await amiga.rexx("ROOMS")
+    check(v == "Kaffeeklatsch", f"filter 'kaffee' ({v!r})")
+    await amiga.rexx("FILTER")
+    await amiga.rexx("FAVOURITE Amiga-Runde")
+
+    async def fav_first():
+        rc, r = await amiga.rexx("ROOMS")
+        return r.startswith("Amiga-Runde*") and r
+    v = await amiga.until(fav_first, 60)
+    check(v, f"favourite: star and on top ({v!r})")
+    await amiga.shot("06d-favourite")
+    await amiga.rexx("FAVOURITE Amiga-Runde OFF")
+    rc, _ = await amiga.rexx("FIND kuchen")
+
+    async def found():
+        rc, r = await amiga.rexx("HITS")
+        return "Kaffeeklatsch:" in r and "Kuchen" in r and r
+    v = await amiga.until(found, 60)
+    check(v, f"message search finds 'Kuchen' in the encrypted room (local history) ({v!r})")
+    await amiga.shot("06e-search")
+
     # a room with a long, mixed history from before we joined (like a real
     # account on a new device): nothing of it is decryptable for us
     alt = await p.create_room(encrypted=True, name="Altraum")
@@ -839,12 +884,17 @@ async def scenario(ctx, amiga, srv, me):
     if v:
         idx = next(i for i, x in enumerate(v) if not x.endswith(":current"))
         await amiga.rexx(f"SESSIONSET {idx} NAME Testgeraet")
-        v2 = await amiga.until(lambda: sessions(), 60)
-        check(v2 and any(x.startswith("Testgeraet:") for x in v2), f"renamed ({v2!r})")
+
+        async def renamed():
+            p_ = await sessions()
+            return p_ and any(x.startswith("Testgeraet:") for x in p_) and p_
+        v2 = await amiga.until(renamed, 60)
+        check(v2, f"renamed ({v2!r})")
         await amiga.shot("07b-sessions")
         n0 = len(v)
-        idx = next(i for i, x in enumerate(v2 or v) if x.startswith("Testgeraet:"))
-        await amiga.rexx(f"SESSIONSET {idx} PASSWORD {me.password}")
+        idx = next((i for i, x in enumerate(v2 or []) if x.startswith("Testgeraet:")), None)
+        if idx is not None:
+            await amiga.rexx(f"SESSIONSET {idx} PASSWORD {me.password}")
 
         async def fewer():
             rc, r = await amiga.rexx("SESSIONLIST")

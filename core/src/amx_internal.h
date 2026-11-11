@@ -107,6 +107,7 @@ void  amx__handle_room_event(AmxClient *c, const char *room_id, const cJSON *ev,
 void  amx__retry_pending(AmxClient *c);
 void  amx__fetch_missing_keys(AmxClient *c);
 cJSON *amx__file_content(AmxClient *c, const char *path, const char *name, int enc);
+void amx__rooms_upkeep(AmxClient *c);
 void amx__hcache_note(AmxClient *c, const AmxEvent *e);
 void amx__hcache_save(AmxClient *c);
 void amx__hcache_forget(AmxClient *c, const char *room_id);

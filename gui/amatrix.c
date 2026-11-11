@@ -75,11 +75,11 @@ static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.20
 enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
     ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO, ID_UNLOCK_GO, ID_STOREPASS, ID_STOREPASS_SET, ID_STOREPASS_DEL, ID_LEAVE, ID_MUTE, ID_SETTINGS, ID_ICONIFY, ID_SET_OK, ID_COPY, ID_INFO, ID_INFO_SAVE, ID_INFO_PIC, ID_INFO_KICK, ID_INFO_BAN, ID_INFO_UNBAN,
-    ID_INFO_ROLE, ID_INFO_INVITE, ID_PROFILE, ID_PROF_SAVE, ID_PROF_PIC, ID_SESS, ID_SESS_RENAME, ID_SESS_DELETE
+    ID_INFO_ROLE, ID_INFO_INVITE, ID_PROFILE, ID_PROF_SAVE, ID_PROF_PIC, ID_SESS, ID_SESS_RENAME, ID_SESS_DELETE, ID_FAV, ID_LOWPRIO, ID_FIND, ID_FIND_GO, ID_MUIPREFS
 };
 enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TAG_AVATAR,
        TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY, TAG_UNLOCK, TAG_STOREPASS,
-       TAG_REACT, TAG_THUMB, TAG_SAVE, TAG_THREAD, TAG_FILE, TAG_MEMBERS, TAG_RSETTINGS, TAG_ROOMSET, TAG_MODERATE, TAG_PROFILE, TAG_PROFAV, TAG_SETPROF, TAG_PREVIEW, TAG_DEVICES, TAG_DEVCHANGE };
+       TAG_REACT, TAG_THUMB, TAG_SAVE, TAG_THREAD, TAG_FILE, TAG_MEMBERS, TAG_RSETTINGS, TAG_ROOMSET, TAG_MODERATE, TAG_PROFILE, TAG_PROFAV, TAG_SETPROF, TAG_PREVIEW, TAG_DEVICES, TAG_DEVCHANGE, TAG_TAG, TAG_FIND };
 
 /* ------------------------------------------------------------------ state */
 
@@ -89,6 +89,8 @@ typedef struct {
     int invited, unread, highlights, direct, encrypted, members, last_own;
     double last_ts;
     double read_ts;               /* own messages up to here are read by someone else */
+    int favourite, low, is_space;
+    char *parents;                /* spaces it belongs to (room IDs, one per line) */
 } Room;
 
 #define N_EMO_MAX 16
@@ -179,7 +181,8 @@ typedef struct {
 
 static AmxAsync *A;
 static int debug;                 /* DEBUG: log to PROGDIR:Amatrix.log */
-static Object *app, *win_main, *lv_rooms, *lst_rooms, *txt_status;
+static Object *app, *win_main, *lv_rooms, *lst_rooms, *txt_status, *str_filter, *grp_space, *cyc_space;
+static Object *win_find, *str_find, *cyc_findwhere, *b_find, *lst_hits, *txt_find;
 static Object *win_login, *str_server, *str_user, *str_pass, *txt_login;
 static Object *win_newchat, *str_chatuser;
 static Object *win_newroom, *str_roomname, *chk_enc, *chk_pub;
@@ -191,7 +194,7 @@ static int verified;               /* this device signed (this session) */
 static Object *win_unlock, *str_unlock, *txt_unlock, *b_unlock;
 static Object *win_storepass, *str_sp1, *str_sp2, *txt_sp, *b_sp_set, *b_sp_del;
 static Object *win_settings, *chk_notify, *cyc_notify, *chk_previews, *chk_iconified, *txt_herald, *b_set_ok;
-static Object *chk_typing, *chk_receipts, *chk_linkprev, *chk_linkprev_enc, *chk_hcache;
+static Object *chk_typing, *chk_receipts, *chk_linkprev, *chk_linkprev_enc, *chk_hcache, *chk_avatars;
 static Object *win_info, *str_iname, *str_itopic, *cyc_ijoin, *cyc_ihist, *chk_ienc, *b_ipic, *b_isave, *lst_mem,
               *b_ikick, *b_iban, *b_iunban, *cyc_irole, *b_irole, *b_iinvite, *txt_istatus, *grp_iset;
 static Object *win_prof, *txt_pimg, *txt_pid, *str_pname, *b_ppic, *b_psave, *txt_pstatus;
@@ -341,6 +344,7 @@ static int opt_receipts = 1;          /* read receipts others see (else m.read.p
 static int opt_linkprev = 1;          /* link previews (the server fetches the page) */
 static int opt_linkprev_enc = 0;      /* ... also in encrypted rooms */
 static int opt_hcache = 1;            /* keep the newest messages on disk (window opens at once) */
+static int opt_avatars = 1;           /* pictures in the room list */
 static char **muted;                  /* rooms without notifications */
 static int n_muted;
 
@@ -388,6 +392,7 @@ static void load_prefs(void)
         else if (!strncmp(line, "linkprev=", 9)) opt_linkprev = atoi(line + 9);
         else if (!strncmp(line, "linkprev_enc=", 13)) opt_linkprev_enc = atoi(line + 13);
         else if (!strncmp(line, "hcache=", 7)) opt_hcache = atoi(line + 7);
+        else if (!strncmp(line, "avatars=", 8)) opt_avatars = atoi(line + 8);
         else if (!strncmp(line, "mute=", 5) && line[5]) set_muted(line + 5, 1);
     }
     fclose(f);
@@ -405,6 +410,7 @@ static void save_prefs(void)
     fprintf(f, "notify=%d\nnotify_all=%d\npreviews=%d\niconified=%d\ntyping=%d\nreceipts=%d\n", opt_notify,
             opt_notify_all, opt_previews, opt_iconified, opt_typing, opt_receipts);
     fprintf(f, "linkprev=%d\nlinkprev_enc=%d\nhcache=%d\n", opt_linkprev, opt_linkprev_enc, opt_hcache);
+    fprintf(f, "avatars=%d\n", opt_avatars);
     for (i = 0; i < n_muted; i++) fprintf(f, "mute=%s\n", muted[i]);
     fclose(f);
 }
@@ -490,7 +496,7 @@ static void notify_event(const AmxEvent *e)
     ChatWin *w;
     char *name, *body, *title, cmd[1200], qt[200], qn[300], res[80], id[16];
     int mention;
-    if (!opt_notify || e->type != AMX_EV_MESSAGE || e->own || e->history || !e->room_id || e->redacted) return;
+    if (e->type != AMX_EV_MESSAGE || e->own || e->history || !e->room_id || e->redacted) return;
     if (e->timestamp > 0 && (time_t)(e->timestamp / 1000) < started_at - 60) return;   /* the backlog */
     if (!(r = room_by_id(e->room_id)) || is_muted(r->id)) return;
     w = chat_by_room(e->room_id);
@@ -503,7 +509,7 @@ static void notify_event(const AmxEvent *e)
         mention = e->mention || strstr(e->body, my_user) || (lp[0] && strstr(e->body, lp));
     }
     if (!opt_notify_all && !r->direct && !mention) return;
-    if (!herald_here()) return;
+    if (!opt_notify || !herald_here()) return;
     herald_register();
     name = local(e->sender_name ? e->sender_name : e->sender ? e->sender : "");
     body = local_emoji_as(e->body ? e->body : "", 2);
@@ -738,7 +744,7 @@ static void make_icon(Alpha *a, const char *const *art)
 /* reactions: the common ones as 12x12 pictures in the same style (Element's
  * quick reactions plus "tears of joy"); keys are UTF-8 */
 #define EM 12
-enum { EMO_THUMBSUP, EMO_THUMBSDOWN, EMO_HEART, EMO_SMILE, EMO_JOY, EMO_CONFUSED, EMO_EYES, EMO_TADA, EMO_ROCKET, EMO_UNKNOWN, EMO_FILE, EMO_LINK, EMO_THREAD, EMO_CHECK, N_EMO };
+enum { EMO_THUMBSUP, EMO_THUMBSDOWN, EMO_HEART, EMO_SMILE, EMO_JOY, EMO_CONFUSED, EMO_EYES, EMO_TADA, EMO_ROCKET, EMO_UNKNOWN, EMO_FILE, EMO_LINK, EMO_THREAD, EMO_CHECK, EMO_STAR, N_EMO };
 static Alpha emo_img[N_EMO], emo_big[N_EMO];   /* 12x12 in text, 24x24 in the picker */
 static const char *const emo_art[N_EMO][EM] = {
     { /* thumbsup */
@@ -923,6 +929,19 @@ static const char *const emo_art[N_EMO][EM] = {
       "..kBBk......",
       "...kk.......",
       "............" },
+    { /* star: a favourite room */
+      "............",
+      ".....kk.....",
+      "....kyyk....",
+      "....kyyk....",
+      "kkkkyyyykkkk",
+      "kyyyyyyyyyYk",
+      ".kyyyyyyyYk.",
+      "..kyyyyyYk..",
+      "..kyyyYyYk..",
+      ".kyyYkkYYYk.",
+      ".kYYk..kYYk.",
+      ".kkk....kkk." },
 };
 /* key (without variation selector / skin tone) -> picture; similar emoji
  * share a picture and are counted together (all laughing faces, all hearts...).
@@ -1219,6 +1238,7 @@ static Alpha *image_for(const Room *r)
 static void request_avatars(void)
 {
     int i, j;
+    if (!opt_avatars) return;
     for (i = 0; i < n_rooms; i++) {
         const char *u = rooms[i].avatar_url;
         Img *t;
@@ -1285,20 +1305,26 @@ static void time_text(double ms, char *buf, size_t n)
 /* three columns: picture | name, second line | time */
 HOOKPROTONH(room_disp_func, LONG, char **array, Room *r)
 {
-    static char img[24], text[400], when[16];
+    static char img[24], text[640], when[16];
     char second[200];
     if (!r) { array[0] = array[1] = array[2] = ""; return 0; }
-    snprintf(img, sizeof img, "\33A[%08lx]", (unsigned long)&image_for(r)->ad);
+    if (opt_avatars) snprintf(img, sizeof img, "\33A[%08lx]", (unsigned long)&image_for(r)->ad);
+    else img[0] = 0;
     second_line(r, second, sizeof second);
     {
         const char *mu = is_muted(r->id) ? "\33n\33i (stumm)" : "";
+        static char star[24];
+        char nm[300];
+        if (r->favourite) snprintf(star, sizeof star, " \33A[%08lx]", (unsigned long)&emo_img[EMO_STAR].ad);
+        else star[0] = 0;
+        snprintf(nm, sizeof nm, "%s%s", r->name, star);
         if (r->invited)
-            snprintf(text, sizeof text, "\33b%s\33n\n\33i%s", r->name, second);
+            snprintf(text, sizeof text, "\33b%s\33n\n\33i%s", nm, second);
         else if (r->unread)              /* unread: count, second line in normal colour */
-            snprintf(text, sizeof text, "\33b%s (%d%s)%s\33n\n\33i%s", r->name, r->unread,
+            snprintf(text, sizeof text, "\33b%s (%d%s)%s\33n\n\33i%s", nm, r->unread,
                      r->highlights ? " @" : "", mu, second);
         else
-            snprintf(text, sizeof text, "\33b%s%s\33n\n\33i\33P[808080]%s", r->name, mu, second);
+            snprintf(text, sizeof text, "%s%s%s\33n\n\33i\33P[808080]%s", r->low ? "" : "\33b", nm, mu, second);
     }
     time_text(r->last_ts, when, sizeof when);
     snprintf(when + strlen(when), sizeof when - strlen(when), "\n ");
@@ -1314,7 +1340,7 @@ static void free_rooms(Room *l, int n)
     int i;
     for (i = 0; i < n; i++) {
         free(l[i].id); free(l[i].name); free(l[i].dm_user); free(l[i].inviter); free(l[i].avatar_url);
-        free(l[i].topic); free(l[i].last_sender); free(l[i].last_body);
+        free(l[i].topic); free(l[i].last_sender); free(l[i].last_body); free(l[i].parents);
     }
     free(l);
 }
@@ -1335,6 +1361,100 @@ static void show_unread_total(void)
     else snprintf(title, sizeof title, "Amatrix");
     set(win_main, MUIA_Window_Title, title);
     if (dob_app && dob_new) set(app, MUIA_Application_DiskObject, total ? dob_new : dob_app);
+}
+
+static void refill_rooms(const char *active);
+HOOKPROTONHNO(filter_func, LONG, APTR unused)
+{
+    Room *act = NULL;
+    (void)unused;
+    DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &act);
+    refill_rooms(act ? act->id : NULL);
+    return 0;
+}
+MakeStaticHook(filter_hook, filter_func);
+
+/* ---- the room list as shown: no spaces, only the chosen space's rooms,
+ * only names with the filter text */
+static char *space_ids[32];
+static char *space_names[34];
+static int n_spaces;
+
+static int name_has(const char *name, const char *f)
+{
+    size_t n = strlen(f);
+    const char *p;
+    if (!n) return 1;
+    for (p = name; p && *p; p++) {
+        size_t i;
+        for (i = 0; i < n && p[i]; i++) {
+            unsigned char a = (unsigned char)p[i], b = (unsigned char)f[i];
+            if ((a >= 'A' && a <= 'Z') || (a >= 0xc0 && a <= 0xde && a != 0xd7)) a += 32;
+            if ((b >= 'A' && b <= 'Z') || (b >= 0xc0 && b <= 0xde && b != 0xd7)) b += 32;
+            if (a != b) break;
+        }
+        if (i == n) return 1;
+    }
+    return 0;
+}
+
+static void refill_rooms(const char *active)
+{
+    const char *f = str_filter ? (const char *)xget(str_filter, MUIA_String_Contents) : "";
+    LONG sel = n_spaces && cyc_space ? (LONG)xget(cyc_space, MUIA_Cycle_Active) : 0, row = 0, pos = MUIV_List_Active_Off;
+    const char *sp = sel > 0 && sel <= n_spaces ? space_ids[sel - 1] : NULL;
+    int i;
+    set(lst_rooms, MUIA_List_Quiet, TRUE);
+    DoMethod(lst_rooms, MUIM_List_Clear);
+    for (i = 0; i < n_rooms; i++) {
+        Room *r = &rooms[i];
+        if (r->is_space || !name_has(r->name, f ? f : "")) continue;
+        if (sp && !(r->parents && strstr(r->parents, sp))) continue;
+        DoMethod(lst_rooms, MUIM_List_InsertSingle, r, MUIV_List_Insert_Bottom);
+        if (active && !strcmp(active, r->id)) pos = row;
+        row++;
+    }
+    set(lst_rooms, MUIA_List_Active, pos);
+    set(lst_rooms, MUIA_List_Quiet, FALSE);
+}
+
+/* the space choice above the list: rebuilt when the spaces change */
+static void update_spaces(void)
+{
+    int i, n = 0, same;
+    char *ids[32];
+    LONG sel = n_spaces && cyc_space ? (LONG)xget(cyc_space, MUIA_Cycle_Active) : 0;
+    char *keep = sel > 0 && sel <= n_spaces ? strdup(space_ids[sel - 1]) : NULL;
+    for (i = 0; i < n_rooms && n < 32; i++) if (rooms[i].is_space && !rooms[i].invited) ids[n++] = rooms[i].id;
+    same = n == n_spaces;
+    for (i = 0; same && i < n; i++) same = !strcmp(ids[i], space_ids[i]);
+    if (same && cyc_space) {
+        for (i = 0; i < n; i++) {              /* names may change; a new cycle only for other spaces */
+            Room *r = room_by_id(ids[i]);
+            if (r && strcmp(r->name, space_names[i + 1])) same = 0;
+        }
+    }
+    if (same && cyc_space) { free(keep); return; }
+    for (i = 0; i < n_spaces; i++) { free(space_ids[i]); free(space_names[i + 1]); }
+    space_names[0] = "Alle Räume";
+    for (i = 0; i < n; i++) {
+        space_ids[i] = strdup(ids[i]);
+        space_names[i + 1] = strdup(room_by_id(ids[i])->name);
+    }
+    space_names[n + 1] = NULL;
+    n_spaces = n;
+    DoMethod(grp_space, MUIM_Group_InitChange);
+    if (cyc_space) { DoMethod(grp_space, OM_REMMEMBER, cyc_space); MUI_DisposeObject(cyc_space); }
+    cyc_space = CycleObject, MUIA_Cycle_Entries, space_names, MUIA_CycleChain, TRUE,
+                MUIA_ShortHelp, "Nur die Räume eines Space zeigen", End;
+    if (cyc_space) {
+        DoMethod(grp_space, OM_ADDMEMBER, cyc_space);
+        for (i = 0; keep && i < n; i++) if (!strcmp(space_ids[i], keep)) set(cyc_space, MUIA_Cycle_Active, i + 1);
+        DoMethod(cyc_space, MUIM_Notify, MUIA_Cycle_Active, MUIV_EveryTime, app, 2, MUIM_CallHook, &filter_hook);
+    }
+    set(grp_space, MUIA_ShowMe, n > 0);
+    DoMethod(grp_space, MUIM_Group_ExitChange);
+    free(keep);
 }
 
 static void update_rooms(const AmxMsg *m)
@@ -1367,18 +1487,21 @@ static void update_rooms(const AmxMsg *m)
         nl[i].last_body = ri->last_body ? local_emoji_as(ri->last_body, 1) : NULL;
         nl[i].last_own = ri->last_own;
         nl[i].last_ts = ri->last_activity;
+        nl[i].favourite = ri->favourite;
+        nl[i].low = ri->low_priority;
+        nl[i].is_space = ri->is_space;
+        nl[i].parents = xstrdup(ri->parents);
+        {   /* keep what only the GUI knows */
+            Room *old = room_by_id(ri->room_id);
+            if (old) nl[i].read_ts = old->read_ts;
+        }
     }
-    set(lst_rooms, MUIA_List_Quiet, TRUE);
-    DoMethod(lst_rooms, MUIM_List_Clear);
     free_rooms(rooms, n_rooms);
     rooms = nl;
     n_rooms = m->n;
-    for (i = 0; i < n_rooms; i++) {
-        DoMethod(lst_rooms, MUIM_List_InsertSingle, &rooms[i], MUIV_List_Insert_Bottom);
-        if (active && !strcmp(active, rooms[i].id)) pos = i;
-    }
-    set(lst_rooms, MUIA_List_Active, pos);
-    set(lst_rooms, MUIA_List_Quiet, FALSE);
+    (void)pos;
+    update_spaces();
+    refill_rooms(active);
     show_unread_total();
     free(active);
     request_avatars();
@@ -2158,6 +2281,106 @@ static void sess_done(const AmxMsg *m)
     } else if (!sess_busy) sess_set_status("Erledigt.");
 }
 
+/* ---- message search: the server (unencrypted rooms) and the local cache */
+
+static AmxSearchHit *hits;
+static int n_hits;
+static const char *where_names[] = { "Alle Räume", "Den markierten Raum", NULL };
+static char find_status[200];
+
+HOOKPROTONHNO(hit_disp_func, LONG, struct NList_DisplayMessage *m)
+{
+    static char b0[24], b1[120], b2[400];
+    const AmxSearchHit *h = m->entry;
+    char *t, *u;
+    const Room *r;
+    if (!h) { m->strings[0] = "Wann"; m->strings[1] = "Raum"; m->strings[2] = "Nachricht"; return 0; }
+    {
+        time_t tt = (time_t)(h->timestamp / 1000);
+        struct tm *tm = localtime(&tt);
+        if (tm) strftime(b0, sizeof b0, "%d.%m.%y %H:%M", tm); else b0[0] = 0;
+    }
+    r = room_by_id(h->room_id);
+    snprintf(b1, sizeof b1, "%s", r ? r->name : h->room_id);
+    t = local(h->name);
+    u = local(h->body);
+    snprintf(b2, sizeof b2, "\33b%s:\33n %s", t ? t : "", u ? u : "");
+    free(t); free(u);
+    for (t = b2; *t; t++) if (*t == '\n') *t = ' ';
+    m->strings[0] = b0; m->strings[1] = b1; m->strings[2] = b2;
+    return 0;
+}
+MakeStaticHook(hit_disp_hook, hit_disp_func);
+
+static void find_set_status(const char *t)
+{
+    snprintf(find_status, sizeof find_status, "%s", t ? t : "");
+    set(txt_find, MUIA_Text_Contents, find_status);
+}
+
+static void find_go(void)
+{
+    char *t = amx_from_local((char *)xget(str_find, MUIA_String_Contents));
+    Room *r = NULL;
+    if (!t || !*t) { free(t); return; }
+    if (xget(cyc_findwhere, MUIA_Cycle_Active) == 1) {
+        DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
+        if (!r) { find_set_status("Bitte erst einen Raum in der Liste markieren."); free(t); return; }
+    }
+    amx_async_search(A, r ? r->id : NULL, t, TAG_FIND);
+    find_set_status("Suche ...");
+    free(t);
+}
+
+static void find_got(const AmxMsg *m)
+{
+    int i;
+    char b[160];
+    set(lst_hits, MUIA_NList_Quiet, TRUE);
+    DoMethod(lst_hits, MUIM_NList_Clear);
+    amx_free_search(hits, n_hits);
+    hits = NULL;
+    n_hits = 0;
+    if (m->status) { set(lst_hits, MUIA_NList_Quiet, FALSE); find_set_status(m->error); return; }
+    hits = m->n ? calloc(m->n, sizeof *hits) : NULL;
+    n_hits = hits ? m->n : 0;
+    for (i = 0; i < n_hits; i++) {
+        hits[i] = m->hits[i];
+        hits[i].room_id = xstrdup(m->hits[i].room_id);
+        hits[i].event_id = xstrdup(m->hits[i].event_id);
+        hits[i].sender = xstrdup(m->hits[i].sender);
+        hits[i].name = xstrdup(m->hits[i].name);
+        hits[i].body = xstrdup(m->hits[i].body);
+        DoMethod(lst_hits, MUIM_NList_InsertSingle, &hits[i], MUIV_NList_Insert_Bottom);
+    }
+    set(lst_hits, MUIA_NList_Quiet, FALSE);
+    snprintf(b, sizeof b, "%d Treffer - Doppelklick öffnet den Chat", n_hits);
+    if (!n_hits) snprintf(b, sizeof b, "Nichts gefunden. (Verschlüsselte Räume: nur der gespeicherte Verlauf.)");
+    find_set_status(b);
+}
+
+HOOKPROTONHNO(hit_open_func, LONG, APTR unused)
+{
+    AmxSearchHit *h = NULL;
+    (void)unused;
+    DoMethod(lst_hits, MUIM_NList_GetEntry, MUIV_NList_GetEntry_Active, &h);
+    if (h && room_by_id(h->room_id)) open_chat(h->room_id);
+    return 0;
+}
+MakeStaticHook(hit_open_hook, hit_open_func);
+
+static void toggle_tag(const char *tag)
+{
+    Room *r = NULL;
+    DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
+    if (!r || r->invited) {
+        MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
+                    (STRPTR)"Bitte erst einen Raum in der Liste auswählen.", 0);
+        return;
+    }
+    amx_async_set_tag(A, r->id, tag, !strcmp(tag, "m.favourite") ? !r->favourite : !r->low, TAG_TAG);
+}
+
 HOOKPROTONH(chat_leave_func, LONG, Object *obj, ULONG *param)
 {
     (void)obj;
@@ -2272,7 +2495,7 @@ static void insert_preview(ChatWin *w, ChatMsg *m, const Preview *pv)
     if (!(l = new_line(m->eid, text, strlen(text), 0))) return;
     l->prev = 1;
     remember_line(w, l);
-    DoMethod(w->list, MUIM_NList_InsertSingle, l, last + 1);
+    DoMethod(w->list, MUIM_NList_InsertSingleWrap, l, last + 1, WRAPCOL0, ALIGN_LEFT);   /* no wider list */
     w->lines++;
 }
 
@@ -4302,6 +4525,14 @@ static void handle_result(const AmxMsg *m)
     case TAG_DEVICES:
         sess_got(m);
         break;
+    case TAG_FIND:
+        find_got(m);
+        break;
+    case TAG_TAG:
+        if (m->status)
+            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK", (STRPTR)"Hat nicht geklappt:\n%s",
+                        (ULONG)(m->error ? m->error : ""));
+        break;
     case TAG_DEVCHANGE:
         sess_done(m);
         break;
@@ -5062,6 +5293,7 @@ HOOKPROTONH(rx_setoption_func, LONG, Object *obj, ULONG *arg)
     else if (!strcmp(n, "linkprev_enc")) opt_linkprev_enc = v;
     else if (!strcmp(n, "typing")) opt_typing = v;
     else if (!strcmp(n, "previews")) opt_previews = v;
+    else if (!strcmp(n, "avatars")) { opt_avatars = v; DoMethod(lst_rooms, MUIM_List_Redraw, MUIV_List_Redraw_All); }
     else return 5;
     return 0;
 }
@@ -5104,6 +5336,86 @@ HOOKPROTONH(rx_chatcached_func, LONG, Object *obj, ULONG *arg)
     return 0;
 }
 MakeStaticHook(rx_chatcached_hook, rx_chatcached_func);
+
+/* FILTER text: the room list filter; SPACE name ("" all); ROOMS: the list as shown */
+HOOKPROTONH(rx_filter_func, LONG, Object *obj, ULONG *arg)
+{
+    (void)obj;
+    set(str_filter, MUIA_String_Contents, arg[0] ? (char *)arg[0] : "");
+    return 0;
+}
+MakeStaticHook(rx_filter_hook, rx_filter_func);
+
+HOOKPROTONH(rx_space_func, LONG, Object *obj, ULONG *arg)
+{
+    const char *n = arg[0] ? (const char *)arg[0] : "";
+    int i;
+    (void)obj;
+    if (!*n) { if (cyc_space) set(cyc_space, MUIA_Cycle_Active, 0); return 0; }
+    for (i = 0; i < n_spaces; i++)
+        if (!strcmp(space_names[i + 1], n)) { set(cyc_space, MUIA_Cycle_Active, i + 1); return 0; }
+    return 5;
+}
+MakeStaticHook(rx_space_hook, rx_space_func);
+
+HOOKPROTONH(rx_rooms_func, LONG, Object *obj, ULONG *arg)
+{
+    char b[1500] = "";
+    LONG i, n = (LONG)xget(lst_rooms, MUIA_List_Entries);
+    (void)obj; (void)arg;
+    for (i = 0; i < n; i++) {
+        Room *r = NULL;
+        DoMethod(lst_rooms, MUIM_List_GetEntry, i, &r);
+        if (!r) continue;
+        if (b[0]) strncat(b, "|", sizeof b - strlen(b) - 1);
+        strncat(b, r->name, sizeof b - strlen(b) - 1);
+        if (r->favourite) strncat(b, "*", sizeof b - strlen(b) - 1);
+    }
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_rooms_hook, rx_rooms_func);
+
+/* FAVOURITE room [OFF] */
+HOOKPROTONH(rx_fav_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    (void)obj;
+    if (!r) return 5;
+    amx_async_set_tag(A, r->id, "m.favourite", arg[1] == 0, TAG_TAG);
+    return 0;
+}
+MakeStaticHook(rx_fav_hook, rx_fav_func);
+
+/* FIND term: the search window, all rooms; HITS: "room:sender:text|..." */
+HOOKPROTONH(rx_find_func, LONG, Object *obj, ULONG *arg)
+{
+    (void)obj;
+    set(win_find, MUIA_Window_Open, TRUE);
+    set(str_find, MUIA_String_Contents, arg[0] ? (char *)arg[0] : "");
+    set(cyc_findwhere, MUIA_Cycle_Active, 0);
+    find_go();
+    return 0;
+}
+MakeStaticHook(rx_find_hook, rx_find_func);
+
+HOOKPROTONH(rx_hits_func, LONG, Object *obj, ULONG *arg)
+{
+    char b[1500] = "", one[300];
+    int i;
+    (void)obj; (void)arg;
+    for (i = 0; i < n_hits; i++) {
+        const Room *r = room_by_id(hits[i].room_id);
+        char *t = local(hits[i].body);
+        snprintf(one, sizeof one, "%s%s:%s:%s", i ? "|" : "", r ? r->name : "?", hits[i].sender, t ? t : "");
+        free(t);
+        strncat(b, one, sizeof b - strlen(b) - 1);
+    }
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_hits_hook, rx_hits_func);
+
 
 /* SESSIONSET n NAME x / PASSWORD p: rename / sign out entry n (no question) */
 HOOKPROTONH(rx_sessset_func, LONG, Object *obj, ULONG *arg)
@@ -5202,6 +5514,12 @@ static struct MUI_Command rexx_cmds[] = {
     { "SETOPTION", "NAME/A,VALUE/N/A", 2, &rx_setoption_hook, { 0 } },
     { "SESSIONS",  NULL,              0, &rx_sessions_hook, { 0 } },
     { "CHATCACHED", "ROOM/F",         1, &rx_chatcached_hook, { 0 } },
+    { "FILTER",    "TEXT/F",          1, &rx_filter_hook,   { 0 } },
+    { "SPACE",     "NAME/F",          1, &rx_space_hook,    { 0 } },
+    { "ROOMS",     NULL,              0, &rx_rooms_hook,    { 0 } },
+    { "FAVOURITE", "ROOM/A,OFF/S",    2, &rx_fav_hook,      { 0 } },
+    { "FIND",      "TERM/F",          1, &rx_find_hook,     { 0 } },
+    { "HITS",      NULL,              0, &rx_hits_hook,     { 0 } },
     { "SESSIONLIST", NULL,            0, &rx_sesslist_hook, { 0 } },
     { "SESSIONSET", "N/N/A,NAME/K,PASSWORD/K", 3, &rx_sessset_hook, { 0 } },
     { "MEMBERS",   NULL,              0, &rx_members_hook,  { 0 } },
@@ -5230,12 +5548,16 @@ static struct NewMenu menu[] = {
     { NM_ITEM,  (STRPTR)"Raum stummschalten", (STRPTR)"M", 0, 0, (APTR)ID_MUTE },
     { NM_ITEM,  (STRPTR)"Mitglieder und Einstellungen ...", (STRPTR)"T", 0, 0, (APTR)ID_INFO },
     { NM_ITEM,  (STRPTR)"Nachricht kopieren", (STRPTR)"K", 0, 0, (APTR)ID_COPY },
+    { NM_ITEM,  (STRPTR)"Nachrichten suchen ...", (STRPTR)"D", 0, 0, (APTR)ID_FIND },
+    { NM_ITEM,  (STRPTR)"Favorit an/aus",    (STRPTR)"F", 0, 0, (APTR)ID_FAV },
+    { NM_ITEM,  (STRPTR)"Niedrige Priorität an/aus", NULL, 0, 0, (APTR)ID_LOWPRIO },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Sicherheitsschlüssel eingeben ...", (STRPTR)"S", 0, 0, (APTR)ID_RECOVERY },
     { NM_ITEM,  (STRPTR)"Passwort für Amatrix-Daten ...", (STRPTR)"P", 0, 0, (APTR)ID_STOREPASS },
     { NM_ITEM,  (STRPTR)"Eigenes Profil ...", (STRPTR)"O", 0, 0, (APTR)ID_PROFILE },
     { NM_ITEM,  (STRPTR)"Sitzungen ...",     (STRPTR)"G", 0, 0, (APTR)ID_SESS },
     { NM_ITEM,  (STRPTR)"Einstellungen ...", (STRPTR)"E", 0, 0, (APTR)ID_SETTINGS },
+    { NM_ITEM,  (STRPTR)"MUI-Einstellungen ...", NULL, 0, 0, (APTR)ID_MUIPREFS },
     { NM_ITEM,  (STRPTR)"Ikonifizieren",     (STRPTR)"I", 0, 0, (APTR)ID_ICONIFY },
     { NM_ITEM,  (STRPTR)"Abmelden",          NULL, 0, 0, (APTR)ID_LOGOUT },
     { NM_ITEM,  (STRPTR)"Über Amatrix ...",  (STRPTR)"?", 0, 0, (APTR)ID_ABOUT },
@@ -5265,6 +5587,9 @@ static Object *build_app(void)
             MUIA_Window_Width, MUIV_Window_Width_Visible(38),
             MUIA_Window_Height, MUIV_Window_Height_Visible(65),
             WindowContents, VGroup,
+                Child, grp_space = HGroup, MUIA_ShowMe, FALSE, End,
+                Child, str_filter = StringObject, StringFrame, MUIA_CycleChain, TRUE,
+                    MUIA_ShortHelp, "Räume nach Namen filtern", End,
                 Child, lv_rooms = ListviewObject,
                     MUIA_Listview_List, lst_rooms = ListObject,
                         InputListFrame,
@@ -5381,6 +5706,26 @@ static Object *build_app(void)
                     Child, b_psave = SimpleButton("_Speichern"),
                 End,
                 Child, txt_pstatus = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE, End,
+            End,
+        End,
+
+        SubWindow, win_find = WindowObject,
+            MUIA_Window_Title, "Nachrichten suchen",
+            MUIA_Window_ID, MAKE_ID('A','M','X','F'),
+            WindowContents, VGroup,
+                Child, HGroup,
+                    Child, str_find = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
+                    Child, cyc_findwhere = CycleObject, MUIA_Cycle_Entries, where_names, End,
+                    Child, b_find = SimpleButton("_Suchen"),
+                End,
+                Child, NListviewObject,
+                    MUIA_NListview_NList, lst_hits = NListObject,
+                        MUIA_NList_DisplayHook2, &hit_disp_hook,
+                        MUIA_NList_Format, "BAR,BAR,",
+                        MUIA_NList_Title, TRUE,
+                    End,
+                End,
+                Child, txt_find = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE, End,
             End,
         End,
 
@@ -5516,13 +5861,22 @@ static Object *build_app(void)
                         End,
                     End,
                 End,
-                Child, VGroup, GroupFrameT("Start"),
+                Child, VGroup, GroupFrameT("Start und Aussehen"),
                     Child, ColGroup(2),
                         Child, Label1("Ikonifiziert starten"),
                         Child, HGroup,
                             Child, chk_iconified = CheckMark(FALSE),
                             Child, HSpace(0),
                         End,
+                        Child, Label1("Bilder in der Raumliste"),
+                        Child, HGroup,
+                            Child, chk_avatars = CheckMark(TRUE),
+                            Child, HSpace(0),
+                        End,
+                    End,
+                    Child, TextObject, MUIA_Text_Contents,
+                        "\33iSchrift und Farben: Menü \"MUI-Einstellungen\".", End,
+                    Child, ColGroup(2),
                     End,
                 End,
                 Child, b_set_ok = SimpleButton("_Speichern"),
@@ -5598,6 +5952,10 @@ static Object *build_app(void)
     DoMethod(win_info, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_info, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(win_prof, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_prof, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(win_sess, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_sess, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(win_find, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_find, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(b_find, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_FIND_GO);
+    DoMethod(str_find, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2, MUIM_Application_ReturnID, ID_FIND_GO);
+    DoMethod(lst_hits, MUIM_Notify, MUIA_NList_DoubleClick, MUIV_EveryTime, a, 2, MUIM_CallHook, &hit_open_hook);
     DoMethod(b_srename, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_SESS_RENAME);
     DoMethod(b_sdelete, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_SESS_DELETE);
     DoMethod(lst_sess, MUIM_Notify, MUIA_NList_Active, MUIV_EveryTime, a, 2, MUIM_CallHook, &sess_active_hook);
@@ -5624,6 +5982,7 @@ static Object *build_app(void)
 
     DoMethod(win_main, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, a, 2,
              MUIM_Application_ReturnID, MUIV_Application_ReturnID_Quit);
+    DoMethod(str_filter, MUIM_Notify, MUIA_String_Contents, MUIV_EveryTime, a, 2, MUIM_CallHook, &filter_hook);
     DoMethod(lv_rooms, MUIM_Notify, MUIA_Listview_DoubleClick, TRUE, a, 2,
              MUIM_Application_ReturnID, ID_ROOM_DCLICK);
     DoMethod(b_chat, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_NEWCHAT);
@@ -5773,6 +6132,7 @@ static void handle_id(ULONG id)
         set(chk_linkprev, MUIA_Selected, opt_linkprev);
         set(chk_linkprev_enc, MUIA_Selected, opt_linkprev_enc);
         set(chk_hcache, MUIA_Selected, opt_hcache);
+        set(chk_avatars, MUIA_Selected, opt_avatars);
         set(win_settings, MUIA_Window_Open, TRUE);
         break;
     case ID_INFO: {
@@ -5785,6 +6145,14 @@ static void handle_id(ULONG id)
     }
     case ID_PROFILE:     open_profile(); break;
     case ID_SESS:        open_sessions(); break;
+    case ID_FAV:         toggle_tag("m.favourite"); break;
+    case ID_LOWPRIO:     toggle_tag("m.lowpriority"); break;
+    case ID_FIND:
+        set(win_find, MUIA_Window_Open, TRUE);
+        set(win_find, MUIA_Window_ActiveObject, str_find);
+        break;
+    case ID_FIND_GO:     find_go(); break;
+    case ID_MUIPREFS:    DoMethod(app, MUIM_Application_OpenConfigWindow, 0, NULL); break;
     case ID_SESS_RENAME: sess_rename(); break;
     case ID_SESS_DELETE: sess_delete(); break;
     case ID_PROF_SAVE:   prof_save(); break;
@@ -5801,6 +6169,11 @@ static void handle_id(ULONG id)
         opt_notify_all = xget(cyc_notify, MUIA_Cycle_Active) == 0;
         opt_previews = xget(chk_previews, MUIA_Selected) != 0;
         opt_iconified = xget(chk_iconified, MUIA_Selected) != 0;
+        if (opt_avatars != (xget(chk_avatars, MUIA_Selected) != 0)) {
+            opt_avatars = !opt_avatars;
+            if (opt_avatars) request_avatars();
+            DoMethod(lst_rooms, MUIM_List_Redraw, MUIV_List_Redraw_All);
+        }
         opt_typing = xget(chk_typing, MUIA_Selected) != 0;
         opt_linkprev = xget(chk_linkprev, MUIA_Selected) != 0;
         opt_linkprev_enc = xget(chk_linkprev_enc, MUIA_Selected) != 0;

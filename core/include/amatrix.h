@@ -164,7 +164,25 @@ typedef struct {
     const char *last_body;     /*   its text (shortened; "(verschlüsselt)" without key), may be NULL */
     int last_own;              /*   1 if we sent it */
     const char *inviter_name;  /* AMX_ROOM_INVITED: display name of who invited us */
+    int favourite;             /* tagged m.favourite (sorted to the top) */
+    int low_priority;          /* tagged m.lowpriority (sorted to the bottom) */
+    int is_space;              /* a space (a group of rooms), not a chat */
+    const char *parents;       /* the spaces this room belongs to: room IDs, one per line; NULL */
 } AmxRoomInfo;
+
+/* Tags a room as favourite ("m.favourite") or low priority ("m.lowpriority"),
+ * or takes the tag away (on = 0). */
+int  amx_set_room_tag(AmxClient *c, const char *room_id, const char *tag, int on);
+
+/* Message search: the server's (unencrypted rooms) plus the local history
+ * cache (also encrypted rooms); room_id NULL = all rooms.  Newest first,
+ * at most 50.  Returns the count or -1. */
+typedef struct {
+    char *room_id, *event_id, *sender, *name, *body;   /* UTF-8 */
+    double timestamp;
+} AmxSearchHit;
+int  amx_search(AmxClient *c, const char *room_id, const char *term, AmxSearchHit **hits);
+void amx_free_search(AmxSearchHit *hits, int n);
 
 /* Snapshot of the room list.  Returns the number of rooms (0..), -1 on error;
  * *list is valid until amx_free_rooms(). */

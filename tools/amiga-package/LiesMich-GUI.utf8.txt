@@ -28,6 +28,11 @@ Bedienung
               (bzw. Thema, Mitglieder, Einladung), rechts die Uhrzeit;
               (n) = ungelesene Nachrichten; Doppelklick öffnet den Chat
               bzw. fragt bei Einladungen nach Annehmen/Ablehnen
+- Über der Liste: ein Feld filtert die Räume nach Namen; bist du in
+              Spaces, wählt eine Auswahl darüber "Alle Räume" oder die
+              Räume eines Space.  Favoriten (Stern) stehen oben, Räume mit
+              niedriger Priorität unten (Menü "Favorit an/aus", Amiga-F,
+              und "Niedrige Priorität an/aus").
 - Neuer Chat: Direktchat mit einem Nutzer (@name:server oder nur "name")
 - Neuer Raum: Name, verschlüsselt, im Verzeichnis
 - Menü "Raum betreten ...": öffentliche Räume suchen oder #alias:server
@@ -42,6 +47,21 @@ Bedienung
               Passwort (AES-256).  Amatrix fragt dann beim Start danach.
               Vergessen = Daten unbrauchbar (dann abmelden/neu anmelden).
 - Menü "Abmelden": meldet dieses Gerät ab und löscht seine Schlüssel
+- Menü "Eigenes Profil ..." (Amiga-O): Anzeigename und Profilbild
+- Menü "Sitzungen ..." (Amiga-G): deine angemeldeten Geräte, ob sie
+              verifiziert sind, umbenennen, andere abmelden (mit Passwort)
+- Menü "Nachrichten suchen ..." (Amiga-D): in allen Räumen oder dem
+              markierten.  Unverschlüsselte Räume durchsucht der Server,
+              verschlüsselte nur der auf dem Amiga gespeicherte Verlauf.
+              Doppelklick auf einen Treffer öffnet den Chat.
+- Menü "Mitglieder und Einstellungen ..." (Amiga-T), auch das i-Symbol im
+              Chatfenster: Name, Thema, Bild, wer beitreten darf, wer den
+              Verlauf lesen darf, Verschlüsselung einschalten; die
+              Mitglieder mit Rolle (Gründer, Admin, Moderator, Mitglied),
+              einladen, rauswerfen, sperren/entsperren, Rolle zuweisen.
+              Was du in dem Raum nicht darfst, ist ausgegraut.
+- Menü "Nachricht kopieren" (Amiga-K): die markierte Nachricht im
+              Chatfenster in die Zwischenablage
 - Chatfenster: lädt beim Öffnen die letzten 30 Nachrichten.
               Werkzeugleiste oben (Maus darüber zeigt die Erklärung):
                 Pfeil nach oben  = 20 ältere Nachrichten laden
@@ -56,7 +76,11 @@ Bedienung
                                    Markierung: die neueste fremde); öffnet
                                    eine kleine Auswahl, nochmal dieselbe
                                    nimmt die eigene Reaktion zurück
+                Büroklammer      = Bild oder Datei senden (Requester, mehrere
+                                   auf einmal); oder Icons von der Workbench
+                                   ins Chatfenster ziehen
                 Person mit Plus  = jemanden in diesen Raum einladen
+                i im Kreis       = Mitglieder und Raum-Einstellungen
                 Tür mit Pfeil    = Raum endgültig verlassen (mit Rückfrage);
                                    auch im Menü "Raum verlassen ..." für
                                    den in der Liste gewählten Raum
@@ -81,7 +105,15 @@ Bedienung
               Symbol hinter dem Namen speichert Bild oder Datei, wohin du
               willst.  Links sind unterstrichen; die Weltkugel dahinter
               öffnet den Browser (openurl.library).
-              Unten tippen, Return sendet.
+              Unter einem Link steht eine Vorschau (Titel - Beschreibung),
+              die dein Server holt; in verschlüsselten Räumen nur, wenn in
+              den Einstellungen eingeschaltet.
+              Unten tippen, Return sendet.  Rechts in der Werkzeugleiste
+              steht "Alice tippt ...", wenn jemand schreibt; ein blauer
+              Haken hinter deiner Nachricht heißt: gelesen.
+              Die letzten Nachrichten jedes Raums speichert Amatrix in
+              seiner Schublade; ein Chatfenster zeigt sie sofort (auch
+              ohne Netz), dann kommt der Rest vom Server.
               Reaktionen stehen unter der Nachricht, mit Anzahl (Personen);
               ähnliche Emojis zählen zusammen (alle Lach-Smileys, alle
               Herzen/Kussmünder).  Deine eigene Anzahl ist fett.  Ein
@@ -94,14 +126,17 @@ CHATLINES, UNREADABLE, OLDER,
 FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS, CHATSTATUS,
 CLOSECHAT, REACT, REACTIONS, PICKER, LEAVE, LASTLINE, MEDIA, SAVEMEDIA,
 OPENMEDIA, LINKS, OPENLINK, REPLY, EDITLAST, DELETELAST, TEXTS, OPENTHREAD,
-THREADSAY, MUTE, QUIT; dazu MUIs eigene wie HIDE und SHOW).
+THREADSAY, MUTE, SENDFILE, COPY, CLIP, TYPE, TYPING, READ, ROOMINFO,
+MEMBERS, INFOSTATE, INFOSET, INFOMEMBER, PROFILE, PROFILESTATE, PREVIEWS,
+SETOPTION, SESSIONS, SESSIONLIST, SESSIONSET, CHATCACHED, FILTER, SPACE,
+ROOMS, FAVOURITE, FIND, HITS, QUIT; dazu MUIs eigene wie HIDE und SHOW).
 
 Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
 schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem
 Passwort schützen (siehe oben) und nicht weitergeben.
 
-Was noch fehlt: Bilder/Dateien anzeigen und senden, andere Nutzer
-verifizieren.
+Nicht geplant: andere Geräte per Emoji-Vergleich verifizieren (der
+Sicherheitsschlüssel genügt), Sprach- und Videoanrufe.
 
 Benachrichtigungen, Ikonifizieren, Einstellungen
 ------------------------------------------------
@@ -117,7 +152,10 @@ Benachrichtigungen, Ikonifizieren, Einstellungen
   die Zahl ungelesener Nachrichten.
 - Menü "Einstellungen ..." (Amiga-E): Benachrichtigungen an/aus, bei allen
   Nachrichten oder nur Direktnachrichten und Erwähnungen, Bildvorschau im
-  Chat an/aus, ikonifiziert starten (auch mit dem Argument HIDE).
+  Chat an/aus, Link-Vorschau (auch in verschlüsselten Räumen), zeigen dass
+  ich tippe, Lesebestätigungen senden, Verlauf lokal speichern, Bilder in
+  der Raumliste, ikonifiziert starten (auch mit dem Argument HIDE).
+- Menü "MUI-Einstellungen ...": Schrift, Farben usw. für Amatrix.
 
 Bekannte Fehler
 ---------------

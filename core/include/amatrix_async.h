@@ -43,7 +43,7 @@ typedef enum {
     AMX_CMD_SEND_REPLY, AMX_CMD_EDIT, AMX_CMD_LOAD_THREAD, AMX_CMD_SEND_FILE, AMX_CMD_TYPING,
     AMX_CMD_PRIVATE_RECEIPTS, AMX_CMD_MEMBERS, AMX_CMD_ROOM_SETTINGS, AMX_CMD_ROOM_SET, AMX_CMD_MODERATE, AMX_CMD_PROFILE,
     AMX_CMD_SET_PROFILE, AMX_CMD_URL_PREVIEW, AMX_CMD_DEVICES, AMX_CMD_DEVICE_RENAME,
-    AMX_CMD_DEVICE_DELETE, AMX_CMD_HISTORY_CACHE
+    AMX_CMD_DEVICE_DELETE, AMX_CMD_HISTORY_CACHE, AMX_CMD_SET_TAG, AMX_CMD_SEARCH
 } AmxCmd;
 
 typedef enum {
@@ -79,6 +79,7 @@ typedef struct {
     AmxRoomSettings *settings;    /* ROOM_SETTINGS (freed with the message); result = room */
     const char *result2;          /* PROFILE: result = display name, result2 = picture (mxc://) */
     AmxDevice *devices;           /* DEVICES: n entries (freed with the message) */
+    AmxSearchHit *hits;           /* SEARCH: n entries (freed with the message); result = the term */
     const char *title, *description, *image;   /* URL_PREVIEW (result = the caller's key, result2 = URL) */
 } AmxMsg;
 
@@ -153,6 +154,9 @@ int amx_async_device_delete(AmxAsync *a, const char *device_id, const char *pass
 /* amx_set_history_cache (no result).  LOAD_HISTORY from the newest first
  * delivers the cached messages (cached = 1), then the server's. */
 int amx_async_history_cache(AmxAsync *a, int on);
+/* amx_set_room_tag (result: the room ID); amx_search (room_id NULL: all) */
+int amx_async_set_tag(AmxAsync *a, const char *room_id, const char *tag, int on, unsigned long tag_);
+int amx_async_search(AmxAsync *a, const char *room_id, const char *term, unsigned long tag);
 /* amx_send_reply() / amx_send_edit(); result = the new event ID */
 int amx_async_send_reply(AmxAsync *a, const char *room_id, const char *reply_to, const char *thread_root,
                          const char *body, unsigned long tag);

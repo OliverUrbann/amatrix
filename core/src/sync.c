@@ -154,6 +154,7 @@ int amx_sync(AmxClient *c, long timeout_ms)
                                               cJSON_GetObjectItemCaseSensitive(room, "ephemeral"), "events"));
     }
     amx__rooms_save(c);
+    amx__rooms_upkeep(c);
     amx__hcache_save(c);
     amx__fetch_missing_keys(c);           /* keys still missing: backup, our other devices */
 

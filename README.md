@@ -19,6 +19,14 @@ private Synapse started by the tests.
 | reactions | ✔ | ✔ | ✔ |
 | media | ✔ | ✔ | ✔ |
 | replies | ✔ | ✔ | ✔ |
+| send_media | ✔ | ✔ | |
+| typing_receipts | ✔ | ✔ | |
+| room_admin | ✔ | ✔ | |
+| profile | ✔ | ✔ | |
+| link_preview | ✔ | ✔ | |
+| sessions | ✔ | ✔ | |
+| history_cache | ✔ | ✔ | |
+| organize | ✔ | ✔ | |
 | tls_verify | ✔ | ✔ | ✔ |
 | room_list | ✔ | ✔ | ✔ |
 | directory | ✔ | ✔ | ✔ |

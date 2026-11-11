@@ -68,6 +68,17 @@ static void apply_state(AmxClient *c, cJSON *r, const char *room_id, const cJSON
     else if (!strcmp(type, "m.room.topic")) set_str(r, "topic", amx__jstr(ct, "topic"));
     else if (!strcmp(type, "m.room.canonical_alias")) set_str(r, "alias", amx__jstr(ct, "alias"));
     else if (!strcmp(type, "m.room.avatar")) set_str(r, "avatar", amx__jstr(ct, "url"));
+    else if (!strcmp(type, "m.room.create")) {
+        const char *t = amx__jstr(ct, "type");
+        cJSON_DeleteItemFromObjectCaseSensitive(r, "ct");
+        cJSON_AddStringToObject(r, "ct", t ? t : "");
+    } else if (!strcmp(type, "m.space.child")) {
+        cJSON *ch = cJSON_GetObjectItemCaseSensitive(r, "children");
+        const cJSON *via = cJSON_GetObjectItemCaseSensitive(ct, "via");
+        if (!ch) ch = cJSON_AddObjectToObject(r, "children");
+        cJSON_DeleteItemFromObjectCaseSensitive(ch, sk);
+        if (cJSON_IsArray(via) && cJSON_GetArraySize(via) > 0) cJSON_AddTrueToObject(ch, sk);
+    }
     else if (!strcmp(type, "m.room.encryption")) {
         cJSON_DeleteItemFromObjectCaseSensitive(r, "enc");
         cJSON_AddTrueToObject(r, "enc");
@@ -122,6 +133,15 @@ void amx__room_sync_join(AmxClient *c, const char *room_id, const cJSON *jr)
         set_num(r, "jc", get_int(sum, "m.joined_member_count"));
     if (cJSON_GetObjectItemCaseSensitive(sum, "m.invited_member_count"))
         set_num(r, "ic", get_int(sum, "m.invited_member_count"));
+    {   /* room tags (favourite, low priority) */
+        const cJSON *ev;
+        cJSON_ArrayForEach(ev, cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(jr, "account_data"), "events"))
+            if (amx__jstr(ev, "type") && !strcmp(amx__jstr(ev, "type"), "m.tag")) {
+                const cJSON *tags = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(ev, "content"), "tags");
+                cJSON_DeleteItemFromObjectCaseSensitive(r, "tags");
+                cJSON_AddItemToObject(r, "tags", tags ? cJSON_Duplicate(tags, 1) : cJSON_CreateObject());
+            }
+    }
     if ((un = cJSON_GetObjectItemCaseSensitive(jr, "unread_notifications"))) {
         set_num(r, "unread", get_int(un, "notification_count"));
         set_num(r, "hl", get_int(un, "highlight_count"));
@@ -293,6 +313,8 @@ static int cmp_rooms(const void *a, const void *b)
 {
     const AmxRoomInfo *x = a, *y = b;
     if (x->membership != y->membership) return x->membership == AMX_ROOM_INVITED ? -1 : 1;
+    if (x->favourite != y->favourite) return x->favourite ? -1 : 1;
+    if (x->low_priority != y->low_priority) return x->low_priority ? 1 : -1;
     if (x->last_activity != y->last_activity) return x->last_activity > y->last_activity ? -1 : 1;
     return strcmp(x->name, y->name);
 }
@@ -334,6 +356,25 @@ int amx_rooms(AmxClient *c, AmxRoomInfo **list)
         i->unread = get_int(r, "unread");
         i->highlights = get_int(r, "hl");
         i->last_activity = get_num(r, "ts");
+        {
+            const cJSON *tags = cJSON_GetObjectItemCaseSensitive(r, "tags"), *sp;
+            size_t len = 0;
+            char *par = NULL;
+            i->favourite = cJSON_GetObjectItemCaseSensitive(tags, "m.favourite") != NULL;
+            i->low_priority = cJSON_GetObjectItemCaseSensitive(tags, "m.lowpriority") != NULL;
+            i->is_space = amx__jstr(r, "ct") && !strcmp(amx__jstr(r, "ct"), "m.space");
+            cJSON_ArrayForEach(sp, c->rooms)              /* spaces that list this room */
+                if (cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(sp, "children"), r->string)) {
+                    size_t k = strlen(sp->string);
+                    char *t = realloc(par, len + k + 2);
+                    if (!t) break;
+                    par = t;
+                    if (len) par[len++] = '\n';
+                    memcpy(par + len, sp->string, k + 1);
+                    len += k;
+                }
+            i->parents = par;
+        }
         n++;
     }
     qsort(l, n, sizeof *l, cmp_rooms);
@@ -351,6 +392,7 @@ void amx_free_rooms(AmxRoomInfo *list, int n)
         free((char *)list[i].avatar_url);
         free((char *)list[i].last_sender); free((char *)list[i].last_body);
         free((char *)list[i].inviter_name);
+        free((char *)list[i].parents);
     }
     free(list);
 }
@@ -398,4 +440,68 @@ void amx_free_public_rooms(AmxPublicRoom *list, int n)
         free((char *)list[i].topic); free((char *)list[i].alias);
     }
     free(list);
+}
+
+/* Rooms we have not seen the create event of (joined before we tracked it):
+ * fetch it, a few per sync round; a space also gets its children. */
+void amx__rooms_upkeep(AmxClient *c)
+{
+    cJSON *r;
+    int asked = 0;
+    cJSON_ArrayForEach(r, c->rooms) {
+        const char *m = amx__jstr(r, "m");
+        char *esc, *path;
+        cJSON *res;
+        long st;
+        if (asked >= 4) break;
+        if (!m || strcmp(m, "join") || cJSON_GetObjectItemCaseSensitive(r, "ct")) continue;
+        asked++;
+        esc = http_escape(r->string);
+        path = amx__malloc(strlen(esc) + 40);
+        sprintf(path, "/rooms/%s/state/m.room.create/", esc);
+        res = amx__api(c, "GET", path, NULL, 60, &st);
+        cJSON_DeleteItemFromObjectCaseSensitive(r, "ct");
+        cJSON_AddStringToObject(r, "ct", st == 200 && amx__jstr(res, "type") ? amx__jstr(res, "type") : "");
+        cJSON_Delete(res);
+        if (!strcmp(amx__jstr(r, "ct"), "m.space")) {           /* its children */
+            sprintf(path, "/rooms/%s/state", esc);
+            res = amx__api(c, "GET", path, NULL, 60, &st);
+            if (st == 200) {
+                const cJSON *ev;
+                cJSON_ArrayForEach(ev, res) apply_state(c, r, r->string, ev);
+            }
+            cJSON_Delete(res);
+        }
+        free(path);
+        free(esc);
+    }
+    if (asked) amx__rooms_save(c);
+}
+
+int amx_set_room_tag(AmxClient *c, const char *room_id, const char *tag, int on)
+{
+    char *eu = http_escape(c->user_id ? c->user_id : ""), *er = http_escape(room_id), *et = http_escape(tag), *path;
+    cJSON *b = cJSON_CreateObject(), *res;
+    long st;
+    path = amx__malloc(strlen(eu) + strlen(er) + strlen(et) + 40);
+    sprintf(path, "/user/%s/rooms/%s/tags/%s", eu, er, et);
+    free(eu); free(er); free(et);
+    if (on) cJSON_AddNumberToObject(b, "order", 0.5);
+    res = amx__api(c, on ? "PUT" : "DELETE", path, b, 60, &st);
+    cJSON_Delete(b);
+    cJSON_Delete(res);
+    free(path);
+    if (st != 200) return -1;
+    {   /* at once in the list, not only after the next sync */
+        cJSON *r = cJSON_GetObjectItemCaseSensitive(c->rooms, room_id), *tags;
+        if (r) {
+            tags = cJSON_GetObjectItemCaseSensitive(r, "tags");
+            if (!tags) tags = cJSON_AddObjectToObject(r, "tags");
+            cJSON_DeleteItemFromObjectCaseSensitive(tags, tag);
+            if (on) cJSON_AddObjectToObject(tags, tag);
+            amx__rooms_save(c);
+        }
+    }
+    LOG(c, "tag %s %s on %s", tag, on ? "set" : "removed", room_id);
+    return 0;
 }

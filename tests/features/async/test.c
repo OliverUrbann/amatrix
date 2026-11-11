@@ -110,7 +110,7 @@ int main(int argc, char **argv)
     const char *inv[2];
     AmxRoomOptions opt;
     time_t t0;
-    int i, hist = 0;
+    int i, hist = 0, cached = 0;
 #ifdef __amigaos__
     int slow = 3;
 #else
@@ -169,9 +169,13 @@ int main(int argc, char **argv)
     amx_async_load_history(A, room, 10, 1, 4);
     r = wait_result(4, 120);
     for (i = 0; i < mxt_n_ev; i++)
-        if (mxt_ev[i].history && mxt_ev[i].body && !strcmp(mxt_ev[i].body, "ping 1")) hist++;
+        if (mxt_ev[i].history && mxt_ev[i].body && !strcmp(mxt_ev[i].body, "ping 1")) {
+            if (mxt_ev[i].cached) cached++;
+            else hist++;
+        }
     MXT_OK(r && r->status == 0 && r->count > 0 && hist == 1,
            "history: %d events, 'ping 1' among them", r ? r->count : -1);
+    MXT_OK(cached == 1, "and before them from the local cache (%d)", cached);
 
     memset(&opt, 0, sizeof opt);
     opt.name = "async room";

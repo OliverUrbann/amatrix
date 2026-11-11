@@ -185,3 +185,114 @@ void amx_set_history_cache(AmxClient *c, int on)
         c->hc_dirty = 0;
     }
 }
+
+/* ------------------------------------------------------------------ search */
+
+/* case-insensitive (ASCII and the Latin-1 range of UTF-8 as bytes) */
+static int contains(const char *hay, const char *needle)
+{
+    size_t n = strlen(needle);
+    const char *p;
+    if (!n) return 0;
+    for (p = hay; *p; p++) {
+        size_t i;
+        for (i = 0; i < n; i++) {
+            char a = p[i], b = needle[i];
+            if (!a) return 0;
+            if (a >= 'A' && a <= 'Z') a += 32;
+            if (b >= 'A' && b <= 'Z') b += 32;
+            if (a != b) break;
+        }
+        if (i == n) return 1;
+    }
+    return 0;
+}
+
+static int by_time(const void *a, const void *b)
+{
+    const AmxSearchHit *x = a, *y = b;
+    return x->timestamp < y->timestamp ? 1 : x->timestamp > y->timestamp ? -1 : 0;
+}
+
+#define MAX_HITS 50
+
+static int add_hit(AmxSearchHit *h, int n, const char *room, const char *id, const char *sender, const char *name,
+                   const char *body, double ts)
+{
+    int i;
+    if (!id || !room) return n;
+    for (i = 0; i < n; i++) if (!strcmp(h[i].event_id, id)) return n;
+    if (n >= MAX_HITS * 2) return n;
+    h[n].room_id = amx__strdup(room);
+    h[n].event_id = amx__strdup(id);
+    h[n].sender = amx__strdup(sender ? sender : "");
+    h[n].name = amx__strdup(name ? name : sender ? sender : "");
+    h[n].body = amx__strdup(body ? body : "");
+    h[n].timestamp = ts;
+    return n + 1;
+}
+
+int amx_search(AmxClient *c, const char *room_id, const char *term, AmxSearchHit **out)
+{
+    AmxSearchHit *h = amx__malloc(sizeof *h * (MAX_HITS * 2 + 1));
+    cJSON *req, *res, *x, *arr;
+    long st;
+    int n = 0, i;
+    *out = NULL;
+    if (!term || !*term) { free(h); return amx__fail(c, "nothing to search for"); }
+    /* the server: only rooms it can read (unencrypted) */
+    req = cJSON_CreateObject();
+    {
+        cJSON *re = cJSON_AddObjectToObject(cJSON_AddObjectToObject(req, "search_categories"), "room_events");
+        cJSON_AddStringToObject(re, "search_term", term);
+        cJSON_AddStringToObject(re, "order_by", "recent");
+        if (room_id) {
+            cJSON *f = cJSON_AddObjectToObject(re, "filter");
+            cJSON_AddItemToArray(cJSON_AddArrayToObject(f, "rooms"), cJSON_CreateString(room_id));
+            cJSON_AddNumberToObject(f, "limit", MAX_HITS);
+        }
+    }
+    res = amx__api(c, "POST", "/search", req, 60, &st);
+    cJSON_Delete(req);
+    if (st == 200)
+        cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(
+                                  cJSON_GetObjectItemCaseSensitive(res, "search_categories"), "room_events"), "results")) {
+            const cJSON *ev = cJSON_GetObjectItemCaseSensitive(x, "result"), *ts = cJSON_GetObjectItemCaseSensitive(ev, "origin_server_ts");
+            const cJSON *ct = cJSON_GetObjectItemCaseSensitive(ev, "content");
+            const char *room = amx__jstr(ev, "room_id"), *snd = amx__jstr(ev, "sender");
+            if (!amx__jstr(ct, "body") || (amx__jstr(ev, "type") && strcmp(amx__jstr(ev, "type"), "m.room.message"))) continue;
+            n = add_hit(h, n, room, amx__jstr(ev, "event_id"), snd, room && snd ? amx__member_name(c, room, snd) : NULL,
+                        amx__jstr(ct, "body"), cJSON_IsNumber(ts) ? ts->valuedouble : 0);
+        }
+    cJSON_Delete(res);
+    c->err[0] = 0;                        /* no server search: the cache still counts */
+    /* the local cache: also encrypted rooms */
+    if (!c->hc_off) {
+        hc_load(c);
+        cJSON_ArrayForEach(arr, c->hc) {
+            if (room_id && strcmp(arr->string, room_id)) continue;
+            for (i = cJSON_GetArraySize(arr) - 1; i >= 0; i--) {
+                const cJSON *m = cJSON_GetArrayItem(arr, i);
+                const char *b = amx__jstr(m, "body");
+                if (b && contains(b, term))
+                    n = add_hit(h, n, arr->string, amx__jstr(m, "id"), amx__jstr(m, "sender"), amx__jstr(m, "name"), b,
+                                ts_of(m));
+            }
+        }
+    }
+    qsort(h, n, sizeof *h, by_time);
+    for (i = MAX_HITS; i < n; i++) {
+        free(h[i].room_id); free(h[i].event_id); free(h[i].sender); free(h[i].name); free(h[i].body);
+    }
+    if (n > MAX_HITS) n = MAX_HITS;
+    *out = h;
+    return n;
+}
+
+void amx_free_search(AmxSearchHit *h, int n)
+{
+    int i;
+    if (!h) return;
+    for (i = 0; i < n; i++) { free(h[i].room_id); free(h[i].event_id); free(h[i].sender); free(h[i].name); free(h[i].body); }
+    free(h);
+}
