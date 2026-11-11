@@ -43,7 +43,12 @@ typedef enum {
     AMX_CMD_SEND_REPLY, AMX_CMD_EDIT, AMX_CMD_LOAD_THREAD, AMX_CMD_SEND_FILE, AMX_CMD_TYPING,
     AMX_CMD_PRIVATE_RECEIPTS, AMX_CMD_MEMBERS, AMX_CMD_ROOM_SETTINGS, AMX_CMD_ROOM_SET, AMX_CMD_MODERATE, AMX_CMD_PROFILE,
     AMX_CMD_SET_PROFILE, AMX_CMD_URL_PREVIEW, AMX_CMD_DEVICES, AMX_CMD_DEVICE_RENAME,
-    AMX_CMD_DEVICE_DELETE, AMX_CMD_HISTORY_CACHE, AMX_CMD_SET_TAG, AMX_CMD_SEARCH
+    AMX_CMD_DEVICE_DELETE, AMX_CMD_HISTORY_CACHE, AMX_CMD_SET_TAG, AMX_CMD_SEARCH,
+    AMX_CMD_SEND_POLL, AMX_CMD_POLL_VOTE, AMX_CMD_POLL_END, AMX_CMD_RELATIONS,
+    AMX_CMD_SEND_MSG, AMX_CMD_ROOM_NICK, AMX_CMD_PROFILE_OF,
+    AMX_CMD_IGNORED, AMX_CMD_IGNORE, AMX_CMD_PIN, AMX_CMD_FETCH_EVENT, AMX_CMD_FORWARD, AMX_CMD_EDITS, AMX_CMD_ROOM_NOTIFY,
+    AMX_CMD_KEYWORDS, AMX_CMD_KEYWORD, AMX_CMD_PASSWORD,
+    AMX_CMD_DEACTIVATE, AMX_CMD_KNOCK, AMX_CMD_UPGRADE
 } AmxCmd;
 
 typedef enum {
@@ -157,6 +162,41 @@ int amx_async_history_cache(AmxAsync *a, int on);
 /* amx_set_room_tag (result: the room ID); amx_search (room_id NULL: all) */
 int amx_async_set_tag(AmxAsync *a, const char *room_id, const char *tag, int on, unsigned long tag_);
 int amx_async_search(AmxAsync *a, const char *room_id, const char *term, unsigned long tag);
+/* polls: answers / answer IDs one per line ("" = take the vote back);
+ * RELATIONS: amx_load_relations.  Results carry the room ID. */
+int amx_async_send_poll(AmxAsync *a, const char *room_id, const char *question, const char *answers, int max,
+                        int disclosed, unsigned long tag);
+int amx_async_poll_vote(AmxAsync *a, const char *room_id, const char *poll_id, const char *answer_ids,
+                        unsigned long tag);
+int amx_async_poll_end(AmxAsync *a, const char *room_id, const char *poll_id, unsigned long tag);
+int amx_async_relations(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag);
+/* amx_send_message (result: the event ID); our name in one room; someone's
+ * profile (result = name, result2 = picture, error if none) */
+int amx_async_send_message(AmxAsync *a, const char *room_id, const AmxOutMsg *m, unsigned long tag);
+int amx_async_room_nick(AmxAsync *a, const char *room_id, const char *name, unsigned long tag);
+int amx_async_profile_of(AmxAsync *a, const char *user, unsigned long tag);
+/* the ignore list (result: user IDs, one per line); ignore / stop ignoring
+ * (result: the user) */
+int amx_async_ignored(AmxAsync *a, unsigned long tag);
+int amx_async_ignore(AmxAsync *a, const char *user, int on, unsigned long tag);
+/* pin / unpin (result: the room); fetch one event (lookup = 1) */
+int amx_async_pin(AmxAsync *a, const char *room_id, const char *event_id, int on, unsigned long tag);
+int amx_async_fetch_event(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag);
+/* amx_forward (result: the new event ID) */
+int amx_async_forward(AmxAsync *a, const char *to_room, const char *from_room, const char *event_id, unsigned long tag);
+/* amx_load_edits (result: the message's event ID) */
+int amx_async_edits(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag);
+/* a room's notification level (result: the room); the keywords (result:
+ * one per line); add / remove one (result: the list afterwards) */
+int amx_async_room_notify(AmxAsync *a, const char *room_id, int level, unsigned long tag);
+int amx_async_keywords(AmxAsync *a, unsigned long tag);
+int amx_async_keyword(AmxAsync *a, const char *word, int on, unsigned long tag);
+/* account (passwords wiped after use) */
+int amx_async_change_password(AmxAsync *a, const char *old_pw, const char *new_pw, unsigned long tag);
+int amx_async_deactivate(AmxAsync *a, const char *password, int erase, unsigned long tag);
+int amx_async_knock(AmxAsync *a, const char *room, const char *reason, unsigned long tag);
+/* amx_upgrade_room (result: the new room's ID) */
+int amx_async_upgrade(AmxAsync *a, const char *room_id, const char *version, unsigned long tag);
 /* amx_send_reply() / amx_send_edit(); result = the new event ID */
 int amx_async_send_reply(AmxAsync *a, const char *room_id, const char *reply_to, const char *thread_root,
                          const char *body, unsigned long tag);

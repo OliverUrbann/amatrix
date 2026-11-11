@@ -47,6 +47,8 @@ struct AmxClient {
     cJSON *bk_done;                /* "room|session" -> {n: tries, t: next try} for the backup */
     cJSON *hc;                     /* history cache (history_cache.json), loaded when needed */
     int hc_dirty, hc_off, hc_emitting;
+    int lookup_mode;               /* events delivered now are lookups (amx_fetch_event) */
+    cJSON *push;                   /* push rules (pushrules.json) */
     cJSON *kreq;                   /* "room|session" -> key request sent to our devices (this run) */
     unsigned char skey[32];        /* store key (passphrase), if skey_set */
     int skey_set;
@@ -108,6 +110,10 @@ void  amx__retry_pending(AmxClient *c);
 void  amx__fetch_missing_keys(AmxClient *c);
 cJSON *amx__file_content(AmxClient *c, const char *path, const char *name, int enc);
 void amx__rooms_upkeep(AmxClient *c);
+void amx__set_push_rules(AmxClient *c, const cJSON *content);
+int  amx__room_notify(AmxClient *c, const char *room_id);
+int  amx__keyword_hit(AmxClient *c, const char *text);
+cJSON *amx__event_content(AmxClient *c, const char *room_id, const cJSON *ev, char **type);
 void amx__hcache_note(AmxClient *c, const AmxEvent *e);
 void amx__hcache_save(AmxClient *c);
 void amx__hcache_forget(AmxClient *c, const char *room_id);

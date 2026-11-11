@@ -115,8 +115,12 @@ int amx_sync(AmxClient *c, long timeout_ms)
     /* account data: m.direct (which rooms are direct chats) */
     cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(
                               cJSON_GetObjectItemCaseSensitive(r, "account_data"), "events"))
+    {
         if (amx__jstr(x, "type") && !strcmp(amx__jstr(x, "type"), "m.direct"))
             amx__set_direct(c, cJSON_GetObjectItemCaseSensitive(x, "content"));
+        else if (amx__jstr(x, "type") && !strcmp(amx__jstr(x, "type"), "m.push_rules"))
+            amx__set_push_rules(c, cJSON_GetObjectItemCaseSensitive(x, "content"));
+    }
 
     cJSON_ArrayForEach(room, cJSON_GetObjectItemCaseSensitive(
                                  cJSON_GetObjectItemCaseSensitive(r, "rooms"), "leave"))
@@ -281,5 +285,51 @@ int amx_load_thread(AmxClient *c, const char *room_id, const char *root, int lim
     cJSON_Delete(r);
     free(esc); free(resc); free(key);
     amx__hcache_save(c);
+    return n;
+}
+
+static int load_rel(AmxClient *c, const char *room_id, const char *event_id, const char *rel);
+
+int amx_load_relations(AmxClient *c, const char *room_id, const char *event_id)
+{
+    return load_rel(c, room_id, event_id, "m.reference");
+}
+
+int amx_load_edits(AmxClient *c, const char *room_id, const char *event_id)
+{
+    int n;
+    c->lookup_mode = 1;
+    n = load_rel(c, room_id, event_id, "m.replace");
+    c->lookup_mode = 0;
+    return n;
+}
+
+static int load_rel(AmxClient *c, const char *room_id, const char *event_id, const char *rel)
+{
+    char *esc = http_escape(room_id), *eesc = http_escape(event_id), *fesc = NULL, *path, *from = NULL;
+    int n = 0, pages = 0;
+    for (;;) {
+        cJSON *r, *x;
+        long st;
+        path = amx__malloc(strlen(esc) + strlen(eesc) + (fesc ? strlen(fesc) : 0) + 120);
+        sprintf(path, "/_matrix/client/v1/rooms/%s/relations/%s/%s?limit=100%s%s", esc, eesc, rel,
+                fesc ? "&from=" : "", fesc ? fesc : "");
+        free(fesc);
+        fesc = NULL;
+        r = amx__api(c, "GET", path, NULL, 60, &st);
+        free(path);
+        if (st != 200 || !r) { cJSON_Delete(r); if (!pages) n = -1; break; }
+        if (amx_backup_available(c)) amx__backup_for_events(c, room_id, cJSON_GetObjectItemCaseSensitive(r, "chunk"), 1);
+        cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(r, "chunk")) {
+            amx__handle_room_event(c, room_id, x, 1);
+            n++;
+        }
+        from = (char *)amx__jstr(r, "next_batch");
+        if (from && ++pages < 10) fesc = http_escape(from);
+        cJSON_Delete(r);
+        if (!fesc) break;
+    }
+    free(esc);
+    free(eesc);
     return n;
 }

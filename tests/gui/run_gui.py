@@ -11,7 +11,7 @@ screenshots land in build/amiga/gui-shots/.
 
 Needs MUI in the emulator: tests/emu/setup-emu-mui.sh.
 """
-import argparse, asyncio, io, os, shutil, subprocess, sys, tempfile, time
+import argparse, asyncio, io, os, re, shutil, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TESTS = os.path.dirname(HERE)
@@ -267,6 +267,117 @@ async def scenario(ctx, amiga, srv, me):
     check(v and "Alles über den Amiga" in v, f"link preview under the message ({v!r})")
     await amiga.shot("03d-link-preview")
     web.shutdown()
+
+    # polls: Alice asks, we vote, she votes and ends; our own poll
+    from nio import UnknownEvent
+    unknown = []
+    p.c.add_event_callback(lambda r_, ev: unknown.append(ev.source), UnknownEvent)
+    pr = await p.c.room_send(dm, "org.matrix.msc3381.poll.start", {
+        "org.matrix.msc3381.poll.start": {
+            "question": {"org.matrix.msc1767.text": "Pizza oder Pasta?"},
+            "kind": "org.matrix.msc3381.poll.disclosed", "max_selections": 1,
+            "answers": [{"id": "p1", "org.matrix.msc1767.text": "Pizza"},
+                        {"id": "p2", "org.matrix.msc1767.text": "Pasta"}]},
+        "org.matrix.msc1767.text": "Pizza oder Pasta?"}, ignore_unverified_devices=True)
+
+    async def rows(want):
+        rc, r = await amiga.rexx("POLLROWS Alice")
+        return all(w_ in r for w_ in want) and r
+    v = await amiga.until(lambda: rows(["Pizza", "Pasta", "0 Stimmen"]), 90)
+    check(v, f"poll shown with its answers ({v!r})")
+    await amiga.rexx("VOTE Alice 1")
+    ok = await p.wait(lambda: any(e.get("type") == "org.matrix.msc3381.poll.response" and
+                                  e["content"].get("org.matrix.msc3381.poll.response", {}).get("answers") == ["p2"]
+                                  for e in unknown), 90)
+    check(ok, "our vote (Pasta) reaches Alice")
+    ref = {"rel_type": "m.reference", "event_id": pr.event_id}
+    await p.c.room_send(dm, "org.matrix.msc3381.poll.response",
+                        {"m.relates_to": ref, "org.matrix.msc3381.poll.response": {"answers": ["p1"]}},
+                        ignore_unverified_devices=True)
+    await p.c.room_send(dm, "org.matrix.msc3381.poll.end",
+                        {"m.relates_to": ref, "org.matrix.msc3381.poll.end": {}, "org.matrix.msc1767.text": "Ende"},
+                        ignore_unverified_devices=True)
+    v = await amiga.until(lambda: rows(["Pizza\33n  (1)", "Pasta\33n  (1) <X>", "2 Stimmen - beendet"]), 90)
+    check(v, f"her vote counted, our choice marked, poll ended ({v!r})")
+    await amiga.shot("03e-poll")
+    await amiga.rexx('POLL Alice "Welcher Amiga?" "A500|A1200|Vampire"')
+    ok = await p.wait(lambda: any(e.get("type") == "org.matrix.msc3381.poll.start" and
+                                  len(e["content"]["org.matrix.msc3381.poll.start"]["answers"]) == 3
+                                  for e in unknown), 90)
+    check(ok, "our own poll reaches Alice with three answers")
+
+    # slash commands
+    from nio import RoomMessageEmote, RoomMessageText
+    seen_src = []
+    p.c.add_event_callback(lambda r_, ev: seen_src.append(ev.source), (RoomMessageEmote, RoomMessageText))
+    await amiga.rexx("SAY Alice /me winkt")
+    ok = await p.wait(lambda: any(e["content"].get("msgtype") == "m.emote" and e["content"].get("body") == "winkt"
+                                  for e in seen_src), 60)
+    check(ok, "/me winkt: an emote reaches Alice")
+    await amiga.rexx("SAY Alice /spoiler Geheimnis")
+    ok = await p.wait(lambda: any("data-mx-spoiler" in e["content"].get("formatted_body", "") for e in seen_src), 60)
+    check(ok, "/spoiler: sent as a spoiler")
+    await amiga.rexx("SAY Alice //nicht als Befehl")
+    check(await p.wait_message(dm, me.user_id, "/nicht als Befehl", 60), "//text: sent with one slash")
+    await amiga.rexx(f"SAY Alice /whois {p.user.user_id}")
+
+    async def whois():
+        rc, r = await amiga.rexx("CHATSTATUS Alice")
+        return "Alice" in r and r
+    v = await amiga.until(whois, 60)
+    check(v, f"/whois: her name in the status line ({v!r})")
+    # markdown, :emoji: codes, completing @names (a mention for Element)
+    await amiga.rexx("SAY Alice **fett** und :thumbsup:")
+    ok = await p.wait(lambda: any(e["content"].get("formatted_body") == "<strong>fett</strong> und \U0001F44D"
+                                  and e["content"].get("body") == "**fett** und \U0001F44D" for e in seen_src), 60)
+    check(ok, "markdown sent as HTML, :thumbsup: as the emoji")
+
+    async def suggest():
+        await amiga.rexx("TYPE Alice Hallo @Al")
+        rc, r = await amiga.rexx("SUGGEST Alice")
+        return r == "Alice" and r
+    v = await amiga.until(suggest, 60)
+    check(v, f"typing @Al suggests Alice ({v!r})")
+    await amiga.shot("03f-suggest")
+    await amiga.rexx("COMPLETE Alice 0")
+    await amiga.rexx("SENDINPUT Alice")
+    ok = await p.wait(lambda: any(p.user.user_id in e["content"].get("m.mentions", {}).get("user_ids", [])
+                                  and "matrix.to/#/" + p.user.user_id in e["content"].get("formatted_body", "")
+                                  for e in seen_src), 60)
+    check(ok, "completed name sent as a mention (pill and m.mentions)")
+    await amiga.rexx("SAY Alice /gibtsnicht")
+    rc, v = await amiga.rexx("CHATSTATUS Alice")
+    check("Unbekannter Befehl" in v, f"unknown command: a hint, nothing sent ({v!r})")
+    await amiga.rexx("TYPE Alice")
+
+    # display options, drafts, cursor up edits our newest message
+    await amiga.rexx("SETOPTION 24h 0")
+    rc, v = await amiga.rexx("LASTLINE Alice")
+    check(re.search(r"\d\d:\d\d(AM|PM)", v or ""), f"12-hour clock ({v!r})")
+    await amiga.rexx("SETOPTION 24h 1")
+    await amiga.rexx("TYPE Alice Ein Entwurf")
+    await amiga.rexx("CLOSECHAT Alice")
+    await asyncio.sleep(2)
+    rc, v = await amiga.rexx("DRAFT Alice")
+    rc2, line = await amiga.rexx("ROOMLINE Alice")
+    check(v == "Ein Entwurf" and "Entwurf" in line, f"closed with text: kept as a draft, shown in the list ({v!r}, {line!r})")
+    await amiga.rexx("OPENCHAT Alice")
+    await asyncio.sleep(4)
+    rc, v = await amiga.rexx("INPUT Alice")
+    check(v == "Ein Entwurf", f"opened again: the draft is back in the input ({v!r})")
+    await amiga.rexx("TYPE Alice")
+    await amiga.rexx("EDITUP Alice")
+    rc, v = await amiga.rexx("INPUT Alice")
+    rc2, st = await amiga.rexx("CHATSTATUS Alice")
+    check(v and v != "Ein Entwurf", f"cursor up: our newest message in the input to edit ({v!r})")
+    for _ in range(2):                              # out of edit mode, then the draft away (empty input)
+        await amiga.rexx("CLOSECHAT Alice")
+        await asyncio.sleep(2)
+        await amiga.rexx("OPENCHAT Alice")
+        await asyncio.sleep(4)
+        await amiga.rexx("TYPE Alice")
+    rc, v = await amiga.rexx("DRAFT Alice")
+    check(v == "", f"emptied: no draft left ({v!r})")
 
     # typing and read receipts
     from nio import TypingNoticeEvent
@@ -684,6 +795,36 @@ async def scenario(ctx, amiga, srv, me):
         check(v, f"the list shows her new role ({v!r})")
         await amiga.rexx("INFOMEMBER 1 role 0")
 
+        # pin, forward, quote (marked message); the edit history of our edited message
+        await amiga.rexx("OPENCHAT Amiga-Runde")
+        await asyncio.sleep(5)
+        rc, _ = await amiga.rexx("MARK Amiga-Runde Danke")
+        rc2, _ = await amiga.rexx("ACTION Amiga-Runde pin")
+
+        async def pinbar():
+            rc_, r = await amiga.rexx("PINBAR Amiga-Runde")
+            return "Danke für die Einladung" in r and r
+        v = await amiga.until(pinbar, 90)
+        check(v, f"pinned: the bar above the messages shows it (rc {rc}/{rc2}, {v!r})")
+        await amiga.shot("06g-pinned")
+        await amiga.rexx("ACTION Amiga-Runde forward Alice")
+        check(await p.wait_message(dm, me.user_id, "Danke für die Einladung!", 90), "forwarded to Alice's chat")
+        await amiga.rexx("MARK Amiga-Runde Danke")
+        await amiga.rexx("ACTION Amiga-Runde quote")
+        await amiga.rexx("SAY Amiga-Runde Gern geschehen")
+        ok = await p.wait(lambda: any(e["content"].get("body", "").startswith("> Danke für die Einladung!")
+                                      and "<blockquote>" in e["content"].get("formatted_body", "")
+                                      for e in seen_src), 90)
+        check(ok, "quoted: the quote above our answer")
+    await amiga.rexx("MARK Alice Klar doch, gerne")
+    await amiga.rexx("ACTION Alice edithist")
+
+    async def hist():
+        rc, r = await amiga.rexx("EDITHIST")
+        return r.count("|") >= 1 and "Klar doch, gerne" in r and r
+    v = await amiga.until(hist, 60)
+    check(v, f"edit history: original and edit ({v!r})")
+
 
     # spaces, the room filter, favourites, message search
     from nio import RoomCreateResponse as RCR
@@ -731,6 +872,60 @@ async def scenario(ctx, amiga, srv, me):
     v = await amiga.until(found, 60)
     check(v, f"message search finds 'Kuchen' in the encrypted room (local history) ({v!r})")
     await amiga.shot("06e-search")
+
+    # a replaced room (tombstone): a bar in its window leads to the new room
+    old = await p.create_room(invite=[me.user_id], encrypted=False, name="Altversion")
+
+    async def acc_old():
+        rc, r = await amiga.rexx("ACCEPT Altversion")
+        return rc == "0"
+    check(await amiga.until(acc_old, 120), "joined Altversion")
+    neu = await p.create_room(invite=[me.user_id], encrypted=False, name="Neuversion")
+    await p.c.room_put_state(old, "m.room.tombstone", {"body": "Neuer Raum", "replacement_room": neu})
+    await amiga.rexx("OPENCHAT Altversion")
+
+    async def replaced():
+        rc, r = await amiga.rexx("REPLACED Altversion")
+        return r not in ("", "(no bar)") and r
+    v = await amiga.until(replaced, 90)
+    check(v, f"the window of the old room shows the bar ({v!r})")
+    await amiga.shot("06h-replaced")
+    await amiga.rexx("GOREPLACEMENT Altversion")
+
+    async def in_new():
+        rc, r = await amiga.rexx("CHATSTATUS Neuversion")
+        return rc == "0" and r
+    check(await amiga.until(in_new, 120), "a click: joined and opened the new room")
+    await amiga.rexx("CLOSECHAT Neuversion")
+    await amiga.rexx("CLOSECHAT Altversion")
+
+    # the first unread message: a marker above it when the window opens; a date jump
+    await amiga.rexx("CLOSECHAT Kaffeeklatsch")
+    await asyncio.sleep(3)
+    for t in ("Noch jemand da?", "Hallo?", "Kuchen ist alle."):
+        await p.send(room, t)
+
+    async def unread3():
+        rc, r = await amiga.rexx("ROOMLINE Kaffeeklatsch")
+        mm = re.search(r"\((\d+)", r)
+        return mm and int(mm.group(1)) >= 3 and r
+    v = await amiga.until(unread3, 90)
+    check(v, f"unread messages in the group ({v!r})")
+    await amiga.rexx("OPENCHAT Kaffeeklatsch")
+
+    async def marker():
+        rc, r = await amiga.rexx("VISIBLE Kaffeeklatsch")
+        return r and not r.startswith("-1|") and r
+    v = await amiga.until(marker, 90)
+    check(v, f"marker above the first unread message, in view ({v!r})")
+    await amiga.shot("06f-new-marker")
+    await amiga.rexx("SAY Kaffeeklatsch /jumptodate 01.01.2020")
+
+    async def jumped():
+        rc, r = await amiga.rexx("CHATSTATUS Kaffeeklatsch")
+        return "Suche den Tag" not in r and r
+    v = await amiga.until(jumped, 120)
+    check(v, f"/jumptodate to before the room: loads back to its start ({v!r})")
 
     # a room with a long, mixed history from before we joined (like a real
     # account on a new device): nothing of it is decryptable for us
@@ -873,6 +1068,47 @@ async def scenario(ctx, amiga, srv, me):
     check(rc == "0", "new chat with an existing partner opens the existing chat")
     await asyncio.sleep(5)
     await amiga.shot("07-end")
+
+    # notifications per room on the server, keywords, export, the account password
+    await amiga.rexx("NOTIFYLEVEL Kaffeeklatsch 3")
+
+    async def level(n):
+        rc, r = await amiga.rexx("NOTIFYLEVEL Kaffeeklatsch")
+        rc2, line = await amiga.rexx("ROOMLINE Kaffeeklatsch")
+        return r == str(n) and (n != 3 or "stumm" in line) and (r, line)
+    v = await amiga.until(lambda: level(3), 60)
+    check(v, f"group set to off on the server, shown as muted ({v!r})")
+    await amiga.rexx("NOTIFYLEVEL Kaffeeklatsch 0")
+    check(await amiga.until(lambda: level(0), 60), "and back to the default")
+    await amiga.rexx("KEYWORD Amiga")
+
+    async def kw(want):
+        rc, r = await amiga.rexx("KEYWORDS")
+        return (r == want) and (r or "-")
+    check(await amiga.until(lambda: kw("Amiga"), 60), "keyword added")
+    await amiga.rexx("KEYWORD Amiga OFF")
+    check(await amiga.until(lambda: kw(""), 60), "keyword removed")
+    exp = os.path.join(amiga.extra, "chat.html")
+    if os.path.exists(exp):
+        os.remove(exp)
+    await amiga.rexx("EXPORT Alice Extra:chat.html ALL")
+
+    async def exported():
+        if not os.path.exists(exp):
+            return False
+        t = open(exp, encoding="utf-8", errors="replace").read()
+        return "</html>" in t and "Hallo Alice, hier schreibt der Amiga" in t and len(t)
+    v = await amiga.until(exported, 120)
+    check(v, f"chat exported as HTML with the whole history ({v} bytes)")
+    await amiga.rexx(f"PASSWORD {me.password} NeuesPasswort42")
+
+    async def acct(want):
+        rc, r = await amiga.rexx("ACCOUNTSTATE")
+        return want in r and r
+    v = await amiga.until(lambda: acct("Passwort geändert"), 60)
+    check(v, f"password changed in the account window ({v!r})")
+    await amiga.rexx(f"PASSWORD NeuesPasswort42 {me.password}")
+    await amiga.until(lambda: acct("Passwort geändert"), 60)
 
     # sessions: the list, rename the other one, sign it out (password)
     rc, _ = await amiga.rexx("SESSIONS")

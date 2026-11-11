@@ -37,7 +37,7 @@ typedef struct Cmd {
     struct Cmd *next;
     int cmd;
     unsigned long tag;
-    char *s1, *s2, *s3, *s4;
+    char *s1, *s2, *s3, *s4, *s5, *s6, *s7, *s8;
     int i1, i2;
     AmxRoomOptions opt;
     char **invite;
@@ -241,6 +241,7 @@ static void on_event(AmxClient *c, const AmxEvent *ev, void *ud)
     o->m.ev.relates_to = own(o, ev->relates_to);
     o->m.ev.thread_count = ev->thread_count;
     o->m.ev.media = own(o, ev->media);
+    o->m.ev.poll = own(o, ev->poll);
     o->m.ev.reply_to = own(o, ev->reply_to);
     o->m.ev.thread_root = own(o, ev->thread_root);
     o->m.ev.formatted = own(o, ev->formatted);
@@ -282,9 +283,11 @@ static void post_rooms(AmxAsync *a, int force)
         sig_add(&s, &len, r[i].last_sender);
         sig_add(&s, &len, r[i].last_body);
         sig_add(&s, &len, r[i].parents);
-        sprintf(num, "%d %d %d %d %d %d %d %d %.0f %d %d %d", r[i].last_own, (int)r[i].membership, r[i].is_direct,
+        sig_add(&s, &len, r[i].pinned);
+        sig_add(&s, &len, r[i].replacement);
+        sprintf(num, "%d %d %d %d %d %d %d %d %.0f %d %d %d %d", r[i].last_own, (int)r[i].membership, r[i].is_direct,
                 r[i].encrypted, r[i].joined_members, r[i].invited_members, r[i].unread,
-                r[i].highlights, r[i].last_activity, r[i].favourite, r[i].low_priority, r[i].is_space);
+                r[i].highlights, r[i].last_activity, r[i].favourite, r[i].low_priority, r[i].is_space, r[i].notify);
         sig_add(&s, &len, num);
     }
     if (!s) s = strdup("");
@@ -308,6 +311,7 @@ static void free_cmd(Cmd *c)
     char **p;
     if (!c) return;
     free(c->s1); free(c->s2); free(c->s3); free(c->s4);
+    free(c->s5); free(c->s6); free(c->s7); free(c->s8);
     if (c->invite) { for (p = c->invite; *p; p++) free(*p); free(c->invite); }
     free(c);
 }
@@ -429,12 +433,14 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
         else r = amx_set_power(a->c, c->s1, c->s2, c->i1);
         post_result(a, c, r, c->s1);
         return;
-    case AMX_CMD_PROFILE: {
+    case AMX_CMD_PROFILE:
+    case AMX_CMD_PROFILE_OF: {
         char *nm = NULL, *av = NULL;
         Out *o = new_out(AMX_MSG_RESULT);
-        r = amx_get_profile(a->c, NULL, &nm, &av);
+        r = amx_get_profile(a->c, c->cmd == AMX_CMD_PROFILE_OF ? c->s1 : NULL, &nm, &av);
+        if (!r && c->cmd == AMX_CMD_PROFILE_OF && !nm && !av) r = amx__fail(a->c, "no such user");
         if (o) {
-            o->m.cmd = AMX_CMD_PROFILE;
+            o->m.cmd = c->cmd;
             o->m.tag = c->tag;
             o->m.status = r;
             o->m.result = own(o, nm);
@@ -516,6 +522,108 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
         } else amx_free_search(h, n > 0 ? n : 0);
         return;
     }
+    case AMX_CMD_SEND_POLL:
+    case AMX_CMD_POLL_VOTE: {
+        const char *list[32];
+        char *t = c->s3 ? c->s3 : "", *p;
+        int n = 0;
+        for (p = t; *p && n < 32; ) {
+            char *nl = strchr(p, '\n');
+            list[n++] = p;
+            if (!nl) break;
+            *nl = 0;
+            p = nl + 1;
+        }
+        if (c->cmd == AMX_CMD_SEND_POLL) r = amx_send_poll(a->c, c->s1, c->s2, list, n, c->i1, c->i2, &out);
+        else r = amx_poll_vote(a->c, c->s1, c->s2, list, n);
+        post_result(a, c, r, out ? out : c->s1);
+        free(out);
+        return;
+    }
+    case AMX_CMD_POLL_END:
+        r = amx_poll_end(a->c, c->s1, c->s2);
+        post_result(a, c, r, c->s1);
+        return;
+    case AMX_CMD_RELATIONS:
+        r = amx_load_relations(a->c, c->s1, c->s2) < 0 ? -1 : 0;
+        post_result(a, c, r, c->s2);
+        return;
+    case AMX_CMD_SEND_MSG: {
+        AmxOutMsg om;
+        om.msgtype = c->s2; om.body = c->s3; om.html = c->s4; om.reply_to = c->s5; om.thread_root = c->s6;
+        om.replaces = c->s7; om.mentions = c->s8;
+        r = amx_send_message(a->c, c->s1, &om, &out);
+        post_result(a, c, r, out);
+        free(out);
+        return;
+    }
+    case AMX_CMD_IGNORED: {
+        char *l = amx_ignored_users(a->c);
+        post_result(a, c, l ? 0 : -1, l);
+        free(l);
+        return;
+    }
+    case AMX_CMD_IGNORE:
+        r = amx_ignore_user(a->c, c->s1, c->i1);
+        post_result(a, c, r, c->s1);
+        return;
+    case AMX_CMD_PIN:
+        r = amx_pin_event(a->c, c->s1, c->s2, c->i1);
+        post_result(a, c, r, c->s1);
+        if (!r) post_rooms(a, 0);
+        return;
+    case AMX_CMD_FETCH_EVENT:
+        r = amx_fetch_event(a->c, c->s1, c->s2);
+        post_result(a, c, r, c->s2);
+        return;
+    case AMX_CMD_ROOM_NOTIFY:
+        r = amx_set_room_notify(a->c, c->s1, c->i1);
+        post_result(a, c, r, c->s1);
+        if (!r) post_rooms(a, 0);
+        return;
+    case AMX_CMD_KEYWORDS:
+    case AMX_CMD_KEYWORD: {
+        char *l;
+        r = c->cmd == AMX_CMD_KEYWORD ? amx_set_keyword(a->c, c->s1, c->i1) : 0;
+        l = amx_keywords(a->c);
+        post_result(a, c, r, l);
+        free(l);
+        return;
+    }
+    case AMX_CMD_PASSWORD:
+        r = amx_change_password(a->c, c->s1, c->s2);
+        if (c->s1) memset(c->s1, 0, strlen(c->s1));
+        if (c->s2) memset(c->s2, 0, strlen(c->s2));
+        post_result(a, c, r, NULL);
+        return;
+    case AMX_CMD_DEACTIVATE:
+        r = amx_deactivate_account(a->c, c->s1, c->i1);
+        if (c->s1) memset(c->s1, 0, strlen(c->s1));
+        post_result(a, c, r, NULL);
+        return;
+    case AMX_CMD_UPGRADE:
+        r = amx_upgrade_room(a->c, c->s1, c->s2, &out);
+        post_result(a, c, r, out);
+        free(out);
+        if (!r) post_rooms(a, 0);
+        return;
+    case AMX_CMD_KNOCK:
+        r = amx_knock(a->c, c->s1, c->s2);
+        post_result(a, c, r, c->s1);
+        return;
+    case AMX_CMD_EDITS:
+        r = amx_load_edits(a->c, c->s1, c->s2) < 0 ? -1 : 0;
+        post_result(a, c, r, c->s2);
+        return;
+    case AMX_CMD_FORWARD:
+        r = amx_forward(a->c, c->s1, c->s2, c->s3, &out);
+        post_result(a, c, r, out ? out : c->s1);
+        free(out);
+        return;
+    case AMX_CMD_ROOM_NICK:
+        r = amx_set_room_nick(a->c, c->s1, c->s2);
+        post_result(a, c, r, c->s1);
+        return;
     case AMX_CMD_HISTORY_CACHE:
         amx_set_history_cache(a->c, c->i1);
         return;
@@ -1045,3 +1153,80 @@ int amx_async_set_tag(AmxAsync *a, const char *room_id, const char *tag, int on,
 { return cmd(a, AMX_CMD_SET_TAG, tag_, room_id, tag, on, 0); }
 int amx_async_search(AmxAsync *a, const char *room_id, const char *term, unsigned long tag)
 { return cmd(a, AMX_CMD_SEARCH, tag, room_id ? room_id : "", term, 0, 0); }
+
+static int cmd4(AmxAsync *a, int what, unsigned long tag, const char *s1, const char *s2, const char *s3, int i1, int i2)
+{
+    Cmd *c = calloc(1, sizeof *c);
+    if (!c) return -1;
+    c->cmd = what;
+    c->tag = tag;
+    c->s1 = dup0(s1);
+    c->s2 = dup0(s2);
+    c->s3 = dup0(s3);
+    c->i1 = i1;
+    c->i2 = i2;
+    put_cmd(a, c);
+    return 0;
+}
+
+int amx_async_send_poll(AmxAsync *a, const char *room_id, const char *question, const char *answers, int max,
+                        int disclosed, unsigned long tag)
+{ return cmd4(a, AMX_CMD_SEND_POLL, tag, room_id, question, answers, max, disclosed); }
+int amx_async_poll_vote(AmxAsync *a, const char *room_id, const char *poll_id, const char *answer_ids,
+                        unsigned long tag)
+{ return cmd4(a, AMX_CMD_POLL_VOTE, tag, room_id, poll_id, answer_ids ? answer_ids : "", 0, 0); }
+int amx_async_poll_end(AmxAsync *a, const char *room_id, const char *poll_id, unsigned long tag)
+{ return cmd(a, AMX_CMD_POLL_END, tag, room_id, poll_id, 0, 0); }
+int amx_async_relations(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag)
+{ return cmd(a, AMX_CMD_RELATIONS, tag, room_id, event_id, 0, 0); }
+
+int amx_async_send_message(AmxAsync *a, const char *room_id, const AmxOutMsg *m, unsigned long tag)
+{
+    Cmd *c = calloc(1, sizeof *c);
+    if (!c) return -1;
+    c->cmd = AMX_CMD_SEND_MSG;
+    c->tag = tag;
+    c->s1 = dup0(room_id);
+    c->s2 = dup0(m->msgtype); c->s3 = dup0(m->body); c->s4 = dup0(m->html); c->s5 = dup0(m->reply_to);
+    c->s6 = dup0(m->thread_root); c->s7 = dup0(m->replaces); c->s8 = dup0(m->mentions);
+    put_cmd(a, c);
+    return 0;
+}
+int amx_async_room_nick(AmxAsync *a, const char *room_id, const char *name, unsigned long tag)
+{ return cmd(a, AMX_CMD_ROOM_NICK, tag, room_id, name, 0, 0); }
+int amx_async_profile_of(AmxAsync *a, const char *user, unsigned long tag)
+{ return cmd(a, AMX_CMD_PROFILE_OF, tag, user, NULL, 0, 0); }
+
+int amx_async_ignored(AmxAsync *a, unsigned long tag)
+{ return cmd(a, AMX_CMD_IGNORED, tag, NULL, NULL, 0, 0); }
+int amx_async_ignore(AmxAsync *a, const char *user, int on, unsigned long tag)
+{ return cmd(a, AMX_CMD_IGNORE, tag, user, NULL, on, 0); }
+
+int amx_async_pin(AmxAsync *a, const char *room_id, const char *event_id, int on, unsigned long tag)
+{ return cmd(a, AMX_CMD_PIN, tag, room_id, event_id, on, 0); }
+int amx_async_fetch_event(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag)
+{ return cmd(a, AMX_CMD_FETCH_EVENT, tag, room_id, event_id, 0, 0); }
+
+int amx_async_forward(AmxAsync *a, const char *to_room, const char *from_room, const char *event_id, unsigned long tag)
+{ return cmd4(a, AMX_CMD_FORWARD, tag, to_room, from_room, event_id, 0, 0); }
+
+int amx_async_edits(AmxAsync *a, const char *room_id, const char *event_id, unsigned long tag)
+{ return cmd(a, AMX_CMD_EDITS, tag, room_id, event_id, 0, 0); }
+
+int amx_async_room_notify(AmxAsync *a, const char *room_id, int level, unsigned long tag)
+{ return cmd(a, AMX_CMD_ROOM_NOTIFY, tag, room_id, NULL, level, 0); }
+int amx_async_keywords(AmxAsync *a, unsigned long tag)
+{ return cmd(a, AMX_CMD_KEYWORDS, tag, NULL, NULL, 0, 0); }
+int amx_async_keyword(AmxAsync *a, const char *word, int on, unsigned long tag)
+{ return cmd(a, AMX_CMD_KEYWORD, tag, word, NULL, on, 0); }
+
+int amx_async_change_password(AmxAsync *a, const char *old_pw, const char *new_pw, unsigned long tag)
+{ return cmd(a, AMX_CMD_PASSWORD, tag, old_pw, new_pw, 0, 0); }
+int amx_async_deactivate(AmxAsync *a, const char *password, int erase, unsigned long tag)
+{ return cmd(a, AMX_CMD_DEACTIVATE, tag, password, NULL, erase, 0); }
+
+int amx_async_knock(AmxAsync *a, const char *room, const char *reason, unsigned long tag)
+{ return cmd(a, AMX_CMD_KNOCK, tag, room, reason, 0, 0); }
+
+int amx_async_upgrade(AmxAsync *a, const char *room_id, const char *version, unsigned long tag)
+{ return cmd(a, AMX_CMD_UPGRADE, tag, room_id, version, 0, 0); }

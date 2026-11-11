@@ -142,7 +142,7 @@ int amx_room_members(AmxClient *c, const char *room_id, AmxMember **out)
         const cJSON *ct = cJSON_GetObjectItemCaseSensitive(ev, "content");
         const char *u = amx__jstr(ev, "state_key"), *ms = amx__jstr(ct, "membership");
         const char *dn = amx__jstr(ct, "displayname"), *av = amx__jstr(ct, "avatar_url");
-        if (!u || !ms || (strcmp(ms, "join") && strcmp(ms, "invite") && strcmp(ms, "ban"))) continue;
+        if (!u || !ms || (strcmp(ms, "join") && strcmp(ms, "invite") && strcmp(ms, "ban") && strcmp(ms, "knock"))) continue;
         l[n].user_id = amx__strdup(u);
         if (dn && *dn) l[n].name = amx__strdup(dn);
         else {
@@ -489,5 +489,134 @@ int amx_delete_device(AmxClient *c, const char *device_id, const char *password)
     if (st == 401) return amx__fail(c, "wrong password");
     if (st != 200) return -1;
     LOG(c, "signed out %s", device_id);
+    return 0;
+}
+
+/* ------------------------------------------------------- ignored users */
+
+static char *ignore_path(AmxClient *c)
+{
+    char *eu = http_escape(c->user_id ? c->user_id : ""), *p = amx__malloc(strlen(eu) + 64);
+    sprintf(p, "/user/%s/account_data/m.ignored_user_list", eu);
+    free(eu);
+    return p;
+}
+
+char *amx_ignored_users(AmxClient *c)
+{
+    char *p = ignore_path(c), *out;
+    cJSON *r, *x;
+    long st;
+    size_t n = 1;
+    r = amx__api(c, "GET", p, NULL, 60, &st);
+    free(p);
+    if (st == 404) { cJSON_Delete(r); c->err[0] = 0; return amx__strdup(""); }
+    if (st != 200) { cJSON_Delete(r); return NULL; }
+    cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(r, "ignored_users")) n += strlen(x->string) + 1;
+    out = amx__malloc(n);
+    out[0] = 0;
+    cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(r, "ignored_users")) {
+        if (out[0]) strcat(out, "\n");
+        strcat(out, x->string);
+    }
+    cJSON_Delete(r);
+    return out;
+}
+
+int amx_ignore_user(AmxClient *c, const char *user, int on)
+{
+    char *p = ignore_path(c);
+    cJSON *r, *list, *res;
+    long st;
+    if (!user || user[0] != '@' || !strchr(user, ':')) { free(p); return amx__fail(c, "not a user ID: %s", user ? user : ""); }
+    r = amx__api(c, "GET", p, NULL, 60, &st);
+    if (st != 200 || !cJSON_IsObject(r)) { cJSON_Delete(r); r = cJSON_CreateObject(); c->err[0] = 0; }
+    list = cJSON_GetObjectItemCaseSensitive(r, "ignored_users");
+    if (!cJSON_IsObject(list)) {
+        cJSON_DeleteItemFromObjectCaseSensitive(r, "ignored_users");
+        list = cJSON_AddObjectToObject(r, "ignored_users");
+    }
+    cJSON_DeleteItemFromObjectCaseSensitive(list, user);
+    if (on) cJSON_AddObjectToObject(list, user);
+    res = amx__api_ok(c, "PUT", p, r);
+    cJSON_Delete(r);
+    free(p);
+    if (!res) return -1;
+    cJSON_Delete(res);
+    LOG(c, "%s %s", on ? "ignoring" : "no longer ignoring", user);
+    return 0;
+}
+
+/* ------------------------------------------------------------- account */
+
+/* a request that the server wants confirmed with our password (UIA) */
+static int uia_password(AmxClient *c, const char *method, const char *path, cJSON *body, const char *password)
+{
+    cJSON *r, *auth, *idf, *pw;
+    long st;
+    const char *session;
+    r = amx__api(c, method, path, body, 60, &st);
+    if (st == 200) { cJSON_Delete(r); return 0; }
+    session = amx__jstr(r, "session");
+    if (st != 401 || !session) { cJSON_Delete(r); return -1; }
+    c->err[0] = 0;
+    auth = cJSON_AddObjectToObject(body, "auth");
+    cJSON_AddStringToObject(auth, "type", "m.login.password");
+    cJSON_AddStringToObject(auth, "session", session);
+    idf = cJSON_AddObjectToObject(auth, "identifier");
+    cJSON_AddStringToObject(idf, "type", "m.id.user");
+    cJSON_AddStringToObject(idf, "user", c->user_id);
+    cJSON_AddStringToObject(auth, "password", password ? password : "");
+    cJSON_Delete(r);
+    r = amx__api(c, method, path, body, 60, &st);
+    pw = cJSON_GetObjectItemCaseSensitive(auth, "password");
+    if (pw && pw->valuestring) memset(pw->valuestring, 0, strlen(pw->valuestring));
+    cJSON_Delete(r);
+    if (st == 401) return amx__fail(c, "wrong password");
+    return st == 200 ? 0 : -1;
+}
+
+int amx_change_password(AmxClient *c, const char *old_password, const char *new_password)
+{
+    cJSON *b;
+    int r;
+    if (!new_password || strlen(new_password) < 8) return amx__fail(c, "the new password is too short (8 characters or more)");
+    b = cJSON_CreateObject();
+    cJSON_AddStringToObject(b, "new_password", new_password);
+    cJSON_AddFalseToObject(b, "logout_devices");
+    r = uia_password(c, "POST", "/account/password", b, old_password);
+    {
+        cJSON *np = cJSON_GetObjectItemCaseSensitive(b, "new_password");
+        if (np && np->valuestring) memset(np->valuestring, 0, strlen(np->valuestring));
+    }
+    cJSON_Delete(b);
+    if (!r) LOG(c, "password changed");
+    return r;
+}
+
+int amx_deactivate_account(AmxClient *c, const char *password, int erase)
+{
+    cJSON *b = cJSON_CreateObject();
+    int r;
+    cJSON_AddBoolToObject(b, "erase", erase != 0);
+    r = uia_password(c, "POST", "/account/deactivate", b, password);
+    cJSON_Delete(b);
+    if (!r) LOG(c, "account deactivated");
+    return r;
+}
+
+int amx_knock(AmxClient *c, const char *room, const char *reason)
+{
+    char *e = http_escape(room), *p = amx__malloc(strlen(e) + 16);
+    cJSON *b = cJSON_CreateObject(), *r;
+    sprintf(p, "/knock/%s", e);
+    free(e);
+    if (reason && *reason) cJSON_AddStringToObject(b, "reason", reason);
+    r = amx__api_ok(c, "POST", p, b);
+    cJSON_Delete(b);
+    free(p);
+    if (!r) return -1;
+    cJSON_Delete(r);
+    LOG(c, "knocked on %s", room);
     return 0;
 }

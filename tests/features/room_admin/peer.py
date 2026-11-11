@@ -1,4 +1,5 @@
 """room_admin: see test.c."""
+import asyncio
 TIMEOUT = 300
 
 
@@ -24,9 +25,23 @@ async def peer(ctx):
     if ok:
         await p.refresh_devices(ctx.target)
         await p.send(room, "einstellungen ok")
-    # kicked, banned, unbanned, invited again: join
+    # kicked, banned, unbanned; the room only takes knocks now: knock, get let in
+    await asyncio.sleep(3)
+    for _ in range(60):
+        r = await p.c.room_knock(room) if hasattr(p.c, "room_knock") else None
+        if r is None:
+            from nio.api import Api
+            method, path, data = "POST", Api._build_path(["knock", room], {"access_token": p.c.access_token}), "{}"
+            resp = await p.c.send(method, path, data, headers={"Content-Type": "application/json"})
+            okk = resp.status == 200
+        else:
+            okk = type(r).__name__.endswith("Response") and "Error" not in type(r).__name__
+        if okk:
+            break
+        await asyncio.sleep(2)
+    ctx.check(okk, "knocked")
     ok = await p.wait(lambda: room in p.c.invited_rooms, 180 * ctx.scale)
-    ctx.check(ok, "invited again after kick/ban/unban")
+    ctx.check(ok, "invited again after kick/ban/unban and a knock")
     if ok:
         await p.c.join(room)
         await p.sync(1000)

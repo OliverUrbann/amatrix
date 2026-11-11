@@ -23,6 +23,7 @@ static int member_is(const char *ms)
 static int is_leave(void *u) { (void)u; return member_is("leave"); }
 static int is_ban(void *u) { (void)u; return member_is("ban"); }
 static int is_join(void *u) { (void)u; return member_is("join"); }
+static int is_knock(void *u) { (void)u; return member_is("knock"); }
 
 static const AmxMember *find(const AmxMember *l, int n, const char *u)
 {
@@ -105,9 +106,29 @@ int main(int argc, char **argv)
     amx_free_members(ml, n);
     MXT_OK(amx_unban(c, room, a.peer) == 0, "unbanned");
     MXT_OK(mxt_sync_until(c, is_leave, NULL, 60), "no longer banned");
-    MXT_OK(amx_invite(c, room, a.peer) == 0, "invited again");
+    MXT_OK(amx_set_room_setting(c, room, "join_rule", "knock") == 0, "join rule: knock");
+    amx_send_text(c, room, "klopf an", NULL);
+    MXT_OK(mxt_sync_until(c, is_knock, NULL, 120), "the peer knocks");
+    n = amx_room_members(c, room, &ml);
+    pe = find(ml, n, a.peer);
+    MXT_OK(pe && !strcmp(pe->membership, "knock"), "member list: the peer knocks");
+    amx_free_members(ml, n);
+    MXT_OK(amx_invite(c, room, a.peer) == 0, "let in (invited)");
     MXT_OK(mxt_sync_until(c, is_join, NULL, 120), "the peer is back");
 
+    {   /* upgrade: a new room, the old one points there */
+        char *nr = NULL;
+        AmxRoomInfo *rl = NULL;
+        int k, nn, okr = 0;
+        MXT_OK(amx_upgrade_room(c, room, NULL, &nr) == 0 && nr, "room upgraded (%s)", amx_error(c));
+        for (k = 0; k < 4; k++) amx_sync(c, 1000);
+        nn = amx_rooms(c, &rl);
+        for (k = 0; nr && k < nn; k++)
+            if (!strcmp(rl[k].room_id, room) && rl[k].replacement && !strcmp(rl[k].replacement, nr)) okr = 1;
+        amx_free_rooms(rl, nn);
+        MXT_OK(okr, "the old room names its replacement");
+        free(nr);
+    }
     free(pic);
     free(room);
     amx_client_free(c);

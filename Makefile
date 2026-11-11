@@ -15,7 +15,7 @@ AMISSL := third_party/amissl-sdk
 
 OLM_DEFS := -DOLMLIB_VERSION_MAJOR=3 -DOLMLIB_VERSION_MINOR=2 -DOLMLIB_VERSION_PATCH=16 -DOLM_STATIC_DEFINE
 INC      := -Icore/include -Icore/src -I$(CJSON) -I$(OLM)/include -Itests
-CORE_SRC := client.c async.c media.c recovery.c storecrypt.c keys.c crypto_recv.c crypto_send.c sync.c rooms.c roomstate.c messages.c admin.c hcache.c \
+CORE_SRC := client.c async.c media.c recovery.c storecrypt.c keys.c crypto_recv.c crypto_send.c sync.c rooms.c roomstate.c messages.c admin.c hcache.c notify.c \
             canonjson.c http_sock.c net.c
 
 ifeq ($(TARGET),amiga)
@@ -101,19 +101,23 @@ $(B)/examples/%: examples/%.c $(B)/libamatrix.a $(B)/libolm.a
 clean:
 	rm -rf build
 
-.PHONY: gui all tests clean richtext-test
+.PHONY: gui all tests clean richtext-test markdown-test
 
 # unit test of the HTML converter of the GUI, on the build machine
 richtext-test:
 	cc -Wall -Wextra -g -fsanitize=address,undefined -Igui gui/richtext.c tests/gui/richtext_test.c -o build/richtext-test
 	build/richtext-test
 
+markdown-test:
+	cc -Wall -Wextra -g -fsanitize=address,undefined -Igui gui/markdown.c tests/gui/markdown_test.c -o build/markdown-test
+	build/markdown-test
+
 # ---------------------------------------------------------------- MUI client
 # (Amiga only; the MUI SDK comes from third_party/fetch-mui.sh)
 MUI_INC := third_party/mui/include
-GUI_SRC := gui/amatrix.c gui/mui_util.c gui/richtext.c
+GUI_SRC := gui/amatrix.c gui/mui_util.c gui/richtext.c gui/markdown.c
 GUI_CFLAGS = $(CFLAGS) -Wno-attributes -Wno-pointer-sign -finput-charset=UTF-8 -fexec-charset=ISO-8859-1 \
-             -I$(MUI_INC) -Icore/include -Igui
+             -I$(MUI_INC) -Icore/include -Igui -I$(CJSON)
 
 gui: $(B)/gui/Amatrix $(B)/gui/muicheck
 

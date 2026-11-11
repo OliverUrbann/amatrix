@@ -73,6 +73,7 @@ void amx__hcache_note(AmxClient *c, const AmxEvent *e)
         set_str(x, "reply_to", e->reply_to);
         set_str(x, "thread_root", e->thread_root);
         set_str(x, "media", e->media);
+        set_str(x, "poll", e->poll);
         cJSON_DeleteItemFromObjectCaseSensitive(x, "ts");
         cJSON_AddNumberToObject(x, "ts", e->timestamp);
         cJSON_DeleteItemFromObjectCaseSensitive(x, "f");
@@ -156,6 +157,7 @@ int amx_cached_history(AmxClient *c, const char *room_id)
         e.reply_to = amx__jstr(x, "reply_to");
         e.thread_root = amx__jstr(x, "thread_root");
         e.media = amx__jstr(x, "media");
+        e.poll = amx__jstr(x, "poll");
         e.timestamp = ts_of(x);
         e.own = fl & 1;
         e.encrypted = (fl & 2) != 0;

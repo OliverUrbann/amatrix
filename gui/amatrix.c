@@ -49,6 +49,8 @@
 #include <utility/tagitem.h>
 #include "openurl_inline.h"
 #include "richtext.h"
+#include "cJSON.h"
+#include "markdown.h"
 #include <SDI_hook.h>
 #include "mui_util.h"
 #include "amatrix_async.h"
@@ -75,11 +77,11 @@ static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.20
 enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
     ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO, ID_UNLOCK_GO, ID_STOREPASS, ID_STOREPASS_SET, ID_STOREPASS_DEL, ID_LEAVE, ID_MUTE, ID_SETTINGS, ID_ICONIFY, ID_SET_OK, ID_COPY, ID_INFO, ID_INFO_SAVE, ID_INFO_PIC, ID_INFO_KICK, ID_INFO_BAN, ID_INFO_UNBAN,
-    ID_INFO_ROLE, ID_INFO_INVITE, ID_PROFILE, ID_PROF_SAVE, ID_PROF_PIC, ID_SESS, ID_SESS_RENAME, ID_SESS_DELETE, ID_FAV, ID_LOWPRIO, ID_FIND, ID_FIND_GO, ID_MUIPREFS
+    ID_INFO_ROLE, ID_INFO_INVITE, ID_INFO_ADMIT, ID_PROFILE, ID_PROF_SAVE, ID_PROF_PIC, ID_SESS, ID_SESS_RENAME, ID_SESS_DELETE, ID_FAV, ID_LOWPRIO, ID_FIND, ID_FIND_GO, ID_MUIPREFS, ID_POLLNEW, ID_POLLSEND, ID_PIN, ID_FWD, ID_FWD_GO, ID_QUOTE, ID_COPYLINK, ID_EDITHIST, ID_UNIGNORE, ID_KW_ADD, ID_KW_DEL, ID_EXPORT, ID_ACCOUNT, ID_PW_GO, ID_DEACT_GO
 };
 enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TAG_AVATAR,
        TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY, TAG_UNLOCK, TAG_STOREPASS,
-       TAG_REACT, TAG_THUMB, TAG_SAVE, TAG_THREAD, TAG_FILE, TAG_MEMBERS, TAG_RSETTINGS, TAG_ROOMSET, TAG_MODERATE, TAG_PROFILE, TAG_PROFAV, TAG_SETPROF, TAG_PREVIEW, TAG_DEVICES, TAG_DEVCHANGE, TAG_TAG, TAG_FIND };
+       TAG_REACT, TAG_THUMB, TAG_SAVE, TAG_THREAD, TAG_FILE, TAG_MEMBERS, TAG_RSETTINGS, TAG_ROOMSET, TAG_MODERATE, TAG_PROFILE, TAG_PROFAV, TAG_SETPROF, TAG_PREVIEW, TAG_DEVICES, TAG_DEVCHANGE, TAG_TAG, TAG_FIND, TAG_POLL, TAG_POLLVOTE, TAG_IGNORES, TAG_WHOIS, TAG_CMD, TAG_MEMB2, TAG_PIN, TAG_FETCH, TAG_FWD, TAG_EDITS, TAG_IGNLIST, TAG_KEYWORDS, TAG_PASSWORD, TAG_DEACT };
 
 /* ------------------------------------------------------------------ state */
 
@@ -91,9 +93,13 @@ typedef struct {
     double read_ts;               /* own messages up to here are read by someone else */
     int favourite, low, is_space;
     char *parents;                /* spaces it belongs to (room IDs, one per line) */
+    char *inviter_id;             /* who invited us (user ID) */
+    int notify;                   /* AMX_NOTIFY_*: the server's setting for the room */
+    char *pinned;                 /* pinned event IDs, one per line */
+    char *replacement;            /* upgraded: the new room */
 } Room;
 
-#define N_EMO_MAX 16
+#define N_EMO_MAX 24                  /* >= N_EMO (checked below) */
 
 typedef struct React {
     char *id, *target, *key, *sender;   /* key: UTF-8 */
@@ -130,6 +136,27 @@ typedef struct ChatWin {
     Object *win, *list, *input, *older, *invite, *leave, *reactb, *replyb, *editb, *delb, *attachb, *infob;
     int uploading;                /* files on their way up */
     int n_cached;                 /* messages shown from the local history cache */
+    Object *pinbar;               /* "Angepinnt: ..." above the messages */
+    Object *tombbar;              /* "replaced by a new room": a click goes there */
+    char *pin_shown;              /* the event the bar shows */
+    char *quote;                  /* quote mode: this text goes above the message (UTF-8) */
+    Object *sugg, *sbtn[5];       /* suggestions above the input: @names, :emojis: */
+    char *stext[5];               /* what a suggestion inserts (local charset) */
+    char *sid[5];                 /* its user ID (a mention) or NULL */
+    int n_sugg;
+    AmxMember *mem;               /* the members, for @names (loaded at the first "@") */
+    int n_mem, mem_asked;
+    char *ment_name[16], *ment_id[16];   /* mentions chosen for the message being written */
+    int n_ment;
+    char *export_path;            /* export after loading the whole history */
+    double jump_ts;               /* /jumptodate: load older pages until this time (ms) */
+    int jump_pages;
+    int unread_open, unread_done; /* unread messages when the window opened: a marker above them */
+    int draft_pending;            /* put the room's draft into the input once the window is up */
+    struct Poll *polls;           /* polls in this window, and the votes (also before their poll) */
+    int n_polls;
+    struct Vote *votes;
+    int n_votes;
     char typing[160];             /* who is typing (local charset), "" nobody */
     int typing_on;                /* we told the server we type */
     time_t typing_sent;
@@ -183,6 +210,9 @@ static AmxAsync *A;
 static int debug;                 /* DEBUG: log to PROGDIR:Amatrix.log */
 static Object *app, *win_main, *lv_rooms, *lst_rooms, *txt_status, *str_filter, *grp_space, *cyc_space;
 static Object *win_find, *str_find, *cyc_findwhere, *b_find, *lst_hits, *txt_find;
+static Object *win_acct, *str_pwold, *str_pwnew, *str_pwnew2, *b_pwgo, *str_dpw, *chk_derase, *b_dgo, *txt_acct;
+static Object *win_poll, *str_pollq, *str_polla[6], *chk_pollmulti, *chk_pollhide, *b_pollsend;
+static char *poll_room;
 static Object *win_login, *str_server, *str_user, *str_pass, *txt_login;
 static Object *win_newchat, *str_chatuser;
 static Object *win_newroom, *str_roomname, *chk_enc, *chk_pub;
@@ -194,9 +224,10 @@ static int verified;               /* this device signed (this session) */
 static Object *win_unlock, *str_unlock, *txt_unlock, *b_unlock;
 static Object *win_storepass, *str_sp1, *str_sp2, *txt_sp, *b_sp_set, *b_sp_del;
 static Object *win_settings, *chk_notify, *cyc_notify, *chk_previews, *chk_iconified, *txt_herald, *b_set_ok;
-static Object *chk_typing, *chk_receipts, *chk_linkprev, *chk_linkprev_enc, *chk_hcache, *chk_avatars;
+static Object *chk_typing, *chk_receipts, *chk_linkprev, *chk_linkprev_enc, *chk_hcache, *chk_avatars, *chk_joins,
+              *chk_24h, *chk_compact;
 static Object *win_info, *str_iname, *str_itopic, *cyc_ijoin, *cyc_ihist, *chk_ienc, *b_ipic, *b_isave, *lst_mem,
-              *b_ikick, *b_iban, *b_iunban, *cyc_irole, *b_irole, *b_iinvite, *txt_istatus, *grp_iset;
+              *b_ikick, *b_iban, *b_iunban, *cyc_irole, *b_irole, *b_iinvite, *txt_istatus, *grp_iset, *b_iadmit;
 static Object *win_prof, *txt_pimg, *txt_pid, *str_pname, *b_ppic, *b_psave, *txt_pstatus;
 static Object *win_sess, *lst_sess, *str_sname, *b_srename, *str_spass, *b_sdelete, *txt_sstatus;
 static const char *notify_modes[] = { "allen Nachrichten", "Direktnachrichten und Erwähnungen", NULL };
@@ -345,12 +376,49 @@ static int opt_linkprev = 1;          /* link previews (the server fetches the p
 static int opt_linkprev_enc = 0;      /* ... also in encrypted rooms */
 static int opt_hcache = 1;            /* keep the newest messages on disk (window opens at once) */
 static int opt_avatars = 1;           /* pictures in the room list */
+static int opt_joins = 1;             /* show joins, leaves, invitations in the chat */
+static int opt_24h = 1;               /* 14:05 (else 02:05PM) */
+static int opt_compact = 0;           /* the name only when the sender changes (within 5 minutes) */
 static char **muted;                  /* rooms without notifications */
 static int n_muted;
 
+static Room *room_by_id(const char *id);
+
+/* drafts: what was typed but not sent, per room (local charset), kept in the prefs */
+typedef struct { char *room, *text; } Draft;
+static Draft drafts[40];
+static int n_drafts;
+
+static const char *draft_of(const char *room)
+{
+    int i;
+    for (i = 0; room && i < n_drafts; i++) if (!strcmp(drafts[i].room, room)) return drafts[i].text;
+    return NULL;
+}
+
+static void set_draft(const char *room, const char *text)
+{
+    int i;
+    for (i = 0; i < n_drafts; i++)
+        if (!strcmp(drafts[i].room, room)) {
+            free(drafts[i].room); free(drafts[i].text);
+            memmove(&drafts[i], &drafts[i + 1], sizeof *drafts * (n_drafts - i - 1));
+            n_drafts--;
+            break;
+        }
+    if (!text || !*text || strchr(text, '\n')) return;
+    if (n_drafts == 40) { free(drafts[0].room); free(drafts[0].text); memmove(drafts, drafts + 1, sizeof *drafts * 39); n_drafts--; }
+    drafts[n_drafts].room = strdup(room);
+    drafts[n_drafts].text = strdup(text);
+    n_drafts++;
+}
+
+/* muted: off on the server (all devices), or in our old local list */
 static int is_muted(const char *room)
 {
     int i;
+    const Room *r = room ? room_by_id(room) : NULL;
+    if (r && r->notify == AMX_NOTIFY_OFF) return 1;
     for (i = 0; room && i < n_muted; i++) if (!strcmp(muted[i], room)) return 1;
     return 0;
 }
@@ -393,6 +461,14 @@ static void load_prefs(void)
         else if (!strncmp(line, "linkprev_enc=", 13)) opt_linkprev_enc = atoi(line + 13);
         else if (!strncmp(line, "hcache=", 7)) opt_hcache = atoi(line + 7);
         else if (!strncmp(line, "avatars=", 8)) opt_avatars = atoi(line + 8);
+        else if (!strncmp(line, "joins=", 6)) opt_joins = atoi(line + 6);
+        else if (!strncmp(line, "draft=", 6) && strchr(line + 6, '\t')) {
+            char *tab = strchr(line + 6, '\t');
+            *tab = 0;
+            set_draft(line + 6, tab + 1);
+        }
+        else if (!strncmp(line, "24h=", 4)) opt_24h = atoi(line + 4);
+        else if (!strncmp(line, "compact=", 8)) opt_compact = atoi(line + 8);
         else if (!strncmp(line, "mute=", 5) && line[5]) set_muted(line + 5, 1);
     }
     fclose(f);
@@ -410,7 +486,11 @@ static void save_prefs(void)
     fprintf(f, "notify=%d\nnotify_all=%d\npreviews=%d\niconified=%d\ntyping=%d\nreceipts=%d\n", opt_notify,
             opt_notify_all, opt_previews, opt_iconified, opt_typing, opt_receipts);
     fprintf(f, "linkprev=%d\nlinkprev_enc=%d\nhcache=%d\n", opt_linkprev, opt_linkprev_enc, opt_hcache);
-    fprintf(f, "avatars=%d\n", opt_avatars);
+    fprintf(f, "avatars=%d\njoins=%d\n24h=%d\ncompact=%d\n", opt_avatars, opt_joins, opt_24h, opt_compact);
+    {
+        int i;
+        for (i = 0; i < n_drafts; i++) fprintf(f, "draft=%s\t%s\n", drafts[i].room, drafts[i].text);
+    }
     for (i = 0; i < n_muted; i++) fprintf(f, "mute=%s\n", muted[i]);
     fclose(f);
 }
@@ -508,7 +588,8 @@ static void notify_event(const AmxEvent *e)
         snprintf(lp, sizeof lp, "%.*s", c ? (int)(c - my_user - 1) : (int)strlen(my_user), my_user + 1);
         mention = e->mention || strstr(e->body, my_user) || (lp[0] && strstr(e->body, lp));
     }
-    if (!opt_notify_all && !r->direct && !mention) return;
+    if (r->notify == AMX_NOTIFY_MENTIONS && !mention) return;      /* the server's setting for the room */
+    if (!opt_notify_all && !r->direct && !mention && r->notify != AMX_NOTIFY_ALL) return;
     if (!opt_notify || !herald_here()) return;
     herald_register();
     name = local(e->sender_name ? e->sender_name : e->sender ? e->sender : "");
@@ -744,7 +825,8 @@ static void make_icon(Alpha *a, const char *const *art)
 /* reactions: the common ones as 12x12 pictures in the same style (Element's
  * quick reactions plus "tears of joy"); keys are UTF-8 */
 #define EM 12
-enum { EMO_THUMBSUP, EMO_THUMBSDOWN, EMO_HEART, EMO_SMILE, EMO_JOY, EMO_CONFUSED, EMO_EYES, EMO_TADA, EMO_ROCKET, EMO_UNKNOWN, EMO_FILE, EMO_LINK, EMO_THREAD, EMO_CHECK, EMO_STAR, N_EMO };
+enum { EMO_THUMBSUP, EMO_THUMBSDOWN, EMO_HEART, EMO_SMILE, EMO_JOY, EMO_CONFUSED, EMO_EYES, EMO_TADA, EMO_ROCKET, EMO_UNKNOWN, EMO_FILE, EMO_LINK, EMO_THREAD, EMO_CHECK, EMO_RADIO_OFF, EMO_RADIO_ON, EMO_STOP, EMO_STAR, N_EMO };
+typedef char n_emo_fits[N_EMO <= N_EMO_MAX ? 1 : -1];
 static Alpha emo_img[N_EMO], emo_big[N_EMO];   /* 12x12 in text, 24x24 in the picker */
 static const char *const emo_art[N_EMO][EM] = {
     { /* thumbsup */
@@ -928,6 +1010,45 @@ static const char *const emo_art[N_EMO][EM] = {
       ".kBbbBk.....",
       "..kBBk......",
       "...kk.......",
+      "............" },
+    { /* radio button, empty: a poll answer not chosen */
+      "............",
+      "....kkkk....",
+      "..kkwwwwkk..",
+      "..kwwwwwwk..",
+      ".kwwwwwwwwk.",
+      ".kwwwwwwwwk.",
+      ".kwwwwwwwwk.",
+      ".kwwwwwwwwk.",
+      "..kwwwwwwk..",
+      "..kkwwwwkk..",
+      "....kkkk....",
+      "............" },
+    { /* radio button, chosen */
+      "............",
+      "....kkkk....",
+      "..kkwwwwkk..",
+      "..kwwbbwwk..",
+      ".kwwbbbbwwk.",
+      ".kwbbbbbbwk.",
+      ".kwbbbbbbwk.",
+      ".kwwbbbbwwk.",
+      "..kwwbbwwk..",
+      "..kkwwwwkk..",
+      "....kkkk....",
+      "............" },
+    { /* stop: end a poll */
+      "............",
+      "............",
+      "..kkkkkkkk..",
+      "..krrrrrrk..",
+      "..krrrrrrk..",
+      "..krrrrrrk..",
+      "..krrrrrrk..",
+      "..krrrrrrk..",
+      "..krrrrrrk..",
+      "..kkkkkkkk..",
+      "............",
       "............" },
     { /* star: a favourite room */
       "............",
@@ -1299,7 +1420,7 @@ static void time_text(double ms, char *buf, size_t n)
     tm = localtime(&t);
     if (!tm) return;
     tm_t = *tm;
-    strftime(buf, n, tm_t.tm_yday + tm_t.tm_year * 400 == today ? "%H:%M" : "%d.%m.", &tm_t);
+    strftime(buf, n, tm_t.tm_yday + tm_t.tm_year * 400 == today ? (opt_24h ? "%H:%M" : "%I:%M%p") : "%d.%m.", &tm_t);
 }
 
 /* three columns: picture | name, second line | time */
@@ -1311,8 +1432,9 @@ HOOKPROTONH(room_disp_func, LONG, char **array, Room *r)
     if (opt_avatars) snprintf(img, sizeof img, "\33A[%08lx]", (unsigned long)&image_for(r)->ad);
     else img[0] = 0;
     second_line(r, second, sizeof second);
+    if (!r->invited && draft_of(r->id)) snprintf(second, sizeof second, "\33bEntwurf:\33n\33i %.150s", draft_of(r->id));
     {
-        const char *mu = is_muted(r->id) ? "\33n\33i (stumm)" : "";
+        const char *mu = r->replacement ? "\33n\33i (ersetzt)" : is_muted(r->id) ? "\33n\33i (stumm)" : "";
         static char star[24];
         char nm[300];
         if (r->favourite) snprintf(star, sizeof star, " \33A[%08lx]", (unsigned long)&emo_img[EMO_STAR].ad);
@@ -1341,6 +1463,7 @@ static void free_rooms(Room *l, int n)
     for (i = 0; i < n; i++) {
         free(l[i].id); free(l[i].name); free(l[i].dm_user); free(l[i].inviter); free(l[i].avatar_url);
         free(l[i].topic); free(l[i].last_sender); free(l[i].last_body); free(l[i].parents);
+        free(l[i].inviter_id); free(l[i].pinned); free(l[i].replacement);
     }
     free(l);
 }
@@ -1363,6 +1486,8 @@ static void show_unread_total(void)
     if (dob_app && dob_new) set(app, MUIA_Application_DiskObject, total ? dob_new : dob_app);
 }
 
+static void update_pinbar(ChatWin *w);
+static struct Hook pinbar_hook, tomb_hook;
 static void refill_rooms(const char *active);
 HOOKPROTONHNO(filter_func, LONG, APTR unused)
 {
@@ -1491,6 +1616,10 @@ static void update_rooms(const AmxMsg *m)
         nl[i].low = ri->low_priority;
         nl[i].is_space = ri->is_space;
         nl[i].parents = xstrdup(ri->parents);
+        nl[i].inviter_id = xstrdup(ri->inviter);
+        nl[i].notify = ri->notify;
+        nl[i].pinned = xstrdup(ri->pinned);
+        nl[i].replacement = xstrdup(ri->replacement);
         {   /* keep what only the GUI knows */
             Room *old = room_by_id(ri->room_id);
             if (old) nl[i].read_ts = old->read_ts;
@@ -1502,6 +1631,10 @@ static void update_rooms(const AmxMsg *m)
     (void)pos;
     update_spaces();
     refill_rooms(active);
+    {
+        ChatWin *cw;
+        for (cw = chats; cw; cw = cw->next) update_pinbar(cw);
+    }
     show_unread_total();
     free(active);
     request_avatars();
@@ -1537,6 +1670,8 @@ typedef struct {
     int thr;                      /* "Thread: n Antworten" under the message eid */
     int slice;                    /* a strip of a picture (media entry midx) */
     int prev;                     /* the link preview under the message eid */
+    int pollrow;                  /* an answer / the status line of the poll eid */
+    int newmark;                  /* "- neue Nachrichten -" */
     int midx;
 } Line;
 
@@ -1577,20 +1712,27 @@ MakeStaticHook(chat_close_hook, chat_close_func);
 /* back to plain writing (no reply, no edit) */
 static void clear_mode(ChatWin *w)
 {
+    free(w->quote); w->quote = NULL;
     free(w->reply_eid); w->reply_eid = NULL;
     free(w->edit_eid); w->edit_eid = NULL;
     set(w->modegrp, MUIA_ShowMe, FALSE);
 }
 
-static void chat_send(ChatWin *w)
+static char *expand_shortcodes(const char *t);
+static void clear_mentions(ChatWin *w);
+
+/* a message to the server from this window (reply / thread / edit mode applied) */
+static void send_out(ChatWin *w, const char *msgtype, const char *body, const char *html, const char *mentions)
 {
-    char *text = (char *)xget(w->input, MUIA_String_Contents), *u;
-    if (!text || !*text) return;
-    u = amx_from_local(text);
-    if (w->edit_eid) amx_async_edit(A, w->room_id, w->edit_eid, u, TAG_SEND);
-    else if (w->reply_eid || w->thread_root)
-        amx_async_send_reply(A, w->room_id, w->reply_eid, w->thread_root, u, TAG_SEND);
-    else amx_async_send_text(A, w->room_id, u, TAG_SEND);
+    AmxOutMsg om;
+    memset(&om, 0, sizeof om);
+    om.msgtype = msgtype;
+    om.body = body;
+    om.html = html;
+    om.mentions = mentions;
+    if (w->edit_eid) om.replaces = w->edit_eid;
+    else { om.reply_to = w->reply_eid; om.thread_root = w->thread_root; }
+    amx_async_send_message(A, w->room_id, &om, TAG_SEND);
     clear_mode(w);
     if (w->thread_root) {                       /* the result finds this window again */
         char key[600];
@@ -1601,6 +1743,200 @@ static void chat_send(ChatWin *w)
     w->sending++;
     w->err[0] = 0;
     update_status(w);
+}
+
+static void chat_say(ChatWin *w, const char *msg)
+{
+    snprintf(w->err, sizeof w->err, "%s", msg);
+    update_status(w);
+}
+
+/* "@name:server" from what was typed ("name", "@name", full ID) */
+static char *full_user(const char *t)
+{
+    const char *srv = my_user ? strchr(my_user, ':') : NULL;
+    char *u;
+    while (*t == ' ') t++;
+    if (!*t) return NULL;
+    u = malloc(strlen(t) + (srv ? strlen(srv) : 0) + 3);
+    if (!u) return NULL;
+    sprintf(u, "%s%s", *t == '@' ? "" : "@", t);
+    if (!strchr(u, ':') && srv) strcat(u, srv);
+    {   /* the ID ends at the first space */
+        char *sp = strchr(u, ' ');
+        if (sp) *sp = 0;
+    }
+    return u;
+}
+
+/* the part after the user ID ("@a:b reason" -> "reason") */
+static const char *after_word(const char *t)
+{
+    while (*t == ' ') t++;
+    while (*t && *t != ' ') t++;
+    while (*t == ' ') t++;
+    return t;
+}
+
+static const char *const help_text =
+    "/me Text         - Handlung (\"* Name Text\")\n"
+    "/shrug [Text]    - Schulterzucken voran\n"
+    "/spoiler Text    - als Spoiler (verdeckt)\n"
+    "/plain Text      - ohne Formatierung senden\n"
+    "/html Text       - Text ist HTML\n"
+    "/nick Name       - eigener Anzeigename\n"
+    "/myroomnick Name - Name nur in diesem Raum\n"
+    "/topic Text      - Thema des Raums\n"
+    "/roomname Name   - Name des Raums\n"
+    "/invite @nutzer  - einladen\n"
+    "/join #raum:server - Raum betreten\n"
+    "/knock #raum:server - um Einlass bitten\n"
+    "/upgraderoom [Version] - neue Raumversion (Admins)\n"
+    "/part            - Raum verlassen\n"
+    "/ignore @nutzer, /unignore @nutzer\n"
+    "/whois @nutzer   - wer ist das?\n"
+    "/op @nutzer [Stufe], /deop @nutzer\n"
+    "/kick @nutzer [Grund], /ban @nutzer [Grund], /unban @nutzer\n"
+    "/jumptodate TT.MM.JJJJ - zu einem Datum springen\n"
+    "//Text           - Text, der mit / beginnt";
+
+static void jump_to_date(ChatWin *w, const char *date);
+
+/* 1 = a command (done or refused), 0 = send the text as it is */
+static int chat_command(ChatWin *w, const char *t)
+{
+    char cmd[24];
+    const char *arg;
+    char *u = NULL, *v = NULL;
+    size_t k = strcspn(t + 1, " ");
+    if (t[0] != '/' || t[1] == '/' || t[1] == ' ' || !t[1]) return 0;
+    if (k >= sizeof cmd) k = sizeof cmd - 1;
+    memcpy(cmd, t + 1, k);
+    cmd[k] = 0;
+    for (k = 0; cmd[k]; k++) if (cmd[k] >= 'A' && cmd[k] <= 'Z') cmd[k] += 32;
+    arg = t + 1 + strlen(cmd);
+    while (*arg == ' ') arg++;
+    if (!strcmp(cmd, "me") || !strcmp(cmd, "shrug") || !strcmp(cmd, "spoiler") || !strcmp(cmd, "plain")
+        || !strcmp(cmd, "html")) {
+        if (!*arg && strcmp(cmd, "shrug")) { chat_say(w, "Bitte noch einen Text dazu."); return 1; }
+        v = amx_from_local((char *)arg);
+        if (!strcmp(cmd, "me")) send_out(w, "m.emote", v, NULL, NULL);
+        else if (!strcmp(cmd, "plain")) send_out(w, NULL, v, NULL, NULL);
+        else if (!strcmp(cmd, "shrug")) {
+            char *b = malloc(strlen(v) + 24);
+            if (b) { sprintf(b, "\xc2\xaf\\_(\xe3\x83\x84)_/\xc2\xaf%s%s", *v ? " " : "", v); send_out(w, NULL, b, NULL, NULL); free(b); }
+        } else if (!strcmp(cmd, "spoiler")) {
+            char *h = malloc(strlen(v) + 40);
+            if (h) { sprintf(h, "<span data-mx-spoiler>%s</span>", v); send_out(w, NULL, v, h, NULL); free(h); }
+        } else {                                     /* /html: the plain body without the tags */
+            char *b = strdup(v), *q = b, *r;
+            int in = 0;
+            if (b) {
+                for (r = v; *r; r++) { if (*r == '<') in = 1; else if (*r == '>') in = 0; else if (!in) *q++ = *r; }
+                *q = 0;
+                send_out(w, NULL, b, v, NULL);
+                free(b);
+            }
+        }
+        free(v);
+    } else if (!strcmp(cmd, "nick") || !strcmp(cmd, "myroomnick") || !strcmp(cmd, "topic") || !strcmp(cmd, "roomname")) {
+        if (!*arg && strcmp(cmd, "topic")) { chat_say(w, "Bitte noch einen Namen dazu."); return 1; }
+        v = amx_from_local((char *)arg);
+        if (!strcmp(cmd, "nick")) amx_async_set_profile(A, "name", v, TAG_CMD);
+        else if (!strcmp(cmd, "myroomnick")) amx_async_room_nick(A, w->room_id, v, TAG_CMD);
+        else amx_async_room_set(A, w->room_id, !strcmp(cmd, "topic") ? "topic" : "name", v, TAG_CMD);
+        chat_say(w, "Bitte warten ...");
+        free(v);
+    } else if (!strcmp(cmd, "invite") || !strcmp(cmd, "ignore") || !strcmp(cmd, "unignore") || !strcmp(cmd, "whois")
+               || !strcmp(cmd, "op") || !strcmp(cmd, "deop") || !strcmp(cmd, "kick") || !strcmp(cmd, "remove")
+               || !strcmp(cmd, "ban") || !strcmp(cmd, "unban")) {
+        if (!(u = full_user(arg))) { chat_say(w, "Bitte noch einen Nutzer dazu (@name:server)."); return 1; }
+        v = amx_from_local((char *)after_word(arg));
+        if (!strcmp(cmd, "invite")) amx_async_invite(A, w->room_id, u, TAG_CMD);
+        else if (!strcmp(cmd, "ignore") || !strcmp(cmd, "unignore")) amx_async_ignore(A, u, cmd[0] == 'i', TAG_CMD);
+        else if (!strcmp(cmd, "whois")) amx_async_profile_of(A, u, TAG_WHOIS);
+        else if (!strcmp(cmd, "op")) amx_async_moderate(A, w->room_id, u, "power", NULL, *v ? atoi(v) : 50, TAG_CMD);
+        else if (!strcmp(cmd, "deop")) amx_async_moderate(A, w->room_id, u, "power", NULL, 0, TAG_CMD);
+        else if (!strcmp(cmd, "kick") || !strcmp(cmd, "remove")) amx_async_moderate(A, w->room_id, u, "kick", v, 0, TAG_CMD);
+        else amx_async_moderate(A, w->room_id, u, cmd, v, 0, TAG_CMD);
+        if (strcmp(cmd, "whois")) chat_say(w, "Bitte warten ...");
+        free(u);
+        free(v);
+    } else if (!strcmp(cmd, "join")) {
+        if (!*arg) { chat_say(w, "Bitte noch einen Raum dazu (#name:server)."); return 1; }
+        amx_async_join(A, arg, TAG_JOIN);
+    } else if (!strcmp(cmd, "upgraderoom")) {
+        if (MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)"_Upgrade|*_Abbrechen",
+                        (STRPTR)"Den Raum auf eine neue Raumversion bringen?\nDer Server legt dafür einen neuen Raum an;\nalle müssen dorthin wechseln.", 0) == 1) {
+            amx_async_upgrade(A, w->room_id, *arg ? arg : NULL, TAG_CMD);
+            chat_say(w, "Upgrade ...");
+        }
+    } else if (!strcmp(cmd, "knock")) {
+        if (!*arg) { chat_say(w, "Bitte noch einen Raum dazu (#name:server)."); return 1; }
+        amx_async_knock(A, arg, NULL, TAG_CMD);
+        chat_say(w, "Klopfe an ...");
+    } else if (!strcmp(cmd, "part") || !strcmp(cmd, "leave")) {
+        if (!w->thread_root) amx_async_leave(A, w->room_id, TAG_LEAVE);
+    } else if (!strcmp(cmd, "jumptodate")) {
+        jump_to_date(w, arg);
+    } else if (!strcmp(cmd, "help")) {
+        MUI_Request(app, w->win, 0, (STRPTR)"Amatrix - Befehle", (STRPTR)"*_OK", (STRPTR)"%s", (ULONG)help_text);
+    } else {
+        char b[100];
+        snprintf(b, sizeof b, "Unbekannter Befehl /%s - /help zeigt alle.", cmd);
+        chat_say(w, b);
+        return 1;                                  /* the text stays in the input */
+    }
+    set(w->input, MUIA_String_Contents, "");
+    return 1;
+}
+
+static void chat_send(ChatWin *w)
+{
+    char *text = (char *)xget(w->input, MUIA_String_Contents), *u;
+    if (!text || !*text) return;
+    if (chat_command(w, text)) { set(w->win, MUIA_Window_ActiveObject, w->input); return; }
+    if (!w->thread_root && draft_of(w->room_id)) {
+        set_draft(w->room_id, NULL);
+        save_prefs();
+        DoMethod(lst_rooms, MUIM_List_Redraw, MUIV_List_Redraw_All);
+    }
+    u = amx_from_local(text[0] == '/' && text[1] == '/' ? text + 1 : text);
+    if (u && w->quote) {                          /* "> quote" above it: markdown makes it a quote */
+        char *q = malloc(strlen(w->quote) * 2 + strlen(u) + 8), *d = q;
+        const char *s2;
+        if (q) {
+            *d++ = '>'; *d++ = ' ';
+            for (s2 = w->quote; *s2; s2++) { *d++ = *s2; if (*s2 == '\n') { *d++ = '>'; *d++ = ' '; } }
+            *d++ = '\n'; *d++ = '\n';
+            strcpy(d, u);
+            free(u);
+            u = q;
+        }
+    }
+    {
+        char *body = u ? expand_shortcodes(u) : NULL, *html = body ? md_to_html(body) : NULL, *ids = NULL;
+        const char *names[16], *idl[16];
+        int i, n = 0;
+        size_t len = 1;
+        for (i = 0; body && i < w->n_ment; i++)
+            if (strstr(body, w->ment_name[i])) { names[n] = w->ment_name[i]; idl[n] = w->ment_id[i]; len += strlen(idl[n]) + 1; n++; }
+        if (n) {
+            char *base = html ? html : md_escape(body), *withm = md_mentions(base, names, idl, n);
+            if (base != html) free(base);
+            free(html);
+            html = withm;
+            if ((ids = malloc(len)) != NULL) {
+                ids[0] = 0;
+                for (i = 0; i < n; i++) { if (i) strcat(ids, "\n"); strcat(ids, idl[i]); }
+            }
+        }
+        send_out(w, NULL, body ? body : u, html, ids);
+        free(ids);
+        free(html);
+        free(body);
+    }
+    clear_mentions(w);
     free(u);
     set(w->input, MUIA_String_Contents, "");
     set(w->win, MUIA_Window_ActiveObject, w->input);
@@ -1689,6 +2025,194 @@ HOOKPROTONH(chat_drop_func, LONG, Object *obj, ULONG *param)
 }
 MakeStaticHook(chat_drop_hook, chat_drop_func);
 
+/* cursor up in an empty input: edit our newest message */
+static void start_edit(ChatWin *w, ChatMsg *m);
+static void edit_newest_own(ChatWin *w)
+{
+    char *t = (char *)xget(w->input, MUIA_String_Contents);
+    ChatMsg *best = NULL;
+    int i;
+    if ((t && *t) || w->edit_eid) return;
+    for (i = 0; i < w->n_msgs; i++) {
+        ChatMsg *m = &w->msgs[i];
+        if (!m->own || m->redacted || !m->body || (m->msgtype && strcmp(m->msgtype, "m.text") && strcmp(m->msgtype, "m.emote")))
+            continue;
+        if (!best || m->ts > best->ts) best = m;
+    }
+    if (best) start_edit(w, best);
+}
+
+HOOKPROTONH(uparrow_func, LONG, Object *obj, ULONG *param)
+{
+    (void)obj;
+    edit_newest_own((ChatWin *)param[0]);
+    return 0;
+}
+MakeStaticHook(uparrow_hook, uparrow_func);
+
+/* ---- completing @names and :emojis: (buttons above the input) */
+
+static const struct { const char *code, *utf8; } shortcodes[] = {
+    { "thumbsup", "\xf0\x9f\x91\x8d" }, { "thumbsdown", "\xf0\x9f\x91\x8e" }, { "heart", "\xe2\x9d\xa4\xef\xb8\x8f" },
+    { "smile", "\xf0\x9f\x98\x8a" }, { "joy", "\xf0\x9f\x98\x82" }, { "laughing", "\xf0\x9f\x98\x86" },
+    { "wink", "\xf0\x9f\x98\x89" }, { "grin", "\xf0\x9f\x98\x81" }, { "confused", "\xf0\x9f\x98\x95" },
+    { "cry", "\xf0\x9f\x98\xa2" }, { "eyes", "\xf0\x9f\x91\x80" }, { "tada", "\xf0\x9f\x8e\x89" },
+    { "rocket", "\xf0\x9f\x9a\x80" }, { "kiss", "\xf0\x9f\x98\x98" }, { "heart_eyes", "\xf0\x9f\x98\x8d" },
+    { "thinking", "\xf0\x9f\xa4\x94" }, { "clap", "\xf0\x9f\x91\x8f" }, { "fire", "\xf0\x9f\x94\xa5" },
+    { "ok_hand", "\xf0\x9f\x91\x8c" }, { "wave", "\xf0\x9f\x91\x8b" }, { "pray", "\xf0\x9f\x99\x8f" },
+    { "sunglasses", "\xf0\x9f\x98\x8e" }, { "check", "\xe2\x9c\x85" }, { "star", "\xe2\xad\x90" },
+};
+
+/* :code: in a UTF-8 text replaced by the emoji (malloc'd) */
+static char *expand_shortcodes(const char *t)
+{
+    size_t n = strlen(t) * 2 + 16, o = 0, i;
+    char *out = malloc(n);
+    const char *p = t;
+    if (!out) return NULL;
+    while (*p) {
+        int hit = -1;
+        if (*p == ':')
+            for (i = 0; i < sizeof shortcodes / sizeof shortcodes[0]; i++) {
+                size_t k = strlen(shortcodes[i].code);
+                if (!strncmp(p + 1, shortcodes[i].code, k) && p[1 + k] == ':') { hit = (int)i; break; }
+            }
+        if (hit >= 0) {
+            size_t k = strlen(shortcodes[hit].utf8);
+            if (o + k + 1 >= n) break;
+            memcpy(out + o, shortcodes[hit].utf8, k);
+            o += k;
+            p += strlen(shortcodes[hit].code) + 2;
+        } else {
+            if (o + 2 >= n) break;
+            out[o++] = *p++;
+        }
+    }
+    out[o] = 0;
+    return out;
+}
+
+static int prefix_ci(const char *s, const char *pre)
+{
+    for (; *pre; s++, pre++) {
+        unsigned char a = (unsigned char)*s, b = (unsigned char)*pre;
+        if (!a) return 0;
+        if ((a >= 'A' && a <= 'Z') || (a >= 0xc0 && a <= 0xde)) a += 32;
+        if ((b >= 'A' && b <= 'Z') || (b >= 0xc0 && b <= 0xde)) b += 32;
+        if (a != b) return 0;
+    }
+    return 1;
+}
+
+static void clear_suggestions(ChatWin *w)
+{
+    int k;
+    for (k = 0; k < 5; k++) { free(w->stext[k]); free(w->sid[k]); w->stext[k] = w->sid[k] = NULL; }
+    w->n_sugg = 0;
+    set(w->sugg, MUIA_ShowMe, FALSE);
+}
+
+static void update_suggestions(ChatWin *w)
+{
+    char *t = (char *)xget(w->input, MUIA_String_Contents), *tok;
+    size_t len;
+    int k, n = 0;
+    clear_suggestions(w);
+    if (!t || !*t) return;
+    tok = strrchr(t, ' ');
+    tok = tok ? tok + 1 : t;
+    len = strlen(tok);
+    if (tok[0] == '@' && len >= 2) {
+        if (!w->mem_asked) { w->mem_asked = 1; amx_async_members(A, w->room_id, TAG_MEMB2); return; }
+        for (k = 0; k < w->n_mem && n < 5; k++) {
+            char *nm = local(w->mem[k].name);
+            const char *lp = w->mem[k].user_id + 1;
+            if (strcmp(w->mem[k].membership, "join") || (my_user && !strcmp(w->mem[k].user_id, my_user))) { free(nm); continue; }
+            if (nm && (prefix_ci(nm, tok + 1) || prefix_ci(lp, tok + 1))) {
+                w->stext[n] = nm;
+                w->sid[n] = strdup(w->mem[k].user_id);
+                n++;
+            } else free(nm);
+        }
+    } else if (tok[0] == ':' && len >= 3 && !strchr(tok + 1, ':')) {
+        for (k = 0; k < (int)(sizeof shortcodes / sizeof shortcodes[0]) && n < 5; k++)
+            if (prefix_ci(shortcodes[k].code, tok + 1)) {
+                char *c = malloc(strlen(shortcodes[k].code) + 3);
+                if (!c) break;
+                sprintf(c, ":%s:", shortcodes[k].code);
+                w->stext[n++] = c;
+            }
+    }
+    w->n_sugg = n;
+    for (k = 0; k < 5; k++) {
+        set(w->sbtn[k], MUIA_ShowMe, k < n);
+        if (k < n) set(w->sbtn[k], MUIA_Text_Contents, w->stext[k]);
+    }
+    if (n) set(w->sugg, MUIA_ShowMe, TRUE);
+}
+
+/* a suggestion chosen: it replaces the word being typed */
+static void complete(ChatWin *w, int k)
+{
+    char *t = (char *)xget(w->input, MUIA_String_Contents), *tok, *nt;
+    char *text, *id;
+    if (k < 0 || k >= w->n_sugg || !t) return;
+    text = strdup(w->stext[k]);
+    id = w->sid[k] ? strdup(w->sid[k]) : NULL;
+    tok = strrchr(t, ' ');
+    tok = tok ? tok + 1 : t;
+    if ((nt = malloc((tok - t) + strlen(text) + 2)) != NULL) {
+        memcpy(nt, t, tok - t);
+        sprintf(nt + (tok - t), "%s ", text);
+        if (id && w->n_ment < 16) {
+            w->ment_name[w->n_ment] = amx_from_local(text);
+            w->ment_id[w->n_ment] = id;
+            w->n_ment++;
+            id = NULL;
+        }
+        set(w->input, MUIA_String_Contents, nt);
+        set(w->input, MUIA_String_BufferPos, strlen(nt));
+        free(nt);
+    }
+    free(text);
+    free(id);
+    clear_suggestions(w);
+    set(w->win, MUIA_Window_ActiveObject, w->input);
+}
+
+HOOKPROTONH(sugg_func, LONG, Object *obj, ULONG *param)
+{
+    (void)obj;
+    complete((ChatWin *)param[0], (int)param[1]);
+    return 0;
+}
+MakeStaticHook(sugg_hook, sugg_func);
+
+static void got_members2(const AmxMsg *m)
+{
+    ChatWin *w = m->result ? chat_by_room(m->result) : NULL;
+    int i;
+    if (!w || m->status) return;
+    amx_free_members(w->mem, w->n_mem);
+    w->mem = m->n ? calloc(m->n, sizeof *w->mem) : NULL;
+    w->n_mem = w->mem ? m->n : 0;
+    for (i = 0; i < w->n_mem; i++) {
+        w->mem[i] = m->members[i];
+        w->mem[i].user_id = xstrdup(m->members[i].user_id);
+        w->mem[i].name = xstrdup(m->members[i].name);
+        w->mem[i].avatar_url = xstrdup(m->members[i].avatar_url);
+        w->mem[i].membership = xstrdup(m->members[i].membership);
+    }
+    update_suggestions(w);
+}
+
+static void clear_mentions(ChatWin *w)
+{
+    int i;
+    for (i = 0; i < w->n_ment; i++) { free(w->ment_name[i]); free(w->ment_id[i]); }
+    w->n_ment = 0;
+}
+
 /* the input changed: "typing" to the server (renewed every 20 s), or stopped */
 static void typing_stop(ChatWin *w)
 {
@@ -1703,6 +2227,7 @@ HOOKPROTONH(chat_typing_func, LONG, Object *obj, ULONG *param)
     char *t = (char *)xget(w->input, MUIA_String_Contents);
     time_t now = time(NULL);
     (void)obj;
+    update_suggestions(w);
     if (!t || !*t || w->edit_eid) typing_stop(w);
     else if (opt_typing && (!w->typing_on || now - w->typing_sent >= 20)) {
         w->typing_on = 1;
@@ -1789,6 +2314,8 @@ static const char *hist_values[] = { "shared", "invited", "joined", "world_reada
 static const char *hist_names[] = { "Mitglieder: ganzer Verlauf", "Mitglieder: ab der Einladung",
                                     "Mitglieder: ab dem Beitritt", "Jeder (auch ohne Beitritt)", NULL };
 static const char *role_names[] = { "Mitglied", "Moderator", "Admin", NULL };
+static const char *notify_names[] = { "Standard", "Alle Nachrichten", "Nur Erwähnungen und Stichwörter", "Aus (stumm)", NULL };
+static Object *cyc_inotify;
 static const int role_levels[] = { 0, 50, 100 };
 
 static char *info_room;
@@ -1822,7 +2349,8 @@ HOOKPROTONHNO(mem_disp_func, LONG, struct NList_DisplayMessage *m)
     snprintf(b0, sizeof b0, "%s%s", strcmp(p->membership, "join") ? "\33i" : "", t ? t : "");
     free(t);
     snprintf(b1, sizeof b1, "%s%s", role_of(p->power),
-             !strcmp(p->membership, "invite") ? " (eingeladen)" : !strcmp(p->membership, "ban") ? " (gesperrt)" : "");
+             !strcmp(p->membership, "invite") ? " (eingeladen)" : !strcmp(p->membership, "ban") ? " (gesperrt)"
+             : !strcmp(p->membership, "knock") ? " (klopft an)" : "");
     t = local(p->user_id);
     snprintf(b2, sizeof b2, "%s", t ? t : "");
     free(t);
@@ -1863,6 +2391,7 @@ static void info_enable(void)
                                || (my_user && !strcmp(p->user_id, my_user)));
     set(b_iban, MUIA_Disabled, !info_have || !p || !strcmp(p->membership, "ban") || !above || me < st->level_ban);
     set(b_iunban, MUIA_Disabled, !info_have || !p || strcmp(p->membership, "ban") || me < st->level_ban);
+    set(b_iadmit, MUIA_Disabled, !info_have || !p || strcmp(p->membership, "knock") || me < st->level_invite);
     set(cyc_irole, MUIA_Disabled, !info_have || !p || !above || me < st->level_power);
     set(b_irole, MUIA_Disabled, !info_have || !p || !above || me < st->level_power);
     if (p) set(cyc_irole, MUIA_Cycle_Active, p->power >= 100 ? 2 : p->power >= 50 ? 1 : 0);
@@ -1883,6 +2412,18 @@ static void info_reload(int settings, int members)
     if (members) amx_async_members(A, info_room, TAG_MEMBERS);
 }
 
+static int nnotify_set;          /* setting the cycle ourselves: no command */
+
+HOOKPROTONHNO(inotify_func, LONG, APTR unused)
+{
+    (void)unused;
+    if (!nnotify_set && info_room)
+        amx_async_room_notify(A, info_room, (int)xget(cyc_inotify, MUIA_Cycle_Active), TAG_ROOMSET), info_busy++,
+            info_set_status("Speichere ...");
+    return 0;
+}
+MakeStaticHook(inotify_hook, inotify_func);
+
 static void open_info(const char *room_id)
 {
     static char title[200];
@@ -1896,6 +2437,9 @@ static void open_info(const char *room_id)
     info_mem = NULL;
     n_info_mem = 0;
     snprintf(title, sizeof title, "Raum: %s", r && r->name ? r->name : room_id);
+    nnotify_set = 1;
+    set(cyc_inotify, MUIA_Cycle_Active, r ? r->notify : 0);
+    nnotify_set = 0;
     set(win_info, MUIA_Window_Title, title);
     set(str_iname, MUIA_String_Contents, "");
     set(str_itopic, MUIA_String_Contents, "");
@@ -2381,6 +2925,54 @@ static void toggle_tag(const char *tag)
     amx_async_set_tag(A, r->id, tag, !strcmp(tag, "m.favourite") ? !r->favourite : !r->low, TAG_TAG);
 }
 
+static ChatWin *current_chat(void);
+
+/* ---- a new poll: question, up to six answers */
+
+static void open_pollnew(void)
+{
+    ChatWin *w = current_chat();
+    int i;
+    if (!w) {
+        MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
+                    (STRPTR)"Bitte erst das Chatfenster des Raums öffnen.", 0);
+        return;
+    }
+    free(poll_room);
+    poll_room = strdup(w->room_id);
+    set(str_pollq, MUIA_String_Contents, "");
+    for (i = 0; i < 6; i++) set(str_polla[i], MUIA_String_Contents, "");
+    set(win_poll, MUIA_Window_Open, TRUE);
+    set(win_poll, MUIA_Window_ActiveObject, str_pollq);
+}
+
+static void poll_send(void)
+{
+    char *q = amx_from_local((char *)xget(str_pollq, MUIA_String_Contents)), list[1600] = "";
+    int i, n = 0;
+    for (i = 0; i < 6; i++) {
+        char *a = (char *)xget(str_polla[i], MUIA_String_Contents), *u;
+        if (!a || !*a) continue;
+        u = amx_from_local(a);
+        if (u && strlen(list) + strlen(u) + 2 < sizeof list) {
+            if (n++) strcat(list, "\n");
+            strcat(list, u);
+        }
+        free(u);
+    }
+    if (!q || !*q || n < 2 || !poll_room) {
+        MUI_Request(app, win_poll, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
+                    (STRPTR)"Eine Umfrage braucht eine Frage und mindestens zwei Antworten.", 0);
+        free(q);
+        return;
+    }
+    amx_async_send_poll(A, poll_room, q, list, xget(chk_pollmulti, MUIA_Selected) ? n : 1,
+                        !xget(chk_pollhide, MUIA_Selected), TAG_POLLVOTE);
+    free(q);
+    set(win_poll, MUIA_Window_Open, FALSE);
+}
+
+
 HOOKPROTONH(chat_leave_func, LONG, Object *obj, ULONG *param)
 {
     (void)obj;
@@ -2435,6 +3027,7 @@ static const char *react_target(ChatWin *w)
 #define CLICK_LINK  0x20000000L
 #define CLICK_SAVE  0x10000000L         /* the file icon: download (save as ...) */
 #define CLICK_THREAD 0x08000000L        /* "Thread: n Antworten": open the thread's window */
+#define CLICK_POLL  0x04000000L         /* a poll answer: (poll << 8) | answer, 255 = end the poll */
 static int add_link(ChatWin *w, const char *u, size_t n);
 static void remember_line(ChatWin *w, void *l);
 
@@ -2548,6 +3141,229 @@ static void got_preview(const AmxMsg *m)
         }
 }
 
+/* ---- polls: the answers as lines under the question, a click votes */
+
+typedef struct Poll {
+    char *eid, *creator;
+    int n, max, disclosed, ended, asked;
+    double end_ts;
+    char *ids[20], *texts[20];        /* texts in the local charset */
+} Poll;
+typedef struct Vote { char *eid, *poll, *sender, *answers; double ts; } Vote;
+
+static Poll *poll_by_eid(ChatWin *w, const char *eid)
+{
+    int i;
+    for (i = 0; eid && i < w->n_polls; i++) if (!strcmp(w->polls[i].eid, eid)) return &w->polls[i];
+    return NULL;
+}
+
+/* the answers a sender chose last (before the end), NULL if none */
+static const char *vote_of(ChatWin *w, const Poll *p, const char *sender)
+{
+    const Vote *best = NULL;
+    int i;
+    for (i = 0; i < w->n_votes; i++) {
+        const Vote *v = &w->votes[i];
+        if (strcmp(v->poll, p->eid) || strcmp(v->sender, sender)) continue;
+        if (p->ended && p->end_ts > 0 && v->ts > p->end_ts) continue;
+        if (!best || v->ts >= best->ts) best = v;
+    }
+    return best && best->answers[0] ? best->answers : NULL;
+}
+
+static int has_answer(const char *list, const char *id)
+{
+    size_t k = strlen(id);
+    const char *p = list;
+    while (p && *p) {
+        if (!strncmp(p, id, k) && (p[k] == '\n' || !p[k])) return 1;
+        p = strchr(p, '\n');
+        if (p) p++;
+    }
+    return 0;
+}
+
+/* votes per answer (each voter's newest choice, at most max answers) */
+static int tally(ChatWin *w, const Poll *p, int *count)
+{
+    int i, j, voters = 0;
+    const char *seen[200];
+    int n_seen = 0;
+    for (j = 0; j < p->n; j++) count[j] = 0;
+    for (i = 0; i < w->n_votes && n_seen < 200; i++) {
+        const char *a;
+        int k, dup = 0, used = 0;
+        if (strcmp(w->votes[i].poll, p->eid)) continue;
+        for (k = 0; k < n_seen; k++) if (!strcmp(seen[k], w->votes[i].sender)) dup = 1;
+        if (dup) continue;
+        seen[n_seen++] = w->votes[i].sender;
+        if (!(a = vote_of(w, p, w->votes[i].sender))) continue;
+        for (j = 0; j < p->n && used < p->max; j++)
+            if (has_answer(a, p->ids[j])) { count[j]++; used++; }
+        if (used) voters++;
+    }
+    return voters;
+}
+
+static void refresh_poll(ChatWin *w, Poll *p)
+{
+    LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k, last = -1;
+    int count[20], voters, j, best = 0, pi = (int)(p - w->polls);
+    const char *mine = my_user ? vote_of(w, p, my_user) : NULL;
+    char text[400];
+    for (k = n - 1; k >= 0; k--) {                    /* the old rows away */
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (l && l->pollrow && l->eid && !strcmp(l->eid, p->eid)) { DoMethod(w->list, MUIM_NList_Remove, k); w->lines--; }
+    }
+    n = (LONG)xget(w->list, MUIA_NList_Entries);
+    for (k = 0; k < n; k++) {
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (l && l->eid && !strcmp(l->eid, p->eid) && !l->react && !l->thr) last = k;
+    }
+    if (last < 0) return;
+    voters = tally(w, p, count);
+    for (j = 0; j < p->n; j++) if (count[j] > best) best = count[j];
+    for (j = 0; j <= p->n; j++) {
+        Line *l;
+        if (j < p->n) {
+            int show = p->disclosed || p->ended, win = p->ended && best > 0 && count[j] == best;
+            char num[24] = "";
+            if (show) snprintf(num, sizeof num, "  (%d)", count[j]);
+            snprintf(text, sizeof text, "      \33o[%d@%ld] %s%s\33n%s", mine && has_answer(mine, p->ids[j]) ? EMO_RADIO_ON
+                     : EMO_RADIO_OFF, CLICK_POLL | ((long)pi << 8) | j, win ? "\33b" : "", p->texts[j], num);
+        } else {
+            int own = p->creator && my_user && !strcmp(p->creator, my_user);
+            snprintf(text, sizeof text, "      \33i%d %s%s%s", voters, voters == 1 ? "Stimme" : "Stimmen",
+                     p->ended ? " - beendet" : p->disclosed ? "" : " (Ergebnis am Ende)",
+                     p->max > 1 ? (p->ended ? "" : ", mehrere wählbar") : "");
+            if (own && !p->ended) {
+                size_t t = strlen(text);
+                snprintf(text + t, sizeof text - t, "  \33n\33o[%d@%ld] beenden", EMO_STOP, CLICK_POLL | ((long)pi << 8) | 255);
+            }
+        }
+        if (!(l = new_line(p->eid, text, strlen(text), 0))) return;
+        l->pollrow = 1;
+        remember_line(w, l);
+        DoMethod(w->list, MUIM_NList_InsertSingle, l, last + 1 + j);
+        w->lines++;
+    }
+}
+
+/* a poll message was shown: remember it, its rows, and fetch its votes once */
+static void add_poll(ChatWin *w, const AmxEvent *e)
+{
+    cJSON *j, *a;
+    Poll *p, *t;
+    if (!e->poll || !e->event_id) return;
+    if ((p = poll_by_eid(w, e->event_id)) == NULL) {
+        if (!(j = cJSON_Parse(e->poll))) return;
+        if (!(t = realloc(w->polls, sizeof *t * (w->n_polls + 1)))) { cJSON_Delete(j); return; }
+        w->polls = t;
+        p = &w->polls[w->n_polls++];
+        memset(p, 0, sizeof *p);
+        p->eid = strdup(e->event_id);
+        p->creator = e->sender ? strdup(e->sender) : NULL;
+        p->max = cJSON_GetObjectItem(j, "max") ? cJSON_GetObjectItem(j, "max")->valueint : 1;
+        p->disclosed = cJSON_IsTrue(cJSON_GetObjectItem(j, "disclosed"));
+        cJSON_ArrayForEach(a, cJSON_GetObjectItem(j, "answers")) {
+            const cJSON *id = cJSON_GetObjectItem(a, "id"), *tx = cJSON_GetObjectItem(a, "text");
+            if (p->n >= 20 || !cJSON_IsString(id)) continue;
+            p->ids[p->n] = strdup(id->valuestring);
+            p->texts[p->n] = local(cJSON_IsString(tx) ? tx->valuestring : "");
+            p->n++;
+        }
+        cJSON_Delete(j);
+        {   /* an end that came first */
+            int i;
+            for (i = 0; i < w->n_votes; i++)
+                if (!strcmp(w->votes[i].poll, p->eid) && !strcmp(w->votes[i].answers, "\001end")
+                    && p->creator && !strcmp(w->votes[i].sender, p->creator)) { p->ended = 1; p->end_ts = w->votes[i].ts; }
+        }
+    }
+    refresh_poll(w, p);
+    if (!p->asked) { p->asked = 1; amx_async_relations(A, w->room_id, p->eid, TAG_POLL); }
+}
+
+/* a vote or an end (kept also when the poll is not here yet) */
+static void poll_event(ChatWin *w, const AmxEvent *e)
+{
+    Vote *t, *v;
+    Poll *p = poll_by_eid(w, e->relates_to);
+    int i;
+    for (i = 0; e->event_id && i < w->n_votes; i++) if (w->votes[i].eid && !strcmp(w->votes[i].eid, e->event_id)) return;
+    if (e->event_id && e->sender)                 /* the server's copy replaces what we showed at once */
+        for (i = w->n_votes - 1; i >= 0; i--)
+            if (!w->votes[i].eid && !strcmp(w->votes[i].poll, e->relates_to) && !strcmp(w->votes[i].sender, e->sender)) {
+                free(w->votes[i].poll); free(w->votes[i].sender); free(w->votes[i].answers);
+                memmove(&w->votes[i], &w->votes[i + 1], sizeof *w->votes * (w->n_votes - i - 1));
+                w->n_votes--;
+            }
+    if (!(t = realloc(w->votes, sizeof *t * (w->n_votes + 1)))) return;
+    w->votes = t;
+    v = &w->votes[w->n_votes++];
+    v->eid = e->event_id ? strdup(e->event_id) : NULL;
+    v->poll = strdup(e->relates_to);
+    v->sender = strdup(e->sender ? e->sender : "");
+    v->answers = strdup(e->type == AMX_EV_POLL_END ? "\001end" : e->body ? e->body : "");
+    v->ts = e->timestamp;
+    if (e->type == AMX_EV_POLL_END && p && p->creator && e->sender && !strcmp(p->creator, e->sender)) {
+        p->ended = 1;
+        p->end_ts = e->timestamp;
+    }
+    if (p) refresh_poll(w, p);
+}
+
+static void free_polls(ChatWin *w)
+{
+    int i, j;
+    for (i = 0; i < w->n_polls; i++) {
+        free(w->polls[i].eid); free(w->polls[i].creator);
+        for (j = 0; j < w->polls[i].n; j++) { free(w->polls[i].ids[j]); free(w->polls[i].texts[j]); }
+    }
+    for (i = 0; i < w->n_votes; i++) { free(w->votes[i].eid); free(w->votes[i].poll); free(w->votes[i].sender); free(w->votes[i].answers); }
+    free(w->polls); free(w->votes);
+    w->polls = NULL; w->votes = NULL; w->n_polls = w->n_votes = 0;
+}
+
+/* a click on an answer: vote (one answer: switch / take back; several: toggle) */
+static void poll_click(ChatWin *w, int pi, int ai)
+{
+    Poll *p = pi < w->n_polls ? &w->polls[pi] : NULL;
+    const char *mine;
+    char list[600] = "";
+    int j, n = 0;
+    AmxEvent e;
+    if (!p || p->ended || !my_user) return;
+    if (ai == 255) {
+        if (MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)"_Beenden|*_Abbrechen",
+                        (STRPTR)"Die Umfrage beenden? Danach zählt keine Stimme mehr.", 0) == 1)
+            amx_async_poll_end(A, w->room_id, p->eid, TAG_POLLVOTE);
+        return;
+    }
+    if (ai >= p->n) return;
+    mine = vote_of(w, p, my_user);
+    for (j = 0; j < p->n; j++) {
+        int on = mine && has_answer(mine, p->ids[j]);
+        if (j == ai) on = !on;
+        else if (p->max == 1) on = 0;
+        if (on && n < p->max && strlen(list) + strlen(p->ids[j]) + 2 < sizeof list) {
+            if (n++) strcat(list, "\n");
+            strcat(list, p->ids[j]);
+        }
+    }
+    amx_async_poll_vote(A, w->room_id, p->eid, list, TAG_POLLVOTE);
+    memset(&e, 0, sizeof e);                          /* shown at once; the server's copy follows */
+    e.type = AMX_EV_POLL_VOTE;
+    e.relates_to = p->eid;
+    e.sender = my_user;
+    e.body = list;
+    e.timestamp = (double)time(NULL) * 1000.0 + 1;
+    poll_event(w, &e);
+}
+
 static void open_thread_of(ChatWin *w, int mi);
 static void open_media(ChatWin *w, int mi);
 static void save_media(ChatWin *w, int mi, const char *to);
@@ -2565,6 +3381,7 @@ HOOKPROTONH(chip_func, LONG, Object *obj, ULONG *param)
     if (v & CLICK_SAVE) { save_media(w, (int)(v & 0xffffff), NULL); return 0; }
     if (v & CLICK_THREAD) { open_thread_of(w, (int)(v & 0xffffff)); return 0; }
     if (v & CLICK_LINK) { open_link(w, (int)(v & 0xffffff), 0); return 0; }
+    if (v & CLICK_POLL) { poll_click(w, (int)((v & 0x3ffff00) >> 8), (int)(v & 0xff)); return 0; }
     for (k = 0; k < n; k++) {
         Line *l = NULL;
         DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
@@ -2675,6 +3492,8 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
     if (!(w = calloc(1, sizeof *w))) return;
     w->next_img = 16;                         /* 0..15: the small pictures (emoji, file, link) */
     w->room_id = strdup(room_id);
+    w->unread_open = !thread_root && r ? r->unread : 0;
+    w->draft_pending = !thread_root && draft_of(room_id) ? 1 : 0;
     if (thread_root) {
         char t[200];
         snprintf(t, sizeof t, "Thread - %s", r ? r->name : room_id);
@@ -2735,6 +3554,21 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
                     MUIA_NList_AutoVisible, TRUE,
                 End,
             End,
+            Child, w->pinbar = TextObject,
+                MUIA_ShowMe, FALSE,
+                TextFrame,
+                MUIA_Background, MUII_TextBack,
+                MUIA_InputMode, MUIV_InputMode_RelVerify,
+                MUIA_Text_SetMin, FALSE,
+                MUIA_ShortHelp, "Klick: zur angepinnten Nachricht",
+            End,
+            Child, w->tombbar = TextObject,
+                MUIA_ShowMe, FALSE,
+                TextFrame,
+                MUIA_Background, MUII_TextBack,
+                MUIA_InputMode, MUIV_InputMode_RelVerify,
+                MUIA_Text_Contents, "\33c\33bDieser Raum wurde durch einen neuen ersetzt.\33n Klick: dorthin",
+            End,
             Child, w->modegrp = HGroup,
                 MUIA_ShowMe, FALSE,
                 /* SetMin FALSE: a long quote must not make the window wider than the
@@ -2742,6 +3576,14 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
                 Child, w->modetext = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE,
                     MUIA_Weight, 100, End,
                 Child, w->modex = SimpleButton("_Abbrechen"),
+            End,
+            Child, w->sugg = HGroup,
+                MUIA_ShowMe, FALSE,
+                Child, w->sbtn[0] = SimpleButton(""),
+                Child, w->sbtn[1] = SimpleButton(""),
+                Child, w->sbtn[2] = SimpleButton(""),
+                Child, w->sbtn[3] = SimpleButton(""),
+                Child, w->sbtn[4] = SimpleButton(""),
             End,
             Child, w->input = BetterStringObject,
                 StringFrame,
@@ -2776,10 +3618,26 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
              MUIM_CallHook, &chat_react_hook, w);
     DoMethod(w->attachb, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
              MUIM_CallHook, &chat_attach_hook, w);
+    DoMethod(w->pinbar, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
+             MUIM_CallHook, &pinbar_hook, w);
+    DoMethod(w->tombbar, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
+             MUIM_CallHook, &tomb_hook, w);
     DoMethod(w->infob, MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 3,
              MUIM_CallHook, &chat_info_hook, w);
     DoMethod(w->input, MUIM_Notify, MUIA_String_Contents, MUIV_EveryTime, MUIV_Notify_Application, 3,
              MUIM_CallHook, &chat_typing_hook, w);
+    DoMethod(w->win, MUIM_Notify, MUIA_Window_InputEvent, "up", MUIV_Notify_Application, 3,
+             MUIM_CallHook, &uparrow_hook, w);
+    if (w->draft_pending) {
+        set(w->input, MUIA_String_Contents, draft_of(w->room_id));
+        w->draft_pending = 0;
+    }
+    {
+        int k;
+        for (k = 0; k < 5; k++)
+            DoMethod(w->sbtn[k], MUIM_Notify, MUIA_Pressed, FALSE, MUIV_Notify_Application, 4,
+                     MUIM_CallHook, &sugg_hook, w, k);
+    }
     DoMethod(w->list, MUIM_Notify, MUIA_AppMessage, MUIV_EveryTime, MUIV_Notify_Application, 4,
              MUIM_CallHook, &chat_drop_hook, w, MUIV_TriggerValue);
     DoMethod(w->input, MUIM_Notify, MUIA_AppMessage, MUIV_EveryTime, MUIV_Notify_Application, 4,
@@ -2822,6 +3680,18 @@ static void close_chat(ChatWin *w)
     ChatWin **p;
     int i;
     typing_stop(w);
+    if (!w->thread_root && !w->edit_eid) {          /* unsent text: a draft for next time */
+        char *t = (char *)xget(w->input, MUIA_String_Contents);
+        if ((t && *t) || draft_of(w->room_id)) {
+            set_draft(w->room_id, t);
+            save_prefs();
+            DoMethod(lst_rooms, MUIM_List_Redraw, MUIV_List_Redraw_All);
+        }
+    }
+    free_polls(w);
+    clear_suggestions(w);
+    clear_mentions(w);
+    amx_free_members(w->mem, w->n_mem);
     for (p = &chats; *p; p = &(*p)->next) if (*p == w) { *p = w->next; break; }
     if (pick_w == w) { pick_w = NULL; if (win_pick) set(win_pick, MUIA_Window_Open, FALSE); }
     set(w->win, MUIA_Window_Open, FALSE);
@@ -2869,7 +3739,7 @@ static char *format_event(const AmxEvent *e)
     if (e->timestamp > 0) {
         time_t t = (time_t)(e->timestamp / 1000);
         struct tm *tm = localtime(&t);
-        if (tm) strftime(tbuf, 16, "%H:%M ", tm);
+        if (tm) strftime(tbuf, 16, opt_24h ? "%H:%M " : "%I:%M%p ", tm);
     }
     switch (e->type) {
     case AMX_EV_MESSAGE: {
@@ -2887,6 +3757,10 @@ static char *format_event(const AmxEvent *e)
             snprintf(out, n, "%s\33i* %s %s", tbuf, name, body);
         else if (!strcmp(mt, "m.notice"))
             snprintf(out, n, "%s\33b%s:\33n \33i%s", tbuf, name, body);
+        else if (!strcmp(mt, "m.location"))
+            snprintf(out, n, "%s\33b%s:\33n Standort: %s", tbuf, name, body);
+        else if (!strcmp(mt, "m.poll"))
+            snprintf(out, n, "%s\33b%s:\33n Umfrage: \33b%s", tbuf, name, body);
         else if (!strcmp(mt, "m.image") || !strcmp(mt, "m.file") || !strcmp(mt, "m.video") || !strcmp(mt, "m.audio"))
             snprintf(out, n, "%s\33b%s:\33n [%s: %s]", tbuf, name,
                      !strcmp(mt, "m.image") ? "Bild" : !strcmp(mt, "m.video") ? "Video" :
@@ -3596,6 +4470,16 @@ static char *message_text(ChatWin *w, const AmxEvent *e, int edited, int redacte
     if (redacted) { x.msgtype = "m.notice"; x.body = "(Nachricht gel\xc3\xb6scht)"; x.media = NULL; x.formatted = NULL; }   /* UTF-8 */
     if (!(text = format_event(&x))) return NULL;
     if (!redacted) text = decorate(w, &x, text);
+    if (opt_compact && text && e->type == AMX_EV_MESSAGE && e->sender && e->timestamp > 0) {
+        const ChatMsg *prev = NULL;                 /* the message before it */
+        int i;
+        for (i = 0; i < w->n_msgs; i++)
+            if (w->msgs[i].ts < e->timestamp && w->msgs[i].ts > 0 && (!prev || w->msgs[i].ts > prev->ts)) prev = &w->msgs[i];
+        if (prev && prev->sender && !strcmp(prev->sender, e->sender) && e->timestamp - prev->ts < 300000.0) {
+            char *b = strstr(text, "\33b"), *c = b ? strstr(b, ":\33n ") : NULL;
+            if (b && c && c - b < 200) memmove(b, c + 4, strlen(c + 4) + 1);   /* "\33bName:\33n " away */
+        }
+    }
     if (edited && !redacted && text) {
         char *t = malloc(strlen(text) + 20);
         if (t) { sprintf(t, "%s \33i(bearbeitet)", text); free(text); text = t; }
@@ -3644,7 +4528,7 @@ static void rerender(ChatWin *w, ChatMsg *m)
             Line *l = NULL;
             DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
             if (!l || !l->eid || strcmp(l->eid, m->eid) || l->react || l->thr || (l->slice && !m->redacted)
-                || (l->prev && !m->redacted)) continue;
+                || ((l->prev || l->pollrow) && !m->redacted)) continue;
             if (first < 0 || k < first) first = k;
             DoMethod(w->list, MUIM_NList_Remove, k);
             w->lines--;
@@ -3667,6 +4551,15 @@ static void rerender_all(ChatWin *w, ChatMsg *m)
     for (i = 0; eid && i < w->n_msgs; i++)
         if (w->msgs[i].reply_to && !strcmp(w->msgs[i].reply_to, eid)) rerender(w, &w->msgs[i]);
     free(eid);
+}
+
+/* every message again (a display option changed) */
+static void rerender_window(ChatWin *w)
+{
+    int i;
+    set(w->list, MUIA_NList_Quiet, TRUE);
+    for (i = 0; i < w->n_msgs; i++) rerender(w, &w->msgs[i]);
+    set(w->list, MUIA_NList_Quiet, FALSE);
 }
 
 static void edit_event(ChatWin *w, const AmxEvent *e)
@@ -4061,6 +4954,10 @@ static void chat_event_in(ChatWin *w, const AmxEvent *e)
         reaction_event(w, e);
         return;
     }
+    if (e->type == AMX_EV_POLL_VOTE || e->type == AMX_EV_POLL_END) {
+        poll_event(w, e);
+        return;
+    }
     if (e->type == AMX_EV_MESSAGE && e->event_id && w->n_undec) {
         ChatMsg *m = find_msg(w, e->event_id) ? NULL : add_msg(w, e);
         if ((text = message_text(w, e, m && m->edited, e->redacted)) != NULL
@@ -4073,6 +4970,20 @@ static void chat_event_in(ChatWin *w, const AmxEvent *e)
     }
     if (seen_before(w, e->event_id)) return;
     if (e->type == AMX_EV_MEMBERSHIP && e->history) return;     /* keep old history quiet */
+    if (e->type == AMX_EV_MEMBERSHIP && e->body && !strcmp(e->body, "knock") && e->state_key) {
+        if (!opt_joins) {
+            char *n = local(e->sender_name ? e->sender_name : e->state_key);
+            snprintf(w->err, sizeof w->err, "%s klopft an - im Raum-Fenster (i) einlassen", n ? n : "");
+            free(n);
+            update_status(w);
+            return;
+        }
+        char *n = local(e->sender_name ? e->sender_name : e->state_key);
+        snprintf(w->err, sizeof w->err, "%s klopft an - im Raum-Fenster (i) einlassen", n ? n : "");
+        free(n);
+        update_status(w);
+    }
+    if (e->type == AMX_EV_MEMBERSHIP && !opt_joins) return;
     if (e->cached) w->n_cached++;
     if (e->type == AMX_EV_MESSAGE) {
         ChatMsg *m = find_msg(w, e->event_id);
@@ -4099,9 +5010,200 @@ static void chat_event_in(ChatWin *w, const AmxEvent *e)
         }
     }
     if (e->type == AMX_EV_MESSAGE && !e->redacted) want_preview(w, find_msg(w, e->event_id));
+    if (e->type == AMX_EV_MESSAGE && e->poll && !e->redacted) add_poll(w, e);
     if (has_reactions(w, e->event_id)) refresh_reactions(w, e->event_id);   /* came first (history) */
     if (!e->history) DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
     note_newest(w, e);
+}
+
+/* ---- jumps: to a date (older pages until there), to the first unread message */
+
+static void load_older_page(ChatWin *w)
+{
+    w->loading = 1;
+    w->loading_older = 1;
+    set(w->older, MUIA_Disabled, TRUE);
+    amx_async_load_history(A, w->room_id, OLDER_PAGE, 0, TAG_HIST);
+    update_status(w);
+}
+
+/* the list line where message m starts */
+static LONG line_of(ChatWin *w, const ChatMsg *m)
+{
+    LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k;
+    for (k = 0; m && k < n; k++) {
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (l && l->eid && !strcmp(l->eid, m->eid)) return k;
+    }
+    return -1;
+}
+
+static void jump_step(ChatWin *w)
+{
+    double oldest = 0;
+    ChatMsg *best = NULL;
+    int i;
+    for (i = 0; i < w->n_msgs; i++)
+        if (w->msgs[i].ts > 0 && (oldest == 0 || w->msgs[i].ts < oldest)) oldest = w->msgs[i].ts;
+    if (oldest > w->jump_ts && !w->at_start && w->jump_pages < 30) {
+        w->jump_pages++;
+        load_older_page(w);
+        return;
+    }
+    for (i = 0; i < w->n_msgs; i++)
+        if (w->msgs[i].ts >= w->jump_ts && (!best || w->msgs[i].ts < best->ts)) best = &w->msgs[i];
+    if (best) {
+        LONG k = line_of(w, best);
+        if (k > 0) k--;                             /* with the date above it */
+        DoMethod(w->list, MUIM_NList_Jump, k);
+        set(w->list, MUIA_NList_First, k);
+    }
+    snprintf(w->err, sizeof w->err, oldest > w->jump_ts ? "So weit zurück geht der Verlauf nicht (oder ist zu lang)."
+                                                        : best ? "" : "Danach gibt es keine Nachrichten.");
+    w->jump_ts = 0;
+    update_status(w);
+}
+
+static void jump_to_date(ChatWin *w, const char *date)
+{
+    int d = 0, mo = 0, y = 0;
+    struct tm tm;
+    time_t t;
+    if ((sscanf(date, "%d.%d.%d", &d, &mo, &y) != 3 && sscanf(date, "%d-%d-%d", &y, &mo, &d) != 3)
+        || mo < 1 || mo > 12 || d < 1 || d > 31) {
+        chat_say(w, "Datum bitte als TT.MM.JJJJ.");
+        return;
+    }
+    if (y < 100) y += 2000;
+    memset(&tm, 0, sizeof tm);
+    tm.tm_mday = d; tm.tm_mon = mo - 1; tm.tm_year = y - 1900; tm.tm_isdst = -1;
+    if ((t = mktime(&tm)) == (time_t)-1) { chat_say(w, "Das Datum geht nicht."); return; }
+    w->jump_ts = (double)t * 1000.0;
+    w->jump_pages = 0;
+    chat_say(w, "Suche den Tag ...");
+    if (!w->loading) jump_step(w);
+}
+
+static int by_ts_desc(const void *a, const void *b)
+{
+    const ChatMsg *x = *(ChatMsg *const *)a, *y = *(ChatMsg *const *)b;
+    return x->ts < y->ts ? 1 : x->ts > y->ts ? -1 : 0;
+}
+
+/* "- neue Nachrichten -" above the first unread message, and show it */
+static void mark_first_unread(ChatWin *w)
+{
+    ChatMsg **l;
+    int i, n = 0;
+    LONG k;
+    Line *sep;
+    static const char text[] = "\33c\33b--- neue Nachrichten ---";
+    if (!(l = malloc(sizeof *l * (w->n_msgs + 1)))) return;
+    for (i = 0; i < w->n_msgs; i++) if (!w->msgs[i].own && w->msgs[i].ts > 0) l[n++] = &w->msgs[i];
+    w->unread_done = 1;
+    if (!n) { free(l); return; }
+    if (n < w->unread_open && !w->at_start)       /* more unread than loaded: the marker goes on top */
+        chat_say(w, "Weitere ungelesene Nachrichten: Pfeil nach oben lädt sie.");
+    qsort(l, n, sizeof *l, by_ts_desc);
+    k = line_of(w, l[(w->unread_open < n ? w->unread_open : n) - 1]);
+    free(l);
+    if (k < 0 || !(sep = new_line(NULL, text, strlen(text), 0))) return;
+    sep->newmark = 1;
+    remember_line(w, sep);
+    DoMethod(w->list, MUIM_NList_InsertSingle, sep, k);
+    w->lines++;
+    DoMethod(w->list, MUIM_NList_Jump, k > 0 ? k - 1 : 0);
+    if ((LONG)xget(w->list, MUIA_NList_First) > k) set(w->list, MUIA_NList_First, k);
+}
+
+/* ---- export: the loaded messages (or the whole history) as text or HTML */
+
+static int by_ts_asc(const void *a, const void *b)
+{
+    const ChatMsg *x = *(ChatMsg *const *)a, *y = *(ChatMsg *const *)b;
+    return x->ts < y->ts ? -1 : x->ts > y->ts;
+}
+
+static void html_put(FILE *f, const char *t)
+{
+    for (; t && *t; t++) {
+        if (*t == '<') fputs("&lt;", f);
+        else if (*t == '>') fputs("&gt;", f);
+        else if (*t == '&') fputs("&amp;", f);
+        else if (*t == '\n') fputs("<br>", f);
+        else fputc(*t, f);
+    }
+}
+
+static void write_export(ChatWin *w, const char *path)
+{
+    FILE *f = fopen(path, "w");
+    ChatMsg **l;
+    int i, n = 0, html;
+    size_t pl = strlen(path);
+    const Room *r = room_by_id(w->room_id);
+    html = pl > 5 && (!strcmp(path + pl - 5, ".html") || !strcmp(path + pl - 4, ".htm"));
+    if (!f || !(l = malloc(sizeof *l * (w->n_msgs + 1)))) {
+        if (f) fclose(f);
+        chat_say(w, "Die Datei lässt sich nicht schreiben.");
+        return;
+    }
+    for (i = 0; i < w->n_msgs; i++) if (!w->msgs[i].redacted && w->msgs[i].body) l[n++] = &w->msgs[i];
+    qsort(l, n, sizeof *l, by_ts_asc);
+    if (html) {
+        char *nm = r ? amx_from_local(r->name) : NULL;
+        fputs("<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>", f);
+        html_put(f, nm ? nm : w->room_id);
+        fputs("</title><style>body{font-family:sans-serif}.t{color:#888}.n{font-weight:bold}</style></head><body>\n<h1>", f);
+        html_put(f, nm ? nm : w->room_id);
+        fputs("</h1>\n", f);
+        free(nm);
+    } else fprintf(f, "Amatrix - %s\n\n", r ? r->name : w->room_id);
+    for (i = 0; i < n; i++) {
+        char when[24];
+        time_t tt = (time_t)(l[i]->ts / 1000);
+        struct tm *tm = localtime(&tt);
+        const char *name = l[i]->name ? l[i]->name : l[i]->sender;      /* UTF-8 */
+        if (tm) strftime(when, sizeof when, "%d.%m.%Y %H:%M", tm); else when[0] = 0;
+        if (html) {
+            fprintf(f, "<p><span class=\"t\">%s</span> <span class=\"n\">", when);
+            html_put(f, name);
+            fputs(":</span> ", f);
+            html_put(f, l[i]->body);
+            fputs("</p>\n", f);
+        } else {
+            char *ln = local(name ? name : ""), *lb = local(l[i]->body);
+            fprintf(f, "%s %s: %s\n", when, ln ? ln : "", lb ? lb : "");
+            free(ln); free(lb);
+        }
+    }
+    if (html) fputs("</body></html>\n", f);
+    fclose(f);
+    free(l);
+    {
+        char b[200];
+        snprintf(b, sizeof b, "%d Nachrichten exportiert.", n);
+        chat_say(w, b);
+    }
+}
+
+static void export_step(ChatWin *w)
+{
+    if (!w->at_start && w->jump_pages < 60) { w->jump_pages++; load_older_page(w); return; }
+    write_export(w, w->export_path);
+    free(w->export_path);
+    w->export_path = NULL;
+}
+
+static void export_chat(ChatWin *w, const char *path, int all)
+{
+    if (!all) { write_export(w, path); return; }
+    free(w->export_path);
+    w->export_path = strdup(path);
+    w->jump_pages = 0;
+    chat_say(w, "Lade den ganzen Verlauf ...");
+    if (!w->loading) export_step(w);
 }
 
 static void history_done(const AmxMsg *m)
@@ -4118,6 +5220,13 @@ static void history_done(const AmxMsg *m)
     set(w->older, MUIA_Disabled, w->at_start);
     if (w->at_start) set(w->older, MUIA_ShortHelp, OLDER_HELP_END);
     if (m->status) return;
+    if (w->jump_ts > 0) { jump_step(w); return; }
+    if (w->export_path) { export_step(w); return; }
+    if (w->unread_open > 0 && !w->unread_done && w->n_msgs) {
+        DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
+        mark_first_unread(w);
+        return;
+    }
     if (!xget(w->list, MUIA_NList_First) || w->lines <= m->count + 1)
         DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
     amx_log("history_done finished");
@@ -4309,11 +5418,15 @@ static void room_double_click(void)
     if (!r) return;
     if (r->invited) {
         LONG k = MUI_Request(app, win_main, 0, (STRPTR)"Einladung",
-                             (STRPTR)"*_Annehmen|A_blehnen|_Später",
+                             (STRPTR)"*_Annehmen|A_blehnen|Ablehnen + _blockieren|_Später",
                              (STRPTR)"%s lädt dich ein:\n\n\33b%s", (ULONG)(r->inviter ? r->inviter : "Jemand"),
                              (ULONG)r->name);
         if (k == 1) accept_invite(r, 1);
         else if (k == 2) accept_invite(r, 0);
+        else if (k == 3) {                          /* no more invitations / messages from them */
+            if (r->inviter_id) amx_async_ignore(A, r->inviter_id, 1, TAG_CMD);
+            accept_invite(r, 0);
+        }
         return;
     }
     open_chat(r->id);
@@ -4346,6 +5459,269 @@ static void join_selected(void)
 }
 
 /* ------------------------------------------------------------ net messages */
+
+/* ---- pinned messages: the bar above the messages shows the newest pin */
+
+typedef struct { char *eid, *text; } PinText;     /* text: local charset, one line */
+static PinText pin_texts[40];
+static int n_pin_texts;
+
+static const char *pin_text_of(const char *eid)
+{
+    int i;
+    for (i = 0; i < n_pin_texts; i++) if (!strcmp(pin_texts[i].eid, eid)) return pin_texts[i].text;
+    return NULL;
+}
+
+static void remember_pin_text(const char *eid, const char *body_utf8)
+{
+    char *t, *p;
+    if (pin_text_of(eid) || !body_utf8) return;
+    if (n_pin_texts == 40) { free(pin_texts[0].eid); free(pin_texts[0].text); memmove(pin_texts, pin_texts + 1, sizeof *pin_texts * 39); n_pin_texts--; }
+    t = local(body_utf8);
+    for (p = t; p && *p; p++) if (*p == '\n') *p = ' ';
+    if (t && strlen(t) > 120) strcpy(t + 117, "...");
+    pin_texts[n_pin_texts].eid = strdup(eid);
+    pin_texts[n_pin_texts].text = t;
+    n_pin_texts++;
+}
+
+static void update_pinbar(ChatWin *w)
+{
+    const Room *r = room_by_id(w->room_id);
+    set(w->tombbar, MUIA_ShowMe, r && r->replacement && !w->thread_root);
+    const char *last, *pins = r && !w->thread_root ? r->pinned : NULL;
+    char eid[300], text[300];
+    int n = 0;
+    ChatMsg *m;
+    if (!pins || !*pins) { set(w->pinbar, MUIA_ShowMe, FALSE); free(w->pin_shown); w->pin_shown = NULL; return; }
+    for (last = pins; ; ) {                         /* the last one is the newest */
+        const char *nl = strchr(last, '\n');
+        n++;
+        if (!nl) break;
+        last = nl + 1;
+    }
+    snprintf(eid, sizeof eid, "%s", last);
+    free(w->pin_shown);
+    w->pin_shown = strdup(eid);
+    if ((m = find_msg(w, eid)) != NULL) remember_pin_text(eid, m->body);
+    if (!pin_text_of(eid)) amx_async_fetch_event(A, w->room_id, eid, TAG_FETCH);
+    snprintf(text, sizeof text, "\33bAngepinnt%s:\33n %s", n > 1 ? " (neueste)" : "",
+             pin_text_of(eid) ? pin_text_of(eid) : "...");
+    set(w->pinbar, MUIA_Text_Contents, text);
+    set(w->pinbar, MUIA_ShowMe, TRUE);
+}
+
+/* the room was upgraded: to the new one (joined first if need be) */
+static void go_replacement(ChatWin *w)
+{
+    const Room *r = room_by_id(w->room_id), *nr;
+    if (!r || !r->replacement) return;
+    nr = room_by_id(r->replacement);
+    if (nr && !nr->invited) open_chat(nr->id);
+    else {
+        free(pending_open);
+        pending_open = strdup(r->replacement);
+        amx_async_join(A, r->replacement, TAG_JOIN);
+        chat_say(w, "Trete dem neuen Raum bei ...");
+    }
+}
+
+HOOKPROTONH(tomb_func, LONG, Object *obj, ULONG *param)
+{
+    (void)obj;
+    go_replacement((ChatWin *)param[0]);
+    return 0;
+}
+MakeStaticHook(tomb_hook, tomb_func);
+
+HOOKPROTONH(pinbar_func, LONG, Object *obj, ULONG *param)
+{
+    ChatWin *w = (ChatWin *)param[0];
+    ChatMsg *m = w->pin_shown ? find_msg(w, w->pin_shown) : NULL;
+    LONG k = m ? line_of(w, m) : -1;
+    (void)obj;
+    if (k >= 0) { DoMethod(w->list, MUIM_NList_Jump, k); set(w->list, MUIA_NList_Active, k); }
+    else chat_say(w, "Die angepinnte Nachricht ist älter als der geladene Verlauf (Pfeil nach oben lädt mehr).");
+    return 0;
+}
+MakeStaticHook(pinbar_hook, pinbar_func);
+
+/* ---- forward, quote, copy link, edit history (marked message) */
+
+static Object *win_fwd, *lst_fwd, *b_fwd;
+static char *fwd_room, *fwd_eid;
+static Object *win_hist, *lst_hist;
+static char *hist_eid;
+typedef struct { double ts; char *text; } HistRow;
+static HistRow hist_rows[40];
+static int n_hist;
+
+static void open_forward(ChatWin *w, ChatMsg *m)
+{
+    int i;
+    free(fwd_room); free(fwd_eid);
+    fwd_room = strdup(w->room_id);
+    fwd_eid = strdup(m->eid);
+    DoMethod(lst_fwd, MUIM_List_Clear);
+    for (i = 0; i < n_rooms; i++)
+        if (!rooms[i].invited && !rooms[i].is_space && strcmp(rooms[i].id, w->room_id))
+            DoMethod(lst_fwd, MUIM_List_InsertSingle, &rooms[i], MUIV_List_Insert_Bottom);
+    set(win_fwd, MUIA_Window_Open, TRUE);
+}
+
+HOOKPROTONHNO(fwd_disp_func, LONG, struct NList_DisplayMessage *m)
+{
+    const Room *r = m->entry;
+    m->strings[0] = r ? r->name : (char *)"Raum";
+    return 0;
+}
+MakeStaticHook(fwd_disp_hook, fwd_disp_func);
+
+static void forward_go(void)
+{
+    Room *r = NULL;
+    DoMethod(lst_fwd, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
+    if (!r || !fwd_room || !fwd_eid) return;
+    amx_async_forward(A, r->id, fwd_room, fwd_eid, TAG_FWD);
+    set(win_fwd, MUIA_Window_Open, FALSE);
+}
+
+static void start_quote(ChatWin *w, ChatMsg *m)
+{
+    char *q = quote_line(w, m->eid), b[300];
+    clear_mode(w);
+    w->quote = strdup(m->body ? m->body : "");
+    snprintf(b, sizeof b, "Zitat:%s", q ? q + 5 : "");
+    set(w->modetext, MUIA_Text_Contents, b);
+    free(q);
+    set(w->modegrp, MUIA_ShowMe, TRUE);
+    set(w->win, MUIA_Window_ActiveObject, w->input);
+}
+
+static void copy_link(ChatWin *w, ChatMsg *m)
+{
+    char *l = malloc(strlen(w->room_id) + strlen(m->eid) + 40);
+    if (!l) return;
+    sprintf(l, "https://matrix.to/#/%s/%s", w->room_id, m->eid);
+    snprintf(w->err, sizeof w->err, clip_write(l) ? "Link kopiert" : "Kopieren hat nicht geklappt");
+    free(l);
+    update_status(w);
+}
+
+static void hist_clear(void)
+{
+    int i;
+    for (i = 0; i < n_hist; i++) free(hist_rows[i].text);
+    n_hist = 0;
+    DoMethod(lst_hist, MUIM_List_Clear);
+}
+
+static void open_edit_history(ChatWin *w, ChatMsg *m)
+{
+    free(hist_eid);
+    hist_eid = strdup(m->eid);
+    hist_clear();
+    set(win_hist, MUIA_Window_Open, TRUE);
+    amx_async_fetch_event(A, w->room_id, m->eid, TAG_FETCH);    /* the original */
+    amx_async_edits(A, w->room_id, m->eid, TAG_EDITS);
+}
+
+static int hist_cmp(const void *a, const void *b)
+{
+    const HistRow *x = a, *y = b;
+    return x->ts < y->ts ? -1 : x->ts > y->ts;
+}
+
+static void hist_add(double ts, const char *body)
+{
+    char when[24], *t, *row;
+    time_t tt = (time_t)(ts / 1000);
+    struct tm *tm = localtime(&tt);
+    int i;
+    if (n_hist >= 40) return;
+    if (tm) strftime(when, sizeof when, "%d.%m. %H:%M", tm); else when[0] = 0;
+    t = local(body ? body : "");
+    row = malloc(strlen(t ? t : "") + 32);
+    if (!row) { free(t); return; }
+    sprintf(row, "\33b%s\33n  %s", when, t ? t : "");
+    free(t);
+    hist_rows[n_hist].ts = ts;
+    hist_rows[n_hist].text = row;
+    n_hist++;
+    qsort(hist_rows, n_hist, sizeof *hist_rows, hist_cmp);
+    DoMethod(lst_hist, MUIM_List_Clear);
+    for (i = 0; i < n_hist; i++) DoMethod(lst_hist, MUIM_List_InsertSingle, hist_rows[i].text, MUIV_List_Insert_Bottom);
+}
+
+/* events fetched on request: a pin's text, the original / the edits of a message */
+static void lookup_event(const AmxEvent *e)
+{
+    ChatWin *w;
+    if (e->type == AMX_EV_MESSAGE && e->event_id) {
+        remember_pin_text(e->event_id, e->body);
+        for (w = chats; w; w = w->next)
+            if (w->pin_shown && !strcmp(w->pin_shown, e->event_id)) update_pinbar(w);
+        if (hist_eid && !strcmp(hist_eid, e->event_id)) hist_add(e->timestamp, e->body);
+    } else if (e->type == AMX_EV_EDIT && hist_eid && e->relates_to && !strcmp(e->relates_to, hist_eid))
+        hist_add(e->timestamp, e->body);
+}
+
+/* ---- ignored users: the list in the settings window */
+
+static Object *lst_ign, *b_unign, *lst_kw, *str_kw, *b_kwadd, *b_kwdel;
+static char *kw_list;
+
+static void got_keywords(const AmxMsg *m)
+{
+    char *p;
+    if (m->status) return;
+    free(kw_list);
+    kw_list = m->result ? strdup(m->result) : NULL;
+    DoMethod(lst_kw, MUIM_List_Clear);
+    for (p = kw_list; p && *p; ) {
+        char *nl = strchr(p, '\n'), *l;
+        if (nl) *nl = 0;
+        l = local(p);                          /* the list keeps its own copy */
+        DoMethod(lst_kw, MUIM_List_InsertSingle, l ? l : p, MUIV_List_Insert_Bottom);
+        free(l);
+        if (!nl) break;
+        p = nl + 1;
+    }
+}
+static char *ign_list;
+
+static void got_ignored(const AmxMsg *m)
+{
+    char *p;
+    free(ign_list);
+    ign_list = m->status || !m->result ? NULL : strdup(m->result);
+    DoMethod(lst_ign, MUIM_List_Clear);
+    for (p = ign_list; p && *p; ) {
+        char *nl = strchr(p, '\n');
+        if (nl) *nl = 0;
+        DoMethod(lst_ign, MUIM_List_InsertSingle, p, MUIV_List_Insert_Bottom);
+        if (!nl) break;
+        p = nl + 1;
+    }
+}
+
+static void pw_go(void)
+{
+    char *o = (char *)xget(str_pwold, MUIA_String_Contents), *n1 = (char *)xget(str_pwnew, MUIA_String_Contents),
+         *n2 = (char *)xget(str_pwnew2, MUIA_String_Contents), *uo, *un;
+    if (!n1 || !n2 || strcmp(n1, n2)) { set(txt_acct, MUIA_Text_Contents, "Die neuen Passwörter sind nicht gleich."); return; }
+    uo = amx_from_local(o ? o : "");
+    un = amx_from_local(n1);
+    amx_async_change_password(A, uo, un, TAG_PASSWORD);
+    if (uo) memset(uo, 0, strlen(uo));
+    if (un) memset(un, 0, strlen(un));
+    free(uo); free(un);
+    set(str_pwold, MUIA_String_Contents, "");
+    set(str_pwnew, MUIA_String_Contents, "");
+    set(str_pwnew2, MUIA_String_Contents, "");
+    set(txt_acct, MUIA_Text_Contents, "Bitte warten ...");
+}
 
 static void handle_result(const AmxMsg *m)
 {
@@ -4529,6 +5905,58 @@ static void handle_result(const AmxMsg *m)
     case TAG_FIND:
         find_got(m);
         break;
+    case TAG_POLL:
+        break;
+    case TAG_MEMB2:
+        got_members2(m);
+        break;
+    case TAG_IGNLIST:
+        got_ignored(m);
+        break;
+    case TAG_KEYWORDS:
+        got_keywords(m);
+        break;
+    case TAG_PASSWORD:
+    case TAG_DEACT: {
+        static char b[300];
+        if (m->status) snprintf(b, sizeof b, "\33bNicht geklappt:\33n %.240s", m->error ? m->error : "");
+        else snprintf(b, sizeof b, m->tag == TAG_PASSWORD ? "Passwort geändert." : "Konto deaktiviert.");
+        set(txt_acct, MUIA_Text_Contents, b);
+        if (!m->status && m->tag == TAG_DEACT) { set(win_acct, MUIA_Window_Open, FALSE); amx_async_logout(A, TAG_LOGOUT); }
+        break;
+    }
+    case TAG_FETCH:
+    case TAG_EDITS:
+        break;
+    case TAG_PIN:
+    case TAG_FWD: {
+        ChatWin *w = current_chat();
+        if (w) {
+            if (m->status) snprintf(w->err, sizeof w->err, "Nicht geklappt: %.280s", m->error ? m->error : "");
+            else snprintf(w->err, sizeof w->err, m->tag == TAG_FWD ? "Weitergeleitet." : "Erledigt.");
+            update_status(w);
+        }
+        break;
+    }
+    case TAG_CMD:
+    case TAG_WHOIS: {
+        ChatWin *w = current_chat();
+        if (!w) break;
+        if (m->status) snprintf(w->err, sizeof w->err, "Nicht geklappt: %.280s", m->error ? m->error : "");
+        else if (m->tag == TAG_WHOIS) {
+            char *n = local(m->result ? m->result : "(kein Name)");
+            snprintf(w->err, sizeof w->err, "%s%s", n ? n : "", m->result2 ? " - mit Bild" : "");
+            free(n);
+        } else snprintf(w->err, sizeof w->err, "Erledigt.");
+        update_status(w);
+        break;
+    }
+    case TAG_POLLVOTE:
+        if (m->status) {
+            ChatWin *w = m->result ? chat_by_room(m->result) : NULL;
+            if (w) { snprintf(w->err, sizeof w->err, "Umfrage: %.280s", m->error ? m->error : ""); update_status(w); }
+        }
+        break;
     case TAG_TAG:
         if (m->status)
             MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK", (STRPTR)"Hat nicht geklappt:\n%s",
@@ -4573,7 +6001,8 @@ static void handle_net(void)
     while (A && (m = amx_async_get(A)) != NULL) {
         switch (m->type) {
         case AMX_MSG_EVENT:
-            if (m->ev.type == AMX_EV_TYPING) typing_event(&m->ev);
+            if (m->ev.lookup) lookup_event(&m->ev);
+            else if (m->ev.type == AMX_EV_TYPING) typing_event(&m->ev);
             else if (m->ev.type == AMX_EV_RECEIPT) receipt_event(&m->ev);
             else { chat_event(&m->ev); notify_event(&m->ev); }
             break;
@@ -5295,6 +6724,11 @@ HOOKPROTONH(rx_setoption_func, LONG, Object *obj, ULONG *arg)
     else if (!strcmp(n, "typing")) opt_typing = v;
     else if (!strcmp(n, "previews")) opt_previews = v;
     else if (!strcmp(n, "avatars")) { opt_avatars = v; DoMethod(lst_rooms, MUIM_List_Redraw, MUIV_List_Redraw_All); }
+    else if (!strcmp(n, "joins") || !strcmp(n, "24h") || !strcmp(n, "compact")) {
+        ChatWin *cw;
+        if (n[0] == 'j') opt_joins = v; else if (n[0] == '2') opt_24h = v; else opt_compact = v;
+        for (cw = chats; cw; cw = cw->next) rerender_window(cw);
+    }
     else return 5;
     return 0;
 }
@@ -5417,6 +6851,328 @@ HOOKPROTONH(rx_hits_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_hits_hook, rx_hits_func);
 
+/* POLL room question answers ("a|b|c"), MULTI, HIDE: as from the window */
+HOOKPROTONH(rx_poll_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    char *q, *list, *p;
+    (void)obj;
+    if (!r) return 5;
+    q = amx_from_local((char *)arg[1]);
+    list = amx_from_local((char *)arg[2]);
+    for (p = list; p && *p; p++) if (*p == '|') *p = '\n';
+    amx_async_send_poll(A, r->id, q, list, arg[3] ? 20 : 1, !arg[4], TAG_POLLVOTE);
+    free(q);
+    free(list);
+    return 0;
+}
+MakeStaticHook(rx_poll_hook, rx_poll_func);
+
+/* VOTE room n: click on answer n (0 ...; 255 = end) of the newest poll */
+HOOKPROTONH(rx_vote_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w || !w->n_polls) return 5;
+    if (*(LONG *)arg[1] == 255) amx_async_poll_end(A, w->room_id, w->polls[w->n_polls - 1].eid, TAG_POLLVOTE);
+    else poll_click(w, w->n_polls - 1, (int)*(LONG *)arg[1]);
+    return 0;
+}
+MakeStaticHook(rx_vote_hook, rx_vote_func);
+
+/* POLLROWS room: the answer lines of all polls, "|"-separated */
+HOOKPROTONH(rx_pollrows_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    char b[1800] = "";
+    LONG k, n;
+    (void)obj;
+    if (!w) return 5;
+    n = (LONG)xget(w->list, MUIA_NList_Entries);
+    for (k = 0; k < n; k++) {
+        Line *l = NULL;
+        const char *t;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (!l || !l->pollrow || !l->text) continue;
+        t = strchr(l->text, ']');
+        if (b[0]) strncat(b, "|", sizeof b - strlen(b) - 1);
+        strncat(b, t ? t + 1 : l->text, sizeof b - strlen(b) - 1);
+        if (strstr(l->text, "[") && strstr(l->text, "@") && t) {    /* chosen? */
+            char num[8];
+            sprintf(num, "%d", EMO_RADIO_ON);
+            if (!strncmp(strstr(l->text, "\33o[") + 4, num, strlen(num)) && strstr(l->text, "\33o[")[4 + strlen(num)] == '@')
+                strncat(b, " <X>", sizeof b - strlen(b) - 1);
+        }
+    }
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_pollrows_hook, rx_pollrows_func);
+
+/* VISIBLE room: the first shown line's text (no codes) and where the
+ * "neue Nachrichten" marker is ("-1" none): "marker|first line" */
+HOOKPROTONH(rx_visible_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    LONG n, k, mark = -1, first;
+    Line *l = NULL;
+    char b[400], *p, *q;
+    (void)obj;
+    if (!w) return 5;
+    n = (LONG)xget(w->list, MUIA_NList_Entries);
+    for (k = 0; k < n; k++) {
+        Line *x = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &x);
+        if (x && x->newmark) mark = k;
+    }
+    first = (LONG)xget(w->list, MUIA_NList_First);
+    DoMethod(w->list, MUIM_NList_GetEntry, first, &l);
+    snprintf(b, sizeof b, "%ld|%ld|", (long)mark, (long)first);
+    for (p = b + strlen(b), q = l && l->text ? l->text : ""; *q && p < b + sizeof b - 1; q++) {
+        if (*q == '\033') { q++; if (*q == 'o' || *q == 'P' || *q == 'A') while (*q && *q != ']') q++; continue; }
+        *p++ = *q;
+    }
+    *p = 0;
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_visible_hook, rx_visible_func);
+
+/* SUGGEST room: the suggestions shown ("|"); COMPLETE room n; SENDINPUT room */
+HOOKPROTONH(rx_suggest_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    char b[400] = "";
+    int k;
+    (void)obj;
+    if (!w) return 5;
+    for (k = 0; k < w->n_sugg; k++) {
+        if (k) strncat(b, "|", sizeof b - strlen(b) - 1);
+        strncat(b, w->stext[k], sizeof b - strlen(b) - 1);
+    }
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_suggest_hook, rx_suggest_func);
+
+HOOKPROTONH(rx_complete_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w || *(LONG *)arg[1] >= w->n_sugg) return 5;
+    complete(w, (int)*(LONG *)arg[1]);
+    return 0;
+}
+MakeStaticHook(rx_complete_hook, rx_complete_func);
+
+HOOKPROTONH(rx_sendinput_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    chat_send(w);
+    return 0;
+}
+MakeStaticHook(rx_sendinput_hook, rx_sendinput_func);
+
+/* MARK room text: marks the newest message containing text */
+HOOKPROTONH(rx_mark_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    ChatMsg *best = NULL;
+    char *u;
+    int i;
+    LONG k;
+    (void)obj;
+    if (!w || !arg[1]) return 5;
+    u = amx_from_local((char *)arg[1]);
+    for (i = 0; u && i < w->n_msgs; i++)
+        if (w->msgs[i].body && strstr(w->msgs[i].body, u) && (!best || w->msgs[i].ts > best->ts)) best = &w->msgs[i];
+    free(u);
+    if (!best || (k = line_of(w, best)) < 0) return 5;
+    set(w->list, MUIA_NList_Active, k);
+    return 0;
+}
+MakeStaticHook(rx_mark_hook, rx_mark_func);
+
+/* ACTION room what [to]: pin / quote / copylink / edithist / forward (to a room) on the marked message */
+HOOKPROTONH(rx_action_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]), *to;
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    ChatMsg *m = w ? marked_msg(w) : NULL;
+    const char *what = (const char *)arg[1];
+    (void)obj;
+    if (!m) return 5;
+    if (!strcmp(what, "pin")) {
+        int on = !(r->pinned && strstr(r->pinned, m->eid));
+        amx_async_pin(A, w->room_id, m->eid, on, TAG_PIN);
+    } else if (!strcmp(what, "quote")) start_quote(w, m);
+    else if (!strcmp(what, "copylink")) copy_link(w, m);
+    else if (!strcmp(what, "edithist")) open_edit_history(w, m);
+    else if (!strcmp(what, "forward") && arg[2] && (to = room_by_name((char *)arg[2])) != NULL)
+        amx_async_forward(A, to->id, w->room_id, m->eid, TAG_FWD);
+    else return 5;
+    return 0;
+}
+MakeStaticHook(rx_action_hook, rx_action_func);
+
+/* PINBAR room: the bar's text; EDITHIST: the edit history rows ("|") */
+HOOKPROTONH(rx_pinbar_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    rexx_result(xget(w->pinbar, MUIA_ShowMe) ? (char *)xget(w->pinbar, MUIA_Text_Contents) : "");
+    return 0;
+}
+MakeStaticHook(rx_pinbar_hook, rx_pinbar_func);
+
+HOOKPROTONH(rx_edithist_func, LONG, Object *obj, ULONG *arg)
+{
+    char b[1500] = "";
+    int i;
+    (void)obj; (void)arg;
+    for (i = 0; i < n_hist; i++) {
+        if (i) strncat(b, "|", sizeof b - strlen(b) - 1);
+        strncat(b, hist_rows[i].text, sizeof b - strlen(b) - 1);
+    }
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_edithist_hook, rx_edithist_func);
+
+/* NOTIFYLEVEL room [n]: sets (0 default, 1 all, 2 mentions, 3 off) and/or returns the level */
+HOOKPROTONH(rx_nlevel_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    char b[8];
+    (void)obj;
+    if (!r) return 5;
+    if (arg[1]) amx_async_room_notify(A, r->id, (int)*(LONG *)arg[1], TAG_CMD);
+    sprintf(b, "%d", r->notify);
+    rexx_result(b);
+    return 0;
+}
+MakeStaticHook(rx_nlevel_hook, rx_nlevel_func);
+
+/* KEYWORD word [OFF]; KEYWORDS: the list as the settings window has it */
+HOOKPROTONH(rx_keyword_func, LONG, Object *obj, ULONG *arg)
+{
+    char *u = amx_from_local((char *)arg[0]);
+    (void)obj;
+    amx_async_keyword(A, u, arg[1] == 0, TAG_KEYWORDS);
+    free(u);
+    return 0;
+}
+MakeStaticHook(rx_keyword_hook, rx_keyword_func);
+
+HOOKPROTONH(rx_keywords_func, LONG, Object *obj, ULONG *arg)
+{
+    (void)obj; (void)arg;
+    rexx_result(kw_list ? kw_list : "");
+    return 0;
+}
+MakeStaticHook(rx_keywords_hook, rx_keywords_func);
+
+/* EXPORT room path [ALL] */
+HOOKPROTONH(rx_export_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    export_chat(w, (char *)arg[1], arg[2] != 0);
+    return 0;
+}
+MakeStaticHook(rx_export_hook, rx_export_func);
+
+/* PASSWORD old new: as typed in the account window; ACCOUNTSTATE: its status line */
+HOOKPROTONH(rx_password_func, LONG, Object *obj, ULONG *arg)
+{
+    (void)obj;
+    set(str_pwold, MUIA_String_Contents, (char *)arg[0]);
+    set(str_pwnew, MUIA_String_Contents, (char *)arg[1]);
+    set(str_pwnew2, MUIA_String_Contents, (char *)arg[1]);
+    set(win_acct, MUIA_Window_Open, TRUE);
+    pw_go();
+    return 0;
+}
+MakeStaticHook(rx_password_hook, rx_password_func);
+
+HOOKPROTONH(rx_acctstate_func, LONG, Object *obj, ULONG *arg)
+{
+    (void)obj; (void)arg;
+    rexx_result((char *)xget(txt_acct, MUIA_Text_Contents));
+    return 0;
+}
+MakeStaticHook(rx_acctstate_hook, rx_acctstate_func);
+
+/* REPLACED room: the new room's name ("" if not replaced); GOREPLACEMENT room: a click on the bar */
+HOOKPROTONH(rx_replaced_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]), *nr;
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!r) return 5;
+    nr = r->replacement ? room_by_id(r->replacement) : NULL;
+    rexx_result(!r->replacement ? "" : !w || !xget(w->tombbar, MUIA_ShowMe) ? "(no bar)" : nr ? nr->name : r->replacement);
+    return 0;
+}
+MakeStaticHook(rx_replaced_hook, rx_replaced_func);
+
+HOOKPROTONH(rx_gorepl_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    go_replacement(w);
+    return 0;
+}
+MakeStaticHook(rx_gorepl_hook, rx_gorepl_func);
+
+/* EDITUP room: like cursor up in the empty input; DRAFT room: its draft; INPUT room: the input field */
+HOOKPROTONH(rx_editup_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    edit_newest_own(w);
+    return 0;
+}
+MakeStaticHook(rx_editup_hook, rx_editup_func);
+
+HOOKPROTONH(rx_draft_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    (void)obj;
+    if (!r) return 5;
+    rexx_result(draft_of(r->id) ? draft_of(r->id) : "");
+    return 0;
+}
+MakeStaticHook(rx_draft_hook, rx_draft_func);
+
+HOOKPROTONH(rx_input_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    rexx_result((char *)xget(w->input, MUIA_String_Contents));
+    return 0;
+}
+MakeStaticHook(rx_input_hook, rx_input_func);
+
 
 /* SESSIONSET n NAME x / PASSWORD p: rename / sign out entry n (no question) */
 HOOKPROTONH(rx_sessset_func, LONG, Object *obj, ULONG *arg)
@@ -5521,6 +7277,28 @@ static struct MUI_Command rexx_cmds[] = {
     { "FAVOURITE", "ROOM/A,OFF/S",    2, &rx_fav_hook,      { 0 } },
     { "FIND",      "TERM/F",          1, &rx_find_hook,     { 0 } },
     { "HITS",      NULL,              0, &rx_hits_hook,     { 0 } },
+    { "POLL",      "ROOM/A,QUESTION/A,ANSWERS/A,MULTI/S,HIDE/S", 5, &rx_poll_hook, { 0 } },
+    { "VOTE",      "ROOM/A,N/N/A",    2, &rx_vote_hook,     { 0 } },
+    { "POLLROWS",  "ROOM/F",          1, &rx_pollrows_hook, { 0 } },
+    { "VISIBLE",   "ROOM/F",          1, &rx_visible_hook,  { 0 } },
+    { "SUGGEST",   "ROOM/F",          1, &rx_suggest_hook,  { 0 } },
+    { "COMPLETE",  "ROOM/A,N/N/A",    2, &rx_complete_hook, { 0 } },
+    { "SENDINPUT", "ROOM/F",          1, &rx_sendinput_hook, { 0 } },
+    { "MARK",      "ROOM/A,TEXT/F",   2, &rx_mark_hook,     { 0 } },
+    { "ACTION",    "ROOM/A,WHAT/A,TO/F", 3, &rx_action_hook, { 0 } },
+    { "PINBAR",    "ROOM/F",          1, &rx_pinbar_hook,   { 0 } },
+    { "EDITHIST",  NULL,              0, &rx_edithist_hook, { 0 } },
+    { "NOTIFYLEVEL", "ROOM/A,LEVEL/N", 2, &rx_nlevel_hook,  { 0 } },
+    { "KEYWORD",   "WORD/A,OFF/S",    2, &rx_keyword_hook,  { 0 } },
+    { "KEYWORDS",  NULL,              0, &rx_keywords_hook, { 0 } },
+    { "EXPORT",    "ROOM/A,PATH/A,ALL/S", 3, &rx_export_hook, { 0 } },
+    { "PASSWORD",  "OLD/A,NEW/A",     2, &rx_password_hook, { 0 } },
+    { "ACCOUNTSTATE", NULL,           0, &rx_acctstate_hook, { 0 } },
+    { "REPLACED",  "ROOM/F",          1, &rx_replaced_hook, { 0 } },
+    { "GOREPLACEMENT", "ROOM/F",      1, &rx_gorepl_hook,   { 0 } },
+    { "EDITUP",    "ROOM/F",          1, &rx_editup_hook,   { 0 } },
+    { "DRAFT",     "ROOM/F",          1, &rx_draft_hook,    { 0 } },
+    { "INPUT",     "ROOM/F",          1, &rx_input_hook,    { 0 } },
     { "SESSIONLIST", NULL,            0, &rx_sesslist_hook, { 0 } },
     { "SESSIONSET", "N/N/A,NAME/K,PASSWORD/K", 3, &rx_sessset_hook, { 0 } },
     { "MEMBERS",   NULL,              0, &rx_members_hook,  { 0 } },
@@ -5549,7 +7327,14 @@ static struct NewMenu menu[] = {
     { NM_ITEM,  (STRPTR)"Raum stummschalten", (STRPTR)"M", 0, 0, (APTR)ID_MUTE },
     { NM_ITEM,  (STRPTR)"Mitglieder und Einstellungen ...", (STRPTR)"T", 0, 0, (APTR)ID_INFO },
     { NM_ITEM,  (STRPTR)"Nachricht kopieren", (STRPTR)"K", 0, 0, (APTR)ID_COPY },
+    { NM_ITEM,  (STRPTR)"Link zur Nachricht kopieren", NULL, 0, 0, (APTR)ID_COPYLINK },
+    { NM_ITEM,  (STRPTR)"Zitieren",          (STRPTR)"Z", 0, 0, (APTR)ID_QUOTE },
+    { NM_ITEM,  (STRPTR)"Weiterleiten ...",  (STRPTR)"W", 0, 0, (APTR)ID_FWD },
+    { NM_ITEM,  (STRPTR)"Anpinnen an/aus",   (STRPTR)"P", 0, 0, (APTR)ID_PIN },
+    { NM_ITEM,  (STRPTR)"Bearbeitungsverlauf ...", NULL, 0, 0, (APTR)ID_EDITHIST },
+    { NM_ITEM,  (STRPTR)"Chat exportieren ...", NULL, 0, 0, (APTR)ID_EXPORT },
     { NM_ITEM,  (STRPTR)"Nachrichten suchen ...", (STRPTR)"D", 0, 0, (APTR)ID_FIND },
+    { NM_ITEM,  (STRPTR)"Umfrage erstellen ...", (STRPTR)"U", 0, 0, (APTR)ID_POLLNEW },
     { NM_ITEM,  (STRPTR)"Favorit an/aus",    (STRPTR)"F", 0, 0, (APTR)ID_FAV },
     { NM_ITEM,  (STRPTR)"Niedrige Priorität an/aus", NULL, 0, 0, (APTR)ID_LOWPRIO },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
@@ -5557,6 +7342,7 @@ static struct NewMenu menu[] = {
     { NM_ITEM,  (STRPTR)"Passwort für Amatrix-Daten ...", (STRPTR)"P", 0, 0, (APTR)ID_STOREPASS },
     { NM_ITEM,  (STRPTR)"Eigenes Profil ...", (STRPTR)"O", 0, 0, (APTR)ID_PROFILE },
     { NM_ITEM,  (STRPTR)"Sitzungen ...",     (STRPTR)"G", 0, 0, (APTR)ID_SESS },
+    { NM_ITEM,  (STRPTR)"Konto ...",          NULL, 0, 0, (APTR)ID_ACCOUNT },
     { NM_ITEM,  (STRPTR)"Einstellungen ...", (STRPTR)"E", 0, 0, (APTR)ID_SETTINGS },
     { NM_ITEM,  (STRPTR)"MUI-Einstellungen ...", NULL, 0, 0, (APTR)ID_MUIPREFS },
     { NM_ITEM,  (STRPTR)"Ikonifizieren",     (STRPTR)"I", 0, 0, (APTR)ID_ICONIFY },
@@ -5710,6 +7496,86 @@ static Object *build_app(void)
             End,
         End,
 
+        SubWindow, win_fwd = WindowObject,
+            MUIA_Window_Title, "Weiterleiten an ...",
+            MUIA_Window_ID, MAKE_ID('A','M','X','W'),
+            WindowContents, VGroup,
+                Child, ListviewObject,
+                    MUIA_Listview_List, lst_fwd = ListObject, InputListFrame,
+                        MUIA_List_DisplayHook, &fwd_disp_hook, End,
+                End,
+                Child, b_fwd = SimpleButton("_Weiterleiten"),
+            End,
+        End,
+
+        SubWindow, win_hist = WindowObject,
+            MUIA_Window_Title, "Bearbeitungsverlauf",
+            MUIA_Window_ID, MAKE_ID('A','M','X','H'),
+            WindowContents, VGroup,
+                Child, ListviewObject,
+                    MUIA_Listview_List, lst_hist = ListObject, ReadListFrame, End,
+                End,
+            End,
+        End,
+
+        SubWindow, win_acct = WindowObject,
+            MUIA_Window_Title, "Konto",
+            MUIA_Window_ID, MAKE_ID('A','M','X','K'),
+            WindowContents, VGroup,
+                Child, VGroup, GroupFrameT("Passwort ändern"),
+                    Child, ColGroup(2),
+                        Child, Label2("Altes Passwort"),
+                        Child, str_pwold = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
+                        Child, Label2("Neues Passwort"),
+                        Child, str_pwnew = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
+                        Child, Label2("Noch einmal"),
+                        Child, str_pwnew2 = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
+                    End,
+                    Child, b_pwgo = SimpleButton("_Passwort ändern"),
+                End,
+                Child, VGroup, GroupFrameT("Konto deaktivieren"),
+                    Child, TextObject, MUIA_Text_Contents,
+                        "\33bEndgültig:\33n das Konto ist danach nicht mehr nutzbar,\nder Name wird nie wieder vergeben.", End,
+                    Child, ColGroup(2),
+                        Child, Label2("Passwort"),
+                        Child, str_dpw = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
+                        Child, Label1("Meine Nachrichten löschen lassen"),
+                        Child, HGroup, Child, chk_derase = CheckMark(FALSE), Child, HSpace(0), End,
+                    End,
+                    Child, b_dgo = SimpleButton("Konto _deaktivieren ..."),
+                End,
+                Child, txt_acct = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE, End,
+            End,
+        End,
+
+        SubWindow, win_poll = WindowObject,
+            MUIA_Window_Title, "Umfrage erstellen",
+            MUIA_Window_ID, MAKE_ID('A','M','X','U'),
+            WindowContents, VGroup,
+                Child, ColGroup(2),
+                    Child, Label2("Frage"),
+                    Child, str_pollq = StringObject, StringFrame, MUIA_String_MaxLen, 300, MUIA_CycleChain, TRUE, End,
+                    Child, Label2("Antwort 1"),
+                    Child, str_polla[0] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
+                    Child, Label2("Antwort 2"),
+                    Child, str_polla[1] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
+                    Child, Label2("Antwort 3"),
+                    Child, str_polla[2] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
+                    Child, Label2("Antwort 4"),
+                    Child, str_polla[3] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
+                    Child, Label2("Antwort 5"),
+                    Child, str_polla[4] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
+                    Child, Label2("Antwort 6"),
+                    Child, str_polla[5] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
+                    Child, Label1("Mehrere wählbar"),
+                    Child, HGroup, Child, chk_pollmulti = CheckMark(FALSE), Child, HSpace(0), End,
+                    Child, Label1("Ergebnis erst am Ende"),
+                    Child, HGroup, Child, chk_pollhide = CheckMark(FALSE), Child, HSpace(0), End,
+                End,
+                Child, b_pollsend = SimpleButton("_Senden"),
+            End,
+        End,
+
         SubWindow, win_find = WindowObject,
             MUIA_Window_Title, "Nachrichten suchen",
             MUIA_Window_ID, MAKE_ID('A','M','X','F'),
@@ -5767,6 +7633,9 @@ static Object *build_app(void)
                         Child, cyc_ijoin = CycleObject, MUIA_Cycle_Entries, join_names, MUIA_CycleChain, TRUE, End,
                         Child, Label1("Verlauf lesen"),
                         Child, cyc_ihist = CycleObject, MUIA_Cycle_Entries, hist_names, MUIA_CycleChain, TRUE, End,
+                        Child, Label1("Benachrichtigungen"),
+                        Child, cyc_inotify = CycleObject, MUIA_Cycle_Entries, notify_names, MUIA_CycleChain, TRUE,
+                            MUIA_ShortHelp, "Gilt auf allen deinen Geräten (Push-Regeln auf dem Server)", End,
                         Child, Label1("Verschlüsselt"),
                         Child, HGroup,
                             Child, chk_ienc = CheckMark(FALSE),
@@ -5786,6 +7655,7 @@ static Object *build_app(void)
                     End,
                     Child, HGroup,
                         Child, b_iinvite = SimpleButton("_Einladen ..."),
+                        Child, b_iadmit = SimpleButton("Ein_lassen"),
                         Child, b_ikick = SimpleButton("_Rauswerfen"),
                         Child, b_iban = SimpleButton("S_perren"),
                         Child, b_iunban = SimpleButton("_Entsperren"),
@@ -5862,6 +7732,24 @@ static Object *build_app(void)
                         End,
                     End,
                 End,
+                Child, VGroup, GroupFrameT("Stichwörter (wie eine Erwähnung)"),
+                    Child, ListviewObject, MUIA_Weight, 30,
+                        MUIA_Listview_List, lst_kw = ListObject, InputListFrame,
+                            MUIA_List_ConstructHook, MUIV_List_ConstructHook_String,
+                            MUIA_List_DestructHook, MUIV_List_DestructHook_String, End,
+                    End,
+                    Child, HGroup,
+                        Child, str_kw = StringObject, StringFrame, MUIA_String_MaxLen, 60, MUIA_CycleChain, TRUE, End,
+                        Child, b_kwadd = SimpleButton("_Hinzufügen"),
+                        Child, b_kwdel = SimpleButton("_Entfernen"),
+                    End,
+                End,
+                Child, VGroup, GroupFrameT("Ignorierte Nutzer"),
+                    Child, ListviewObject, MUIA_Weight, 30,
+                        MUIA_Listview_List, lst_ign = ListObject, InputListFrame, End,
+                    End,
+                    Child, b_unign = SimpleButton("Nicht mehr _ignorieren"),
+                End,
                 Child, VGroup, GroupFrameT("Start und Aussehen"),
                     Child, ColGroup(2),
                         Child, Label1("Ikonifiziert starten"),
@@ -5874,6 +7762,12 @@ static Object *build_app(void)
                             Child, chk_avatars = CheckMark(TRUE),
                             Child, HSpace(0),
                         End,
+                        Child, Label1("Beitritte und Austritte zeigen"),
+                        Child, HGroup, Child, chk_joins = CheckMark(TRUE), Child, HSpace(0), End,
+                        Child, Label1("24-Stunden-Uhr"),
+                        Child, HGroup, Child, chk_24h = CheckMark(TRUE), Child, HSpace(0), End,
+                        Child, Label1("Kompakt (Name nur beim Wechsel)"),
+                        Child, HGroup, Child, chk_compact = CheckMark(FALSE), Child, HSpace(0), End,
                     End,
                     Child, TextObject, MUIA_Text_Contents,
                         "\33iSchrift und Farben: Menü \"MUI-Einstellungen\".", End,
@@ -5954,6 +7848,18 @@ static Object *build_app(void)
     DoMethod(win_prof, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_prof, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(win_sess, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_sess, 3, MUIM_Set, MUIA_Window_Open, FALSE);
     DoMethod(win_find, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_find, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(win_poll, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_poll, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(win_fwd, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_fwd, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(win_acct, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_acct, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(b_pwgo, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_PW_GO);
+    DoMethod(b_dgo, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_DEACT_GO);
+    DoMethod(win_hist, MUIM_Notify, MUIA_Window_CloseRequest, TRUE, win_hist, 3, MUIM_Set, MUIA_Window_Open, FALSE);
+    DoMethod(b_fwd, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_FWD_GO);
+    DoMethod(b_unign, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_UNIGNORE);
+    DoMethod(b_kwadd, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_KW_ADD);
+    DoMethod(str_kw, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2, MUIM_Application_ReturnID, ID_KW_ADD);
+    DoMethod(b_kwdel, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_KW_DEL);
+    DoMethod(b_pollsend, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_POLLSEND);
     DoMethod(b_find, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_FIND_GO);
     DoMethod(str_find, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2, MUIM_Application_ReturnID, ID_FIND_GO);
     DoMethod(lst_hits, MUIM_Notify, MUIA_NList_DoubleClick, MUIV_EveryTime, a, 2, MUIM_CallHook, &hit_open_hook);
@@ -5965,12 +7871,14 @@ static Object *build_app(void)
     DoMethod(str_pname, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2, MUIM_Application_ReturnID,
              ID_PROF_SAVE);
     DoMethod(b_isave, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INFO_SAVE);
+    DoMethod(cyc_inotify, MUIM_Notify, MUIA_Cycle_Active, MUIV_EveryTime, a, 2, MUIM_CallHook, &inotify_hook);
     DoMethod(b_ipic, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INFO_PIC);
     DoMethod(b_ikick, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INFO_KICK);
     DoMethod(b_iban, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INFO_BAN);
     DoMethod(b_iunban, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INFO_UNBAN);
     DoMethod(b_irole, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INFO_ROLE);
     DoMethod(b_iinvite, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INFO_INVITE);
+    DoMethod(b_iadmit, MUIM_Notify, MUIA_Pressed, FALSE, a, 2, MUIM_Application_ReturnID, ID_INFO_ADMIT);
     DoMethod(lst_mem, MUIM_Notify, MUIA_NList_Active, MUIV_EveryTime, a, 2, MUIM_CallHook, &mem_active_hook);
     DoMethod(str_recovery, MUIM_Notify, MUIA_String_Acknowledge, MUIV_EveryTime, a, 2,
              MUIM_Application_ReturnID, ID_RECOVERY_GO);
@@ -6115,9 +8023,12 @@ static void handle_id(ULONG id)
                         (STRPTR)"Bitte erst einen Raum in der Liste auswählen.", 0);
             break;
         }
-        set_muted(r->id, !is_muted(r->id));
-        save_prefs();
-        DoMethod(lst_rooms, MUIM_List_Redraw, MUIV_List_Redraw_All);
+        {   /* on the server, so all devices are quiet; the old local list goes */
+            int off = !is_muted(r->id);
+            set_muted(r->id, 0);
+            save_prefs();
+            amx_async_room_notify(A, r->id, off ? AMX_NOTIFY_OFF : AMX_NOTIFY_DEFAULT, TAG_CMD);
+        }
         break;
     }
     case ID_SETTINGS:
@@ -6129,11 +8040,16 @@ static void handle_id(ULONG id)
         set(chk_previews, MUIA_Selected, opt_previews);
         set(chk_iconified, MUIA_Selected, opt_iconified);
         set(chk_typing, MUIA_Selected, opt_typing);
+        amx_async_ignored(A, TAG_IGNLIST);
+        amx_async_keywords(A, TAG_KEYWORDS);
         set(chk_receipts, MUIA_Selected, opt_receipts);
         set(chk_linkprev, MUIA_Selected, opt_linkprev);
         set(chk_linkprev_enc, MUIA_Selected, opt_linkprev_enc);
         set(chk_hcache, MUIA_Selected, opt_hcache);
         set(chk_avatars, MUIA_Selected, opt_avatars);
+        set(chk_joins, MUIA_Selected, opt_joins);
+        set(chk_24h, MUIA_Selected, opt_24h);
+        set(chk_compact, MUIA_Selected, opt_compact);
         set(win_settings, MUIA_Window_Open, TRUE);
         break;
     case ID_INFO: {
@@ -6153,6 +8069,97 @@ static void handle_id(ULONG id)
         set(win_find, MUIA_Window_ActiveObject, str_find);
         break;
     case ID_FIND_GO:     find_go(); break;
+    case ID_POLLNEW:     open_pollnew(); break;
+    case ID_FWD_GO:      forward_go(); break;
+    case ID_ACCOUNT:
+        set(txt_acct, MUIA_Text_Contents, "");
+        set(win_acct, MUIA_Window_Open, TRUE);
+        break;
+    case ID_PW_GO: pw_go(); break;
+    case ID_DEACT_GO: {
+        char *pw = (char *)xget(str_dpw, MUIA_String_Contents), *u;
+        if (!pw || !*pw) { set(txt_acct, MUIA_Text_Contents, "Bitte dein Passwort eingeben."); break; }
+        if (MUI_Request(app, win_acct, 0, (STRPTR)"Konto deaktivieren", (STRPTR)"_Deaktivieren|*_Abbrechen",
+                        (STRPTR)"\33cDas Konto\n\33b%s\33n\nwirklich endgültig deaktivieren?", (ULONG)(my_user ? my_user : "")) != 1)
+            break;
+        u = amx_from_local(pw);
+        amx_async_deactivate(A, u, (int)xget(chk_derase, MUIA_Selected), TAG_DEACT);
+        if (u) memset(u, 0, strlen(u));
+        free(u);
+        set(str_dpw, MUIA_String_Contents, "");
+        set(txt_acct, MUIA_Text_Contents, "Bitte warten ...");
+        break;
+    }
+    case ID_EXPORT: {
+        ChatWin *w = current_chat();
+        struct Library *AslBase;
+        struct FileRequester *fr;
+        char path[512];
+        LONG all;
+        if (!w) {
+            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK", (STRPTR)"Bitte erst ein Chatfenster öffnen.", 0);
+            break;
+        }
+        all = MUI_Request(app, w->win, 0, (STRPTR)"Chat exportieren", (STRPTR)"_Ganzer Verlauf|_Nur geladene|*_Abbrechen",
+                          (STRPTR)"Was soll in die Datei?\n(Endung .html: als Webseite, sonst Text)", 0);
+        if (!all) break;
+        if (!(AslBase = OpenLibrary("asl.library", 38))) break;
+        fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
+                 ASLFR_Window, (ULONG)xget(w->win, MUIA_Window_Window), ASLFR_TitleText, (ULONG)"Chat exportieren",
+                 ASLFR_DoSaveMode, TRUE, ASLFR_InitialFile, (ULONG)"Chat.txt", TAG_DONE);
+        if (fr && AslRequest(fr, NULL) && fr->fr_File[0]) {
+            snprintf(path, sizeof path, "%s", fr->fr_Drawer);
+            if (AddPart((STRPTR)path, (STRPTR)fr->fr_File, sizeof path)) export_chat(w, path, all == 1);
+        }
+        if (fr) FreeAslRequest(fr);
+        CloseLibrary(AslBase);
+        break;
+    }
+    case ID_KW_ADD: {
+        char *t = (char *)xget(str_kw, MUIA_String_Contents), *u;
+        if (t && *t) {
+            u = amx_from_local(t);
+            amx_async_keyword(A, u, 1, TAG_KEYWORDS);
+            free(u);
+            set(str_kw, MUIA_String_Contents, "");
+        }
+        break;
+    }
+    case ID_KW_DEL: {
+        char *t = NULL, *u;
+        DoMethod(lst_kw, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &t);
+        if (t) { u = amx_from_local(t); amx_async_keyword(A, u, 0, TAG_KEYWORDS); free(u); }
+        break;
+    }
+    case ID_UNIGNORE: {
+        char *u = NULL;
+        DoMethod(lst_ign, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &u);
+        if (u) { amx_async_ignore(A, u, 0, TAG_CMD); amx_async_ignored(A, TAG_IGNLIST); }
+        break;
+    }
+    case ID_PIN: case ID_FWD: case ID_QUOTE: case ID_COPYLINK: case ID_EDITHIST: {
+        ChatWin *w = current_chat();
+        ChatMsg *m = w ? marked_msg(w) : NULL;
+        if (!m || m->redacted) {
+            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
+                        (STRPTR)"Bitte erst eine Nachricht im Chatfenster markieren.", 0);
+            break;
+        }
+        if (id == ID_FWD) open_forward(w, m);
+        else if (id == ID_QUOTE) start_quote(w, m);
+        else if (id == ID_COPYLINK) copy_link(w, m);
+        else if (id == ID_EDITHIST) {
+            if (!m->edited) chat_say(w, "Diese Nachricht wurde nicht bearbeitet.");
+            else open_edit_history(w, m);
+        } else {
+            const Room *r = room_by_id(w->room_id);
+            int on = !(r && r->pinned && strstr(r->pinned, m->eid));
+            amx_async_pin(A, w->room_id, m->eid, on, TAG_PIN);
+            chat_say(w, on ? "Pinne an ..." : "Löse den Pin ...");
+        }
+        break;
+    }
+    case ID_POLLSEND:    poll_send(); break;
     case ID_MUIPREFS:    DoMethod(app, MUIM_Application_OpenConfigWindow, 0, NULL); break;
     case ID_SESS_RENAME: sess_rename(); break;
     case ID_SESS_DELETE: sess_delete(); break;
@@ -6165,11 +8172,31 @@ static void handle_id(ULONG id)
     case ID_INFO_UNBAN:  info_moderate("unban"); break;
     case ID_INFO_ROLE:   info_moderate("power"); break;
     case ID_INFO_INVITE: if (info_room) show_invite(info_room); break;
+    case ID_INFO_ADMIT: {
+        AmxMember *p = info_selected();
+        if (p && info_room) {
+            amx_async_invite(A, info_room, p->user_id, TAG_MODERATE);
+            info_busy++;
+            info_set_status("Lasse ein ...");
+            info_reload(0, 1);
+        }
+        break;
+    }
     case ID_SET_OK:
         opt_notify = xget(chk_notify, MUIA_Selected) != 0;
         opt_notify_all = xget(cyc_notify, MUIA_Cycle_Active) == 0;
         opt_previews = xget(chk_previews, MUIA_Selected) != 0;
         opt_iconified = xget(chk_iconified, MUIA_Selected) != 0;
+        {   /* the look: shown again in all windows */
+            int j = xget(chk_joins, MUIA_Selected) != 0, h = xget(chk_24h, MUIA_Selected) != 0,
+                k = xget(chk_compact, MUIA_Selected) != 0;
+            if (j != opt_joins || h != opt_24h || k != opt_compact) {
+                ChatWin *cw;
+                opt_joins = j; opt_24h = h; opt_compact = k;
+                for (cw = chats; cw; cw = cw->next) rerender_window(cw);
+                DoMethod(lst_rooms, MUIM_List_Redraw, MUIV_List_Redraw_All);
+            }
+        }
         if (opt_avatars != (xget(chk_avatars, MUIA_Selected) != 0)) {
             opt_avatars = !opt_avatars;
             if (opt_avatars) request_avatars();

@@ -1,7 +1,8 @@
 /* Feature: our sessions.
  * A second session of our user logs in; the list shows both (ours first),
  * the other one is renamed and signed out (wrong password refused); our
- * own session cannot be signed out this way. */
+ * own session cannot be signed out this way.  The password is changed (and
+ * back); deactivating with a wrong password is refused. */
 #include "mxtest.h"
 
 static const AmxDevice *find(const AmxDevice *l, int n, const char *id)
@@ -47,6 +48,24 @@ int main(int argc, char **argv)
     MXT_OK(amx_delete_device(c, l[0].device_id, a.password) != 0, "our own session: refused (%s)", amx_error(c));
     amx_free_devices(l, n);
     MXT_OK(amx_sync(c2, 0) != 0, "the signed-out session no longer works");
+
+    /* the account: a new password (wrong old one refused), login with it,
+     * back to the old one; deactivating with a wrong password is refused */
+    MXT_OK(amx_change_password(c, "falsch", "NeuesPasswort42") != 0, "new password: wrong old one refused");
+    MXT_OK(amx_change_password(c, a.password, "kurz") != 0, "new password: too short refused");
+    MXT_OK(amx_change_password(c, a.password, "NeuesPasswort42") == 0, "password changed (%s)", amx_error(c));
+    {
+        char *s3 = malloc(strlen(a.store) + 8);
+        AmxClient *c3;
+        sprintf(s3, "%s-drei", a.store);
+        c3 = amx_client_new(a.server, s3);
+        MXT_OK(c3 && amx_login(c3, a.user, "NeuesPasswort42") == 0, "login with the new password");
+        if (c3) { amx_logout(c3); amx_client_free(c3); }
+        free(s3);
+    }
+    MXT_OK(amx_change_password(c, "NeuesPasswort42", a.password) == 0, "and back to the old one");
+    MXT_OK(amx_deactivate_account(c, "falsch", 0) != 0, "deactivating with a wrong password: refused (%s)", amx_error(c));
+    MXT_OK(amx_sync(c, 0) == 0, "the account still works");
 
     free(other); free(store2);
     amx_client_free(c2);

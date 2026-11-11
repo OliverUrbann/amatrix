@@ -72,6 +72,12 @@ static void apply_state(AmxClient *c, cJSON *r, const char *room_id, const cJSON
         const char *t = amx__jstr(ct, "type");
         cJSON_DeleteItemFromObjectCaseSensitive(r, "ct");
         cJSON_AddStringToObject(r, "ct", t ? t : "");
+    } else if (!strcmp(type, "m.room.tombstone")) {
+        set_str(r, "repl", amx__jstr(ct, "replacement_room"));
+    } else if (!strcmp(type, "m.room.pinned_events")) {
+        const cJSON *pins = cJSON_GetObjectItemCaseSensitive(ct, "pinned");
+        cJSON_DeleteItemFromObjectCaseSensitive(r, "pins");
+        if (cJSON_IsArray(pins)) cJSON_AddItemToObject(r, "pins", cJSON_Duplicate(pins, 1));
     } else if (!strcmp(type, "m.space.child")) {
         cJSON *ch = cJSON_GetObjectItemCaseSensitive(r, "children");
         const cJSON *via = cJSON_GetObjectItemCaseSensitive(ct, "via");
@@ -374,6 +380,20 @@ int amx_rooms(AmxClient *c, AmxRoomInfo **list)
                     len += k;
                 }
             i->parents = par;
+            i->notify = amx__room_notify(c, r->string);
+            i->replacement = amx__jstr(r, "repl") && *amx__jstr(r, "repl") ? strdup(amx__jstr(r, "repl")) : NULL;
+            {
+                const cJSON *pins = cJSON_GetObjectItemCaseSensitive(r, "pins"), *x;
+                size_t pl = 1;
+                char *ps;
+                cJSON_ArrayForEach(x, pins) if (cJSON_IsString(x)) pl += strlen(x->valuestring) + 1;
+                if (pl > 1 && (ps = malloc(pl)) != NULL) {
+                    ps[0] = 0;
+                    cJSON_ArrayForEach(x, pins)
+                        if (cJSON_IsString(x)) { if (ps[0]) strcat(ps, "\n"); strcat(ps, x->valuestring); }
+                    i->pinned = ps;
+                }
+            }
         }
         n++;
     }
@@ -393,6 +413,8 @@ void amx_free_rooms(AmxRoomInfo *list, int n)
         free((char *)list[i].last_sender); free((char *)list[i].last_body);
         free((char *)list[i].inviter_name);
         free((char *)list[i].parents);
+        free((char *)list[i].pinned);
+        free((char *)list[i].replacement);
     }
     free(list);
 }
@@ -503,5 +525,84 @@ int amx_set_room_tag(AmxClient *c, const char *room_id, const char *tag, int on)
         }
     }
     LOG(c, "tag %s %s on %s", tag, on ? "set" : "removed", room_id);
+    return 0;
+}
+
+int amx_pin_event(AmxClient *c, const char *room_id, const char *event_id, int on)
+{
+    char *er = http_escape(room_id), *path = amx__malloc(strlen(er) + 48);
+    cJSON *cur, *pins, *x, *res;
+    long st;
+    sprintf(path, "/rooms/%s/state/m.room.pinned_events/", er);
+    free(er);
+    cur = amx__api(c, "GET", path, NULL, 60, &st);
+    if (st != 200 || !cJSON_IsObject(cur)) { cJSON_Delete(cur); cur = cJSON_CreateObject(); c->err[0] = 0; }
+    pins = cJSON_GetObjectItemCaseSensitive(cur, "pinned");
+    if (!cJSON_IsArray(pins)) { cJSON_DeleteItemFromObjectCaseSensitive(cur, "pinned"); pins = cJSON_AddArrayToObject(cur, "pinned"); }
+    for (x = pins->child; x; ) {
+        cJSON *next = x->next;
+        if (cJSON_IsString(x) && !strcmp(x->valuestring, event_id)) cJSON_Delete(cJSON_DetachItemViaPointer(pins, x));
+        x = next;
+    }
+    if (on) cJSON_AddItemToArray(pins, cJSON_CreateString(event_id));
+    res = amx__api_ok(c, "PUT", path, cur);
+    if (res) {                                   /* in the room list at once */
+        cJSON *r = cJSON_GetObjectItemCaseSensitive(c->rooms, room_id);
+        if (r) {
+            cJSON_DeleteItemFromObjectCaseSensitive(r, "pins");
+            cJSON_AddItemToObject(r, "pins", cJSON_Duplicate(pins, 1));
+            amx__rooms_save(c);
+        }
+    }
+    cJSON_Delete(cur);
+    free(path);
+    if (!res) return -1;
+    cJSON_Delete(res);
+    return 0;
+}
+
+int amx_fetch_event(AmxClient *c, const char *room_id, const char *event_id)
+{
+    char *er = http_escape(room_id), *ee = http_escape(event_id), *path = amx__malloc(strlen(er) + strlen(ee) + 24);
+    cJSON *ev;
+    long st;
+    sprintf(path, "/rooms/%s/event/%s", er, ee);
+    free(er); free(ee);
+    ev = amx__api(c, "GET", path, NULL, 60, &st);
+    free(path);
+    if (st != 200 || !ev) { cJSON_Delete(ev); return -1; }
+    if (amx_backup_available(c)) {
+        cJSON *one = cJSON_CreateArray();
+        cJSON_AddItemReferenceToArray(one, ev);
+        amx__backup_for_events(c, room_id, one, 1);
+        cJSON_Delete(one);
+    }
+    c->lookup_mode = 1;
+    amx__handle_room_event(c, room_id, ev, 1);
+    c->lookup_mode = 0;
+    cJSON_Delete(ev);
+    return 0;
+}
+
+int amx_upgrade_room(AmxClient *c, const char *room_id, const char *version, char **new_room)
+{
+    char *e = http_escape(room_id), *p = amx__malloc(strlen(e) + 24);
+    cJSON *b = cJSON_CreateObject(), *r;
+    *new_room = NULL;
+    sprintf(p, "/rooms/%s/upgrade", e);
+    free(e);
+    if (!version) {                              /* the server's default version */
+        cJSON *cap = amx__api_ok(c, "GET", "/capabilities", NULL);
+        const char *v = amx__jstr(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(cap, "capabilities"),
+                                  "m.room_versions"), "default");
+        cJSON_AddStringToObject(b, "new_version", v ? v : "10");
+        cJSON_Delete(cap);
+    } else cJSON_AddStringToObject(b, "new_version", version);
+    r = amx__api_ok(c, "POST", p, b);
+    cJSON_Delete(b);
+    free(p);
+    if (!r) return -1;
+    if (amx__jstr(r, "replacement_room")) *new_room = amx__strdup(amx__jstr(r, "replacement_room"));
+    cJSON_Delete(r);
     return 0;
 }

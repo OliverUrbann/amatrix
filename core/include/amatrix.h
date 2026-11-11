@@ -35,8 +35,11 @@ typedef enum {
                                relates_to = the message edited, msgtype/body = its new text */
     AMX_EV_TYPING,          /* who is typing in room_id now (not us): state_key = their user
                                IDs, body = their names, one per line; "" when nobody */
-    AMX_EV_RECEIPT          /* a read receipt (not ours): room_id, sender = the reader, event_id
+    AMX_EV_RECEIPT,         /* a read receipt (not ours): room_id, sender = the reader, event_id
                                = the newest event read, timestamp */
+    AMX_EV_POLL_VOTE,       /* a vote: relates_to = the poll, sender, body = the chosen answer
+                               IDs, one per line ("" = vote taken back), timestamp */
+    AMX_EV_POLL_END         /* a poll ended: relates_to = the poll, sender */
 } AmxEventType;
 
 typedef struct {
@@ -65,6 +68,10 @@ typedef struct {
     int mention;             /* AMX_EV_MESSAGE: it mentions us (m.mentions, or our user
                                 ID in the text for senders without m.mentions) */
     int cached;              /* AMX_EV_MESSAGE from the local history cache (amx_cached_history) */
+    int lookup;              /* fetched on request (amx_fetch_event), not part of the timeline */
+    const char *poll;        /* msgtype "m.poll" (a poll, body = the question): JSON
+                                {"question":..., "answers":[{"id":...,"text":...}], "max":n,
+                                 "disclosed":true|false} */
     const char *media;       /* AMX_EV_MESSAGE with attachments (msgtype m.image /
                                 m.file / m.video / m.audio / m.sticker, or a gallery):
                                 an opaque description for amx_media_*() (body is the
@@ -168,7 +175,28 @@ typedef struct {
     int low_priority;          /* tagged m.lowpriority (sorted to the bottom) */
     int is_space;              /* a space (a group of rooms), not a chat */
     const char *parents;       /* the spaces this room belongs to: room IDs, one per line; NULL */
+    const char *pinned;        /* pinned events, oldest first: event IDs, one per line; NULL */
+    int notify;                /* AMX_NOTIFY_*: this room's setting on the server */
+    const char *replacement;   /* upgraded: the room that replaces this one; NULL */
 } AmxRoomInfo;
+
+/* Upgrades a room to a new room version (admins): the server makes a new
+ * room, the old one points there.  version NULL: the server's default. */
+int  amx_upgrade_room(AmxClient *c, const char *room_id, const char *version, char **new_room);
+
+/* Notifications per room, on the server (push rules) for all our devices. */
+enum { AMX_NOTIFY_DEFAULT, AMX_NOTIFY_ALL, AMX_NOTIFY_MENTIONS, AMX_NOTIFY_OFF };
+int  amx_set_room_notify(AmxClient *c, const char *room_id, int level);
+/* Keywords that count like a mention: the list (one per line, malloc'd) and
+ * changing it. */
+char *amx_keywords(AmxClient *c);
+int   amx_set_keyword(AmxClient *c, const char *word, int on);
+
+/* Pins an event in the room (m.room.pinned_events) or takes the pin away. */
+int  amx_pin_event(AmxClient *c, const char *room_id, const char *event_id, int on);
+/* Fetches one event and delivers it (decrypted) with lookup = 1, e.g. a
+ * pinned message that is not in the loaded history. */
+int  amx_fetch_event(AmxClient *c, const char *room_id, const char *event_id);
 
 /* Tags a room as favourite ("m.favourite") or low priority ("m.lowpriority"),
  * or takes the tag away (on = 0). */
@@ -253,7 +281,7 @@ int amx_send_file(AmxClient *c, const char *room_id, const char *path, const cha
 
 typedef struct {
     char *user_id, *name, *avatar_url;    /* name: display name (UTF-8) or localpart */
-    char *membership;                     /* "join", "invite", "ban" */
+    char *membership;                     /* "join", "invite", "ban", "knock" (asks to join) */
     int power;                            /* power level: 100 admin, 50 moderator,
                                              AMX_POWER_CREATOR a creator (room version 12+) */
 } AmxMember;
@@ -280,6 +308,9 @@ int  amx_set_room_setting(AmxClient *c, const char *room_id, const char *what, c
 int  amx_kick(AmxClient *c, const char *room_id, const char *user, const char *reason);
 int  amx_ban(AmxClient *c, const char *room_id, const char *user, const char *reason);
 int  amx_unban(AmxClient *c, const char *room_id, const char *user);
+/* Asks to join a room whose join rule is "knock" (ID or #alias); someone
+ * there lets us in by inviting us (a knock is refused with a kick). */
+int  amx_knock(AmxClient *c, const char *room, const char *reason);
 int  amx_set_power(AmxClient *c, const char *room_id, const char *user, int level);
 
 /* A profile (user NULL: our own): display name and picture (mxc://), each
@@ -288,6 +319,46 @@ int  amx_get_profile(AmxClient *c, const char *user, char **name, char **avatar_
 int  amx_set_displayname(AmxClient *c, const char *name);
 /* the picture file (PNG, JPEG, GIF) uploaded as our profile picture */
 int  amx_set_avatar(AmxClient *c, const char *path);
+
+/* Any message: msgtype NULL = m.text; html: the formatted body (NULL for
+ * plain text); reply_to / thread_root / replaces (an edit of that event) may
+ * be NULL; mentions: the user IDs mentioned, one per line (NULL: none). */
+typedef struct {
+    const char *msgtype, *body, *html, *reply_to, *thread_root, *replaces, *mentions;
+} AmxOutMsg;
+int  amx_send_message(AmxClient *c, const char *room_id, const AmxOutMsg *m, char **event_id_out);
+/* Users whose messages and invitations the server keeps from us: the list
+ * (user IDs, one per line, malloc'd; NULL on error) and changing it. */
+char *amx_ignored_users(AmxClient *c);
+int   amx_ignore_user(AmxClient *c, const char *user, int on);
+
+/* Sends a copy of a message (text, picture, file, poll ...) to another room;
+ * an encrypted attachment keeps its key, so it is not uploaded again. */
+int   amx_forward(AmxClient *c, const char *to_room, const char *from_room, const char *event_id,
+                  char **event_id_out);
+
+/* Our account: a new password (the old one confirms it; the other sessions
+ * stay logged in); deactivate it for good (erase: also ask the server to
+ * forget our messages).  Deactivation cannot be undone. */
+int   amx_change_password(AmxClient *c, const char *old_password, const char *new_password);
+int   amx_deactivate_account(AmxClient *c, const char *password, int erase);
+
+/* Our display name in this room only (m.room.member). */
+int  amx_set_room_nick(AmxClient *c, const char *room_id, const char *name);
+
+/* Polls (MSC3381, as Element sends them).  answers: n texts; max: how many
+ * one may choose; disclosed: results visible before the end. */
+int  amx_send_poll(AmxClient *c, const char *room_id, const char *question, const char *const *answers, int n,
+                   int max, int disclosed, char **event_id_out);
+/* answer_ids: the chosen answers (IDs from the poll JSON), n = 0 takes the vote back */
+int  amx_poll_vote(AmxClient *c, const char *room_id, const char *poll_id, const char *const *answer_ids, int n);
+int  amx_poll_end(AmxClient *c, const char *room_id, const char *poll_id);
+/* Loads the events that refer to event_id (m.reference: poll votes and its
+ * end) and delivers them as history events. */
+int  amx_load_relations(AmxClient *c, const char *room_id, const char *event_id);
+/* The edits of a message (oldest first is not guaranteed: sort by time),
+ * delivered as AMX_EV_EDIT with lookup = 1. */
+int  amx_load_edits(AmxClient *c, const char *room_id, const char *event_id);
 
 /* The local history cache: the newest messages of a room as stored the last
  * time (decrypted; edits and deletions applied), delivered as events with

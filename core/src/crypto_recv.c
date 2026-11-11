@@ -1,6 +1,7 @@
 /* Receiving side of E2EE: Olm to-device (room keys), Megolm room events,
  * session storage, pending events.  Also dispatches plain room events. */
 #include "amx_internal.h"
+#include <openssl/crypto.h>
 #include <time.h>
 
 /* ------------------------------------------------------------- sessions */
@@ -373,12 +374,58 @@ static void stamp(AmxEvent *e, const cJSON *ev, int history)
     e->timestamp = cJSON_IsNumber(ts) ? ts->valuedouble : 0;
 }
 
+/* the text of an extensible-events text block: "m.text": [{"body":...}],
+ * the unstable "org.matrix.msc1767.text": "..." or "body" */
+static const char *ext_text(const cJSON *o)
+{
+    const cJSON *t = cJSON_GetObjectItemCaseSensitive(o, "m.text"), *x;
+    cJSON_ArrayForEach(x, t) {
+        const char *mt = amx__jstr(x, "mimetype");
+        if (amx__jstr(x, "body") && (!mt || !strcmp(mt, "text/plain"))) return amx__jstr(x, "body");
+    }
+    if (amx__jstr(o, "org.matrix.msc1767.text")) return amx__jstr(o, "org.matrix.msc1767.text");
+    return amx__jstr(o, "body");
+}
+
+/* a poll start's content as our JSON (malloc'd), NULL if it is not one */
+static char *poll_json(const cJSON *content)
+{
+    const cJSON *p = cJSON_GetObjectItemCaseSensitive(content, "m.poll"), *a, *mx;
+    const char *q, *kind;
+    cJSON *o, *arr;
+    char *s;
+    if (!p) p = cJSON_GetObjectItemCaseSensitive(content, "org.matrix.msc3381.poll.start");
+    if (!p) return NULL;
+    q = ext_text(cJSON_GetObjectItemCaseSensitive(p, "question"));
+    o = cJSON_CreateObject();
+    cJSON_AddStringToObject(o, "question", q ? q : "");
+    arr = cJSON_AddArrayToObject(o, "answers");
+    cJSON_ArrayForEach(a, cJSON_GetObjectItemCaseSensitive(p, "answers")) {
+        const char *id = amx__jstr(a, "m.id") ? amx__jstr(a, "m.id") : amx__jstr(a, "id"), *t = ext_text(a);
+        cJSON *one;
+        if (!id) continue;
+        one = cJSON_CreateObject();
+        cJSON_AddStringToObject(one, "id", id);
+        cJSON_AddStringToObject(one, "text", t ? t : "");
+        cJSON_AddItemToArray(arr, one);
+    }
+    mx = cJSON_GetObjectItemCaseSensitive(p, "max_selections");
+    cJSON_AddNumberToObject(o, "max", cJSON_IsNumber(mx) && mx->valueint > 0 ? mx->valueint : 1);
+    kind = amx__jstr(p, "kind");
+    cJSON_AddBoolToObject(o, "disclosed", !kind || !strstr(kind, "undisclosed"));
+    s = cJSON_PrintUnformatted(o);
+    cJSON_Delete(o);
+    return s;
+}
+
 static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, const char *type,
                          const cJSON *content, int encrypted, int history)
 {
     char *media = NULL;
     AmxEvent e;
     const char *sender = amx__jstr(ev, "sender");
+    int media_is_poll = 0;
+    (void)media_is_poll;
     if (!strcmp(type, "m.reaction")) {
         const cJSON *rel = cJSON_GetObjectItemCaseSensitive(content, "m.relates_to");
         if (!rel) rel = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(ev, "content"),
@@ -402,6 +449,47 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
         e.body = amx__jstr(content, "body") ? amx__jstr(content, "body") : "";
         media = amx__media_json(content, "m.sticker");
         e.media = media;
+    } else if (!strcmp(type, "m.poll.start") || !strcmp(type, "org.matrix.msc3381.poll.start")) {
+        memset(&e, 0, sizeof e);
+        if (!(media = poll_json(content))) return;      /* (media: freed below) */
+        e.type = AMX_EV_MESSAGE;
+        e.msgtype = "m.poll";
+        e.poll = media;
+        {
+            cJSON *pj = cJSON_Parse(media);
+            e.body = "";
+            if (pj) {
+                static char q[600];
+                snprintf(q, sizeof q, "%s", amx__jstr(pj, "question") ? amx__jstr(pj, "question") : "");
+                e.body = q;
+                cJSON_Delete(pj);
+            }
+        }
+        media_is_poll = 1;
+    } else if (!strcmp(type, "m.poll.response") || !strcmp(type, "org.matrix.msc3381.poll.response")
+               || !strcmp(type, "m.poll.end") || !strcmp(type, "org.matrix.msc3381.poll.end")) {
+        const cJSON *rel = cJSON_GetObjectItemCaseSensitive(content, "m.relates_to"), *x, *sel;
+        size_t len = 1;
+        if (!rel) rel = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(ev, "content"), "m.relates_to");
+        memset(&e, 0, sizeof e);
+        e.relates_to = amx__jstr(rel, "event_id");
+        if (!e.relates_to) return;
+        if (strstr(type, "end")) e.type = AMX_EV_POLL_END;
+        else {
+            e.type = AMX_EV_POLL_VOTE;
+            sel = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(content,
+                      "org.matrix.msc3381.poll.response"), "answers");
+            if (!sel) sel = cJSON_GetObjectItemCaseSensitive(content, "m.selections");
+            cJSON_ArrayForEach(x, sel) if (cJSON_IsString(x)) len += strlen(x->valuestring) + 1;
+            media = amx__malloc(len);
+            media[0] = 0;
+            cJSON_ArrayForEach(x, sel)
+                if (cJSON_IsString(x)) {
+                    if (media[0]) strcat(media, "\n");
+                    strcat(media, x->valuestring);
+                }
+            e.body = media;
+        }
     } else if (strcmp(type, "m.room.message")) {
         return;                                         /* other types: later features */
     } else {
@@ -430,6 +518,8 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
                     cJSON_ArrayForEach(u, cJSON_GetObjectItemCaseSensitive(mm, "user_ids"))
                         if (cJSON_IsString(u) && c->user_id && !strcmp(u->valuestring, c->user_id)) e.mention = 1;
                 } else if (c->user_id && strstr(e.body, c->user_id)) e.mention = 1;
+                if (!e.mention && !(sender && c->user_id && !strcmp(sender, c->user_id)) && amx__keyword_hit(c, e.body))
+                    e.mention = 1;
             }
             if (rt && !strcmp(rt, "m.thread")) {
                 e.thread_root = amx__jstr(rel, "event_id");
@@ -457,6 +547,17 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
                 e.redacted = 1;
             media = amx__media_json(content, e.msgtype);
             e.media = media;
+            if (e.msgtype && !strcmp(e.msgtype, "m.location")) {      /* geo:lat,lon -> a map link */
+                const char *g = amx__jstr(content, "geo_uri");
+                double lat, lon;
+                static char loc[700];
+                if (!g) g = amx__jstr(cJSON_GetObjectItemCaseSensitive(content, "org.matrix.msc3488.location"), "uri");
+                if (g && sscanf(g, "geo:%lf,%lf", &lat, &lon) == 2) {
+                    snprintf(loc, sizeof loc, "%.400s\nhttps://www.openstreetmap.org/?mlat=%.5f&mlon=%.5f#map=16/%.5f/%.5f",
+                             e.body, lat, lon, lat, lon);
+                    e.body = loc;
+                }
+            }
         }
     }
     e.room_id = room_id;
@@ -505,6 +606,49 @@ static int is_replay(AmxClient *c, const char *sid, uint32_t idx, const char *ev
     if (prev) return strcmp(prev, event_id) != 0;
     cJSON_AddStringToObject(c->seen, key, event_id);
     return 0;
+}
+
+/* An event's content as its sender wrote it (decrypted if need be), its type
+ * in *type (malloc'd); NULL if it cannot be read. */
+cJSON *amx__event_content(AmxClient *c, const char *room_id, const cJSON *ev, char **type)
+{
+    const char *t = amx__jstr(ev, "type");
+    const cJSON *ct = cJSON_GetObjectItemCaseSensitive(ev, "content");
+    *type = NULL;
+    if (!t) return NULL;
+    if (strcmp(t, "m.room.encrypted")) {
+        *type = amx__strdup(t);
+        return cJSON_Duplicate(ct, 1);
+    } else {
+        const char *sid = amx__jstr(ct, "session_id"), *cipher = amx__jstr(ct, "ciphertext");
+        GroupSess *g = sid ? amx__find_group(c, room_id, sid) : NULL;
+        uint8_t *tmp, *plain;
+        size_t max, n, len;
+        uint32_t idx;
+        cJSON *p, *out = NULL;
+        if (!g || !cipher) { amx__fail(c, "no key for this message"); return NULL; }
+        len = strlen(cipher);
+        tmp = (uint8_t *)amx__strndup(cipher, len);
+        max = olm_group_decrypt_max_plaintext_length(g->s, tmp, len);
+        free(tmp);
+        if (max == olm_error()) { amx__fail(c, "cannot decrypt"); return NULL; }
+        plain = amx__malloc(max + 1);
+        tmp = (uint8_t *)amx__strndup(cipher, len);
+        n = olm_group_decrypt(g->s, tmp, len, plain, max, &idx);
+        free(tmp);
+        if (n == olm_error()) { free(plain); amx__fail(c, "cannot decrypt"); return NULL; }
+        plain[n] = 0;
+        p = cJSON_Parse((char *)plain);
+        OPENSSL_cleanse(plain, n);
+        free(plain);
+        if (p && amx__jstr(p, "type") && amx__jstr(p, "room_id") && !strcmp(amx__jstr(p, "room_id"), room_id)) {
+            *type = amx__strdup(amx__jstr(p, "type"));
+            out = cJSON_DetachItemFromObjectCaseSensitive(p, "content");
+        }
+        cJSON_Delete(p);
+        if (!out) { free(*type); *type = NULL; amx__fail(c, "cannot decrypt"); }
+        return out;
+    }
 }
 
 /* 1 = handled (decrypted or never decryptable), 0 = key missing (retry later) */
