@@ -704,6 +704,8 @@ async def scenario(ctx, amiga, srv, me):
             return rc == "0" and r == "Kaffeeklatsch" and r
         v = await amiga.until(in_space, 120)
         check(v, f"space chosen: only its room in the list ({v!r})")
+        rc, _ = await amiga.rexx("CHATSTATUS Hobbys")
+        check(rc != "0", "no chat window for the space itself")
         await amiga.shot("06c-space")
         await amiga.rexx("SPACE")
     rc, v = await amiga.rexx("ROOMS")

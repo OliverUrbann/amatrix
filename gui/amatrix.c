@@ -1517,7 +1517,7 @@ static void update_rooms(const AmxMsg *m)
     if (pending_open && room_by_id(pending_open) && !room_by_id(pending_open)->invited) {
         char *id = pending_open;
         pending_open = NULL;
-        open_chat(id);
+        if (!room_by_id(id)->is_space) open_chat(id);     /* a space is no chat: it shows in the choice */
         free(id);
     }
 }
@@ -2663,6 +2663,7 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
     unsigned long h;
     LONG left, top, width;
     amx_log("open_chat %s %s", room_id, thread_root ? thread_root : "");
+    if (r && r->is_space && !w) return;                   /* a space has no messages to show */
     notify_close(room_id);
 
     if (w) {
