@@ -412,6 +412,9 @@ int amx_redact(AmxClient *c, const char *room_id, const char *event_id, const ch
 /* Marks the room as read up to event_id (read receipt + fully-read marker);
  * the server's unread count for the room drops to 0. */
 int amx_mark_read(AmxClient *c, const char *room_id, const char *event_id);
+/* The read receipts remembered for a room (the newest of each other user),
+ * delivered again as AMX_EV_RECEIPT events; returns how many. */
+int amx_replay_receipts(AmxClient *c, const char *room_id);
 /* Read receipts others do not see (m.read.private) from now on, or public again. */
 void amx_set_private_receipts(AmxClient *c, int on);
 /* "typing" for ms milliseconds in room_id (0: stopped typing). */

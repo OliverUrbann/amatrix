@@ -72,6 +72,14 @@ int main(int argc, char **argv)
     MXT_OK(amx_send_text(c, room, "lies mich", &ev) == 0 && ev, "message to be read");
     want_eid = ev;
     MXT_OK(mxt_sync_until(c, have_receipt, NULL, 120), "read receipt of the peer for it");
+    {   /* remembered: delivered again (a window opened later) */
+        int mark = mxt_n_ev, k, again = 0;
+        MXT_OK(amx_replay_receipts(c, room) >= 1, "remembered receipts delivered again");
+        for (k = mark; k < mxt_n_ev; k++)
+            if (mxt_ev[k].type == AMX_EV_RECEIPT && mxt_ev[k].sender && !strcmp(mxt_ev[k].sender, PEER)
+                && mxt_ev[k].event_id && !strcmp(mxt_ev[k].event_id, want_eid)) again = 1;
+        MXT_OK(again, "with the peer's newest receipt");
+    }
 
     m.body = "gelesen?";
     MXT_OK(mxt_sync_until(c, mxt_have_message, &m, 120), "peer's message");

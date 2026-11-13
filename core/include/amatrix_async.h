@@ -49,7 +49,7 @@ typedef enum {
     AMX_CMD_IGNORED, AMX_CMD_IGNORE, AMX_CMD_PIN, AMX_CMD_FETCH_EVENT, AMX_CMD_FORWARD, AMX_CMD_EDITS, AMX_CMD_ROOM_NOTIFY,
     AMX_CMD_KEYWORDS, AMX_CMD_KEYWORD, AMX_CMD_PASSWORD,
     AMX_CMD_DEACTIVATE, AMX_CMD_KNOCK, AMX_CMD_UPGRADE, AMX_CMD_ROOM_SUMMARY, AMX_CMD_SPACE_ROOMS,
-    AMX_CMD_SPACE_ADD, AMX_CMD_REPORT
+    AMX_CMD_SPACE_ADD, AMX_CMD_REPORT, AMX_CMD_RECEIPTS
 } AmxCmd;
 
 typedef enum {
@@ -214,6 +214,8 @@ int amx_async_room_summary(AmxAsync *a, const char *room, unsigned long tag);
 int amx_async_space_rooms(AmxAsync *a, const char *space_id, unsigned long tag);
 int amx_async_space_add(AmxAsync *a, const char *space_id, const char *room_id, int on, unsigned long tag);
 int amx_async_report(AmxAsync *a, const char *room_id, const char *event_id, const char *reason, unsigned long tag);
+/* the remembered read receipts of a room again (events, no result) */
+int amx_async_receipts(AmxAsync *a, const char *room_id);
 
 #ifdef __cplusplus
 }

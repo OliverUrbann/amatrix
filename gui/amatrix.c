@@ -137,8 +137,10 @@ typedef struct ChatWin {
     int uploading;                /* files on their way up */
     int n_cached;                 /* messages shown from the local history cache */
     int older_msgs, older_tries;  /* messages shown before "older" was pressed; pages tried */
+    int stick;                    /* the list showed its end before new lines came */
+    int receipts_asked;           /* remembered read receipts requested */
     int preview;                  /* a room we have not joined: reading only */
-    struct { char *user, *eid; } *readers;   /* who has read up to which message (receipts) */
+    struct { char *user, *eid; double ts; } *readers;   /* who has read up to which message */
     int n_readers;
     Object *pinbar;               /* "Angepinnt: ..." above the messages */
     Object *tombbar;              /* "replaced by a new room": a click goes there */
@@ -3281,6 +3283,38 @@ static int link_index(ChatWin *w, const char *url)
 }
 
 /* the preview line under message m (once) */
+/* NList counts the wrapped parts of an entry as positions too, and works
+ * them out only when it draws: a position noted before a change can be
+ * wrong after it.  So entries are found by their pointer, freshly. */
+static LONG entry_pos(Object *list, void *entry)
+{
+    LONG pos = MUIV_NList_GetPos_Start;
+    DoMethod(list, MUIM_NList_GetPos, entry, &pos);
+    return pos;
+}
+
+static void remove_entry(ChatWin *w, void *entry)
+{
+    LONG pos = entry_pos(w->list, entry);
+    if (pos < 0) return;
+    DoMethod(w->list, MUIM_NList_Remove, pos);
+    if (w->lines) w->lines--;
+}
+
+/* the position right after an entry (and its wrapped parts) */
+static LONG entry_end(Object *list, void *entry)
+{
+    LONG pos = entry_pos(list, entry), n = (LONG)xget(list, MUIA_NList_Entries);
+    void *x;
+    if (pos < 0) return MUIV_NList_Insert_Bottom;
+    for (pos++; pos < n; pos++) {
+        x = NULL;
+        DoMethod(list, MUIM_NList_GetEntry, pos, &x);
+        if (x != entry) break;
+    }
+    return pos >= n ? MUIV_NList_Insert_Bottom : pos;
+}
+
 static void insert_preview(ChatWin *w, ChatMsg *m, const Preview *pv)
 {
     char text[400];
@@ -3303,25 +3337,44 @@ static void insert_preview(ChatWin *w, ChatMsg *m, const Preview *pv)
     w->lines++;
 }
 
+static ChatMsg *find_msg(ChatWin *w, const char *eid);
+
 /* "gelesen von Alice, Bob" under the newest message each of them has read */
+/* where reader i is shown: at the message they have read up to - if that is
+ * their own (they wrote last), at the newest one from someone else before it */
+static const char *shown_at(ChatWin *w, int i)
+{
+    const char *u = w->readers[i].user, *eid = w->readers[i].eid;
+    ChatMsg *m = find_msg(w, eid), *best = NULL;
+    int j;
+    if (!m || !m->sender || strcmp(m->sender, u)) return eid;
+    for (j = 0; j < w->n_msgs; j++) {
+        ChatMsg *x = &w->msgs[j];
+        if (x->ts <= 0 || x->ts > m->ts || x == m || x->thread_root || !x->sender || !strcmp(x->sender, u)) continue;
+        if (!best || x->ts > best->ts) best = x;
+    }
+    return best ? best->eid : NULL;
+}
+
 static void readers_line(ChatWin *w, const char *eid)
 {
     char names[300] = "", text[400];
-    LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k, last = -1, have = -1;
+    LONG n = (LONG)xget(w->list, MUIA_NList_Entries), k;
     int i, cnt = 0;
-    Line *l;
+    Line *l, *last = NULL, *have = NULL;
     for (k = 0; k < n; k++) {
         Line *x = NULL;
         DoMethod(w->list, MUIM_NList_GetEntry, k, &x);
         if (!x || !x->eid || strcmp(x->eid, eid)) continue;
-        if (x->readers) { have = k; continue; }
-        if (!x->react) last = k;
+        if (x->readers) { have = x; continue; }
+        if (!x->react) last = x;
     }
     for (i = 0; opt_readers && i < w->n_readers; i++) {
         const char *u = w->readers[i].user, *nm = NULL;
         char lp[64], *loc;
         int j;
-        if (strcmp(w->readers[i].eid, eid)) continue;
+        const char *at = shown_at(w, i);
+        if (!at || strcmp(at, eid)) continue;
         for (j = 0; j < w->n_msgs; j++)
             if (w->msgs[j].sender && !strcmp(w->msgs[j].sender, u) && w->msgs[j].name) { nm = w->msgs[j].name; break; }
         if (!nm) {
@@ -3335,17 +3388,13 @@ static void readers_line(ChatWin *w, const char *eid)
         cnt++;
     }
     if (cnt > 5) snprintf(names + strlen(names), sizeof names - strlen(names), " und %d weitere", cnt - 5);
-    if (have >= 0) {
-        DoMethod(w->list, MUIM_NList_Remove, have);
-        if (w->lines) w->lines--;
-        if (last > have) last--;
-    }
-    if (!cnt || last < 0) return;
+    if (have) remove_entry(w, have);
+    if (!cnt || !last) return;
     snprintf(text, sizeof text, "      \33i\33P[808080]gelesen von %s", names);
     if (!(l = new_line(eid, text, strlen(text), 0))) return;
     l->readers = 1;
     remember_line(w, l);
-    DoMethod(w->list, MUIM_NList_InsertSingleWrap, l, last + 1, WRAPCOL0, ALIGN_LEFT);
+    DoMethod(w->list, MUIM_NList_InsertSingleWrap, l, entry_end(w->list, last), WRAPCOL0, ALIGN_LEFT);
     w->lines++;
 }
 
@@ -4100,13 +4149,16 @@ static void insert_text(ChatWin *w, const char *eid, const char *text, LONG pos,
         if (n < 64) ls[n++] = new_line(eid, p, nl ? (size_t)(nl - p) : strlen(p), undec);
         p = nl ? nl + 1 : NULL;
     } while (p);
+    /* NList counts the wrapped lines of an entry as positions too: in the
+     * middle (pos + i) a long line before would be split, so the lines go
+     * in backwards, all at pos (at the bottom: forwards) */
     for (i = 0; i < n; i++) {
-        if (!ls[i]) continue;
-        ls[i]->own = own;
-        remember_line(w, ls[i]);
-        DoMethod(w->list, MUIM_NList_InsertSingleWrap, ls[i],
-                 pos == MUIV_NList_Insert_Bottom ? pos : pos == MUIV_NList_Insert_Top ? i : pos + i,
-                 WRAPCOL0, ALIGN_LEFT);
+        int j = pos == MUIV_NList_Insert_Bottom ? i : n - 1 - i;
+        if (!ls[j]) continue;
+        ls[j]->own = own;
+        remember_line(w, ls[j]);
+        DoMethod(w->list, MUIM_NList_InsertSingleWrap, ls[j],
+                 pos == MUIV_NList_Insert_Top ? 0 : pos, WRAPCOL0, ALIGN_LEFT);
         w->lines++;
     }
     if (undec) w->n_undec++;
@@ -4821,9 +4873,10 @@ static char *message_text(ChatWin *w, const AmxEvent *e, int edited, int redacte
 static void rerender(ChatWin *w, ChatMsg *m)
 {
     AmxEvent e;
-    LONG n, k, first = -1;
+    LONG n, k, first = -1, last, start;
+    int n_rm = 0;
+    Line *prev = NULL, *rm[64], *anchor = NULL;
     char *text;
-    int again;
     memset(&e, 0, sizeof e);
     e.type = AMX_EV_MESSAGE;
     e.room_id = w->room_id;
@@ -4838,22 +4891,36 @@ static void rerender(ChatWin *w, ChatMsg *m)
     e.timestamp = m->ts;
     e.own = m->own;
     e.history = 1;
-    do {                                         /* away with the old lines (and pictures) */
-        again = 0;
-        n = (LONG)xget(w->list, MUIA_NList_Entries);
-        for (k = 0; k < n; k++) {
-            Line *l = NULL;
-            DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
-            if (!l || !l->eid || strcmp(l->eid, m->eid) || l->react || l->thr || (l->slice && !m->redacted)
-                || ((l->prev || l->pollrow) && !m->redacted) || l->readers) continue;
-            if (first < 0 || k < first) first = k;
-            DoMethod(w->list, MUIM_NList_Remove, k);
-            w->lines--;
-            again = 1;
-            break;
+    /* away with the old lines (and pictures): the message's lines lie
+     * together; searched from the bottom (changes are mostly recent) */
+    n = (LONG)xget(w->list, MUIA_NList_Entries);
+    for (last = n - 1; last >= 0; last--) {
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, last, &l);
+        if (l && l->eid && !strcmp(l->eid, m->eid)) break;
+    }
+    if (last < 0) return;
+    for (start = last; start > 0; start--) {
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, start - 1, &l);
+        if (!l || !l->eid || strcmp(l->eid, m->eid)) break;
+    }
+    for (k = start; k < n; k++) {                         /* each entry once; and what follows the first */
+        Line *l = NULL;
+        DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
+        if (!l || l == prev) continue;
+        prev = l;
+        if (k > last || l->react || l->thr || (l->slice && !m->redacted)
+            || ((l->prev || l->pollrow) && !m->redacted) || l->readers) {
+            if (n_rm && !anchor) anchor = l;               /* the new lines go in front of it */
+            if (k > last) break;
+            continue;
         }
-    } while (again);
-    if (first < 0) return;
+        if (n_rm < 64) rm[n_rm++] = l;
+    }
+    for (k = 0; k < n_rm; k++) remove_entry(w, rm[k]);
+    if (n_rm) first = anchor ? entry_pos(w->list, anchor) : MUIV_NList_Insert_Bottom;
+    if (!n_rm) return;
     if (!(text = message_text(w, &e, m->edited, m->redacted))) return;
     insert_text(w, m->eid, text, first, 0, m->own);
     free(text);
@@ -4875,7 +4942,9 @@ static void rerender_window(ChatWin *w)
 {
     int i;
     set(w->list, MUIA_NList_Quiet, TRUE);
-    for (i = 0; i < w->n_msgs; i++) rerender(w, &w->msgs[i]);
+    for (i = 0; i < w->n_msgs; i++) {
+        rerender(w, &w->msgs[i]);
+    }
     set(w->list, MUIA_NList_Quiet, FALSE);
 }
 
@@ -5213,16 +5282,21 @@ static void typing_event(const AmxEvent *e)
 
 /* a read receipt of someone else: our messages up to it get a check mark */
 static void readers_line(ChatWin *w, const char *eid);
-static void note_reader(ChatWin *w, const char *user, const char *eid)
+static void note_reader(ChatWin *w, const char *user, const char *eid, double ts)
 {
     int i;
     char *old = NULL;
+    const char *at;
     void *t;
     for (i = 0; i < w->n_readers; i++)
         if (!strcmp(w->readers[i].user, user)) {
             if (!strcmp(w->readers[i].eid, eid)) return;
-            old = w->readers[i].eid;
+            if (ts > 0 && w->readers[i].ts > ts) return;      /* an older one: they have read further */
+            at = shown_at(w, i);
+            old = at ? strdup(at) : NULL;
+            free(w->readers[i].eid);
             w->readers[i].eid = strdup(eid);
+            w->readers[i].ts = ts;
             break;
         }
     if (i == w->n_readers) {
@@ -5230,10 +5304,13 @@ static void note_reader(ChatWin *w, const char *user, const char *eid)
         w->readers = t;
         w->readers[i].user = strdup(user);
         w->readers[i].eid = strdup(eid);
+        w->readers[i].ts = ts;
         w->n_readers++;
     }
-    if (old) { readers_line(w, old); free(old); }
-    readers_line(w, eid);
+    at = shown_at(w, i);
+    if (old && (!at || strcmp(old, at))) readers_line(w, old);
+    free(old);
+    if (at) readers_line(w, at);
 }
 
 static void receipt_event(const AmxEvent *e)
@@ -5244,13 +5321,13 @@ static void receipt_event(const AmxEvent *e)
     int i;
     if (!r) return;
     for (w = chats; w; w = w->next)
-        if (!strcmp(w->room_id, e->room_id) && !w->thread_root && e->sender && e->event_id)
-            note_reader(w, e->sender, e->event_id);
-    for (w = chats; w; w = w->next)
         if (!strcmp(w->room_id, e->room_id)) {
             ChatMsg *m = find_msg(w, e->event_id);
             if (m && m->ts > 0) { ts = m->ts; break; }
         }
+    for (w = chats; w; w = w->next)
+        if (!strcmp(w->room_id, e->room_id) && !w->thread_root && e->sender && e->event_id)
+            note_reader(w, e->sender, e->event_id, ts);
     if (ts <= r->read_ts) return;
     r->read_ts = ts;
     for (w = chats; w; w = w->next) {
@@ -5356,10 +5433,24 @@ static void chat_event_in(ChatWin *w, const AmxEvent *e)
         }
     }
     if (e->type == AMX_EV_MESSAGE && !e->redacted) want_preview(w, find_msg(w, e->event_id));
+    if (e->type == AMX_EV_MESSAGE && !e->own && !e->thread_root && !w->thread_root && e->sender && e->event_id
+        && e->timestamp > 0) {
+        /* who writes has read everything before (as Element shows it) */
+        AmxEvent rc;
+        memset(&rc, 0, sizeof rc);
+        rc.type = AMX_EV_RECEIPT;
+        rc.room_id = e->room_id;
+        rc.sender = e->sender;
+        rc.event_id = e->event_id;
+        rc.timestamp = e->timestamp;
+        receipt_event(&rc);
+    }
     if (e->event_id) {
         int ri;
-        for (ri = 0; ri < w->n_readers; ri++)
-            if (!strcmp(w->readers[ri].eid, e->event_id)) { readers_line(w, e->event_id); break; }
+        for (ri = 0; ri < w->n_readers; ri++) {     /* a reader is (now) shown at it, or because of it */
+            const char *at = shown_at(w, ri);
+            if (at && (!strcmp(at, e->event_id) || !strcmp(w->readers[ri].eid, e->event_id))) readers_line(w, at);
+        }
     }
     if (e->type == AMX_EV_MESSAGE && e->poll && !e->redacted) add_poll(w, e);
     if (has_reactions(w, e->event_id)) refresh_reactions(w, e->event_id);   /* came first (history) */
@@ -5568,6 +5659,10 @@ static void history_done(const AmxMsg *m)
         /* the page was shown already (local history cache): the next one */
         amx_async_load_history(A, w->room_id, OLDER_PAGE, 0, TAG_HIST);
         return;
+    }
+    if (!w->loading_older && !w->thread_root && !w->receipts_asked) {
+        w->receipts_asked = 1;                       /* who has read what: also from before */
+        amx_async_receipts(A, w->room_id);
     }
     w->loading = 0;
     w->loading_older = 0;
@@ -6377,9 +6472,21 @@ static void handle_result(const AmxMsg *m)
     }
 }
 
+/* the newest line visible: the end of the list on screen */
+static int list_at_bottom(Object *l)
+{
+    LONG first = (LONG)xget(l, MUIA_NList_First), vis = (LONG)xget(l, MUIA_NList_Visible),
+         n = (LONG)xget(l, MUIA_NList_Entries);
+    return n == 0 || vis <= 0 || first + vis >= n;
+}
+
 static void handle_net(void)
 {
     AmxMsg *m;
+    ChatWin *w;
+    /* a window that showed its newest line keeps showing it, whatever lines come
+       (messages, "gelesen von", previews, reactions) */
+    for (w = chats; w; w = w->next) w->stick = !w->loading_older && list_at_bottom(w->list);
     while (A && (m = amx_async_get(A)) != NULL) {
         switch (m->type) {
         case AMX_MSG_EVENT:
@@ -6397,6 +6504,8 @@ static void handle_net(void)
         }
         amx_async_msg_free(m);
     }
+    for (w = chats; w; w = w->next)
+        if (w->stick && !w->loading_older) DoMethod(w->list, MUIM_NList_Jump, MUIV_NList_Jump_Bottom);
 }
 
 /* ----------------------------------------------------------------- ARexx */
@@ -7118,7 +7227,10 @@ HOOKPROTONH(rx_setoption_func, LONG, Object *obj, ULONG *arg)
     else if (!strcmp(n, "joins") || !strcmp(n, "24h") || !strcmp(n, "compact")) {
         ChatWin *cw;
         if (n[0] == 'j') opt_joins = v; else if (n[0] == '2') opt_24h = v; else opt_compact = v;
-        for (cw = chats; cw; cw = cw->next) rerender_window(cw);
+        time_t t0 = time(NULL);
+        int nm = 0;
+        for (cw = chats; cw; cw = cw->next) { rerender_window(cw); nm += cw->n_msgs; }
+        amx_log("display option %s: %d messages rebuilt in %ld s", n, nm, (long)(time(NULL) - t0));
     }
     else return 5;
     return 0;
@@ -7330,6 +7442,18 @@ HOOKPROTONH(rx_readers_func, LONG, Object *obj, ULONG *arg)
     return 0;
 }
 MakeStaticHook(rx_readers_hook, rx_readers_func);
+
+/* ATBOTTOM room: 1 if the chat window shows its newest line */
+HOOKPROTONH(rx_atbottom_func, LONG, Object *obj, ULONG *arg)
+{
+    Room *r = room_by_name((char *)arg[0]);
+    ChatWin *w = r ? chat_by_room(r->id) : NULL;
+    (void)obj;
+    if (!w) return 5;
+    rexx_result(list_at_bottom(w->list) ? "1" : "0");
+    return 0;
+}
+MakeStaticHook(rx_atbottom_hook, rx_atbottom_func);
 
 /* POLL room question answers ("a|b|c"), MULTI, HIDE: as from the window */
 HOOKPROTONH(rx_poll_func, LONG, Object *obj, ULONG *arg)
@@ -7767,6 +7891,7 @@ static struct MUI_Command rexx_cmds[] = {
     { "SPACELIST", NULL,              0, &rx_spacelist_hook, { 0 } },
     { "SPACEADD",  "ROOM/A,OFF/S",    2, &rx_spaceadd_hook, { 0 } },
     { "READERS",   "ROOM/F",          1, &rx_readers_hook,  { 0 } },
+    { "ATBOTTOM",  "ROOM/F",          1, &rx_atbottom_hook, { 0 } },
     { "POLL",      "ROOM/A,QUESTION/A,ANSWERS/A,MULTI/S,HIDE/S", 5, &rx_poll_hook, { 0 } },
     { "VOTE",      "ROOM/A,N/N/A",    2, &rx_vote_hook,     { 0 } },
     { "POLLROWS",  "ROOM/F",          1, &rx_pollrows_hook, { 0 } },

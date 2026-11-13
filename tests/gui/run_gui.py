@@ -77,6 +77,8 @@ class Amiga:
                 return True
             await asyncio.sleep(0.5)
         self.log(f"# amiga: rexx script not done in {secs}s")
+        self.timeouts = getattr(self, "timeouts", 0) + 1
+        await self.shot(f"timeout-{self.timeouts}")
         return False
 
     async def rexx(self, *cmds, secs=60):
@@ -206,6 +208,12 @@ async def store_part(ctx, amiga, online, was_verified=False):
         v = await amiga.until(cached, 60)
         check(v, f"after the restart the chat shows cached messages first ({v!r})")
 
+        async def read_again():
+            rc, r = await amiga.rexx("READ Alice")
+            return r.isdigit() and int(r) >= 1 and r
+        v = await amiga.until(read_again, 60)
+        check(v, f"after the restart: check marks on our read messages ({v!r})")
+
 
 
 async def scenario(ctx, amiga, srv, me):
@@ -284,6 +292,8 @@ async def scenario(ctx, amiga, srv, me):
         return "Amiga-Seite" in r and r
     v = await amiga.until(preview_line, 90)
     check(v and "Alles über den Amiga" in v, f"link preview under the message ({v!r})")
+    rc, r = await amiga.rexx("ATBOTTOM Alice")
+    check(r == "1", f"after the link preview the newest line is still in view ({r!r})")
     await amiga.shot("03d-link-preview")
     web.shutdown()
 
@@ -371,10 +381,10 @@ async def scenario(ctx, amiga, srv, me):
     await amiga.rexx("TYPE Alice")
 
     # display options, drafts, cursor up edits our newest message
-    await amiga.rexx("SETOPTION 24h 0")
+    await amiga.rexx("SETOPTION 24h 0", secs=300)
     rc, v = await amiga.rexx("LASTLINE Alice")
     check(re.search(r"\d\d:\d\d(AM|PM)", v or ""), f"12-hour clock ({v!r})")
-    await amiga.rexx("SETOPTION 24h 1")
+    await amiga.rexx("SETOPTION 24h 1", secs=300)
     for _ in range(5):                      # right after re-rendering all windows the Amiga is busy
         await amiga.rexx("TYPE Alice Ein Entwurf")
         rc0, inp = await amiga.rexx("INPUT Alice")
@@ -446,6 +456,8 @@ async def scenario(ctx, amiga, srv, me):
         return "gelesen von Alice" in r and r
     v = await amiga.until(readers, 60)
     check(v, f"and \"gelesen von Alice\" under it ({v!r})")
+    rc, v = await amiga.rexx("ATBOTTOM Alice")
+    check(v == "1", f"the window still shows the newest line ({v!r})")
     await amiga.shot("03c-read")
 
     # reporting a message to the admins
@@ -538,6 +550,9 @@ async def scenario(ctx, amiga, srv, me):
         return "rot-blau.png:2:" in r and "notiz.txt" in r and r
     v = await amiga.until(shown, 180)
     check(v, f"picture shown as a preview in strips, file listed ({v!r})")
+    await asyncio.sleep(2)
+    rc, r = await amiga.rexx("ATBOTTOM Alice")
+    check(r == "1", f"the picture came later: the newest line is still in view ({r!r})")
     rc, v = await amiga.rexx("LINKS Alice")
     check(v.endswith(" https://www.amiga.org/forum http://www.aminet.net") or v == "https://www.amiga.org/forum http://www.aminet.net",
           f"links found, sentence end left out ({v!r})")
@@ -704,6 +719,10 @@ async def scenario(ctx, amiga, srv, me):
     rc, _ = await amiga.rexx("EDITLAST Alice Klar doch, gerne")
     v = await texts(lambda r: "Klar doch, gerne ^i(bearbeitet)" in r)
     check(v, f"our edit shown in place, marked (bearbeitet) ({v!r})")
+    parts = v.split("|") if v else []
+    qi = next((i for i, t in enumerate(parts) if "\xbb Alice: Hallo" in t), -1)
+    ti = next((i for i, t in enumerate(parts) if "Klar doch, gerne" in t), -1)
+    check(0 <= qi and qi + 1 == ti, f"after it was rebuilt, the quote is still right above our reply ({qi}, {ti})")
     ok = await p.wait(lambda: any(((e.source.get("content") or {}).get("m.relates_to") or {}).get("rel_type")
                                   == "m.replace" for e in p.events), 120)
     check(ok, "Alice gets the edit")
@@ -1408,7 +1427,7 @@ async def main():
             for line in open(dbg, encoding="latin-1").read().splitlines():
                 if any(k in line for k in ("open file", "open link", "saved attachment", "started", "moderate",
                                            "room change", "INFOMEMBER", "sending file", "lookup event", "close_chat", "cursor up", "start_edit", "ARexx", "edit button", "older pressed",
-                                           "history_done",
+                                           "history_done", "display option",
                                            "decode")):
                     log(f"# amatrix log: {line}")
         alive = os.path.exists(os.path.join(extra, "Amatrix"))

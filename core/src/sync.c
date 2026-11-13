@@ -57,6 +57,20 @@ static void handle_ephemeral(AmxClient *c, const char *room_id, const cJSON *eve
                         e.event_id = x->string;
                         e.sender = u->string;
                         e.timestamp = cJSON_IsNumber(ts) ? ts->valuedouble : 0;
+                        {   /* remembered: a chat window opened later shows it too */
+                            cJSON *room = cJSON_GetObjectItemCaseSensitive(c->rooms, room_id), *rc, *old;
+                            if (room) {
+                                if (!(rc = cJSON_GetObjectItemCaseSensitive(room, "rc"))) rc = cJSON_AddObjectToObject(room, "rc");
+                                old = cJSON_GetObjectItemCaseSensitive(rc, u->string);
+                                if (!old || e.timestamp >= cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(old, "t"))) {
+                                    cJSON *n = cJSON_CreateObject();
+                                    cJSON_AddStringToObject(n, "e", x->string);
+                                    cJSON_AddNumberToObject(n, "t", e.timestamp);
+                                    cJSON_DeleteItemFromObjectCaseSensitive(rc, u->string);
+                                    cJSON_AddItemToObject(rc, u->string, n);
+                                }
+                            }
+                        }
                         amx__emit(c, &e);
                     }
                 }
@@ -331,5 +345,24 @@ static int load_rel(AmxClient *c, const char *room_id, const char *event_id, con
     }
     free(esc);
     free(eesc);
+    return n;
+}
+
+int amx_replay_receipts(AmxClient *c, const char *room_id)
+{
+    const cJSON *room = cJSON_GetObjectItemCaseSensitive(c->rooms, room_id), *x;
+    int n = 0;
+    cJSON_ArrayForEach(x, cJSON_GetObjectItemCaseSensitive(room, "rc")) {
+        AmxEvent e;
+        memset(&e, 0, sizeof e);
+        e.type = AMX_EV_RECEIPT;
+        e.room_id = room_id;
+        e.sender = x->string;
+        e.event_id = amx__jstr(x, "e");
+        e.timestamp = cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(x, "t"));
+        if (!e.event_id) continue;
+        if (c->fn) c->fn(c, &e, c->ud);
+        n++;
+    }
     return n;
 }

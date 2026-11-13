@@ -668,6 +668,9 @@ static void exec_cmd(AmxAsync *a, Cmd *c)
         r = amx_report_event(a->c, c->s1, c->s2, c->s3);
         post_result(a, c, r, c->s2);
         return;
+    case AMX_CMD_RECEIPTS:
+        amx_replay_receipts(a->c, c->s1);
+        return;
     case AMX_CMD_HISTORY_CACHE:
         amx_set_history_cache(a->c, c->i1);
         return;
@@ -1293,3 +1296,6 @@ int amx_async_report(AmxAsync *a, const char *room_id, const char *event_id, con
     put_cmd(a, c);
     return 0;
 }
+
+int amx_async_receipts(AmxAsync *a, const char *room_id)
+{ return cmd(a, AMX_CMD_RECEIPTS, 0, room_id, NULL, 0, 0); }

@@ -26,7 +26,7 @@ def venv_python():
 
 
 def ensure_venv():
-    """Create the venv with Synapse and matrix-nio[e2e] if it is missing."""
+    """Create the venv with Synapse, matrix-nio[e2e] and python-olm (recovery peer) if it is missing."""
     py = venv_python()
     if os.path.exists(py):
         r = subprocess.run([py, "-c", "import synapse, nio, olm, lxml, bs4"], capture_output=True)
@@ -35,7 +35,7 @@ def ensure_venv():
     print(f"[server] creating Python environment in {VENV} (once, takes a few minutes)", flush=True)
     subprocess.run([sys.executable, "-m", "venv", VENV], check=True)
     subprocess.run([py, "-m", "pip", "install", "-q", f"matrix-synapse[url-preview]=={SYNAPSE_VERSION}",
-                    "matrix-nio[e2e]"], check=True)
+                    "matrix-nio[e2e]", "python-olm"], check=True)
     return py
 
 
