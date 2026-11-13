@@ -78,10 +78,11 @@ enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
     ID_JOINWIN, ID_JOIN_SEARCH, ID_JOIN_GO, ID_LOGOUT, ID_ABOUT, ID_INVITE_GO, ID_RECOVERY, ID_RECOVERY_GO, ID_UNLOCK_GO, ID_STOREPASS, ID_STOREPASS_SET, ID_STOREPASS_DEL, ID_LEAVE, ID_MUTE, ID_SETTINGS, ID_ICONIFY, ID_SET_OK, ID_COPY, ID_INFO, ID_INFO_SAVE, ID_INFO_PIC, ID_INFO_KICK, ID_INFO_BAN, ID_INFO_UNBAN,
     ID_INFO_ROLE, ID_INFO_INVITE, ID_INFO_ADMIT, ID_PROFILE, ID_PROF_SAVE, ID_PROF_PIC, ID_SESS, ID_SESS_RENAME, ID_SESS_DELETE, ID_FAV, ID_LOWPRIO, ID_FIND, ID_FIND_GO, ID_MUIPREFS, ID_POLLNEW, ID_POLLSEND, ID_PIN, ID_FWD, ID_FWD_GO, ID_QUOTE, ID_COPYLINK, ID_EDITHIST, ID_UNIGNORE, ID_KW_ADD, ID_KW_DEL, ID_EXPORT, ID_ACCOUNT, ID_PW_GO, ID_DEACT_GO,
-    ID_REPORT, ID_PREVIEW, ID_SPACEWIN, ID_SPC_JOIN, ID_SPC_PREVIEW, ID_SPC_ADD, ID_SPC_REMOVE };
+    ID_REPORT, ID_PREVIEW, ID_SPACEWIN, ID_SPC_JOIN, ID_SPC_PREVIEW, ID_SPC_ADD, ID_SPC_REMOVE,
+    ID_P_DM, ID_P_INFO, ID_P_MENTION, ID_P_COPYID, ID_P_IGNORE, ID_P_UNIGNORE, ID_P_KICK, ID_P_BAN };
 enum { TAG_LOGIN = 1, TAG_NEWCHAT, TAG_NEWROOM, TAG_JOIN, TAG_SEND, TAG_HIST, TAG_AVATAR,
        TAG_READ, TAG_SEARCH, TAG_ACCEPT, TAG_LEAVE, TAG_LOGOUT, TAG_INVITE, TAG_RECOVERY, TAG_UNLOCK, TAG_STOREPASS,
-       TAG_REACT, TAG_THUMB, TAG_SAVE, TAG_THREAD, TAG_FILE, TAG_MEMBERS, TAG_RSETTINGS, TAG_ROOMSET, TAG_MODERATE, TAG_PROFILE, TAG_PROFAV, TAG_SETPROF, TAG_PREVIEW, TAG_DEVICES, TAG_DEVCHANGE, TAG_TAG, TAG_FIND, TAG_POLL, TAG_POLLVOTE, TAG_IGNORES, TAG_WHOIS, TAG_CMD, TAG_MEMB2, TAG_PIN, TAG_FETCH, TAG_FWD, TAG_EDITS, TAG_IGNLIST, TAG_KEYWORDS, TAG_PASSWORD, TAG_DEACT, TAG_SUMMARY, TAG_SPACEROOMS, TAG_SPACEADD, TAG_REPORT, TAG_SPACEJOIN };
+       TAG_REACT, TAG_THUMB, TAG_SAVE, TAG_THREAD, TAG_FILE, TAG_MEMBERS, TAG_RSETTINGS, TAG_ROOMSET, TAG_MODERATE, TAG_PROFILE, TAG_PROFAV, TAG_SETPROF, TAG_PREVIEW, TAG_DEVICES, TAG_DEVCHANGE, TAG_TAG, TAG_FIND, TAG_POLL, TAG_POLLVOTE, TAG_IGNORES, TAG_WHOIS, TAG_CMD, TAG_MEMB2, TAG_PIN, TAG_FETCH, TAG_FWD, TAG_EDITS, TAG_IGNLIST, TAG_KEYWORDS, TAG_PASSWORD, TAG_DEACT, TAG_SUMMARY, TAG_SPACEROOMS, TAG_SPACEADD, TAG_REPORT, TAG_SPACEJOIN, TAG_PERSON };
 
 /* ------------------------------------------------------------------ state */
 
@@ -252,6 +253,10 @@ static Img *imgs;
 static int n_imgs;
 static Alpha placeholder[N_PLACEHOLDER];
 static char *my_user, *cfg_server, *cfg_user;
+static Object *menustrip;                    /* the menu, to grey items out */
+static char *person_id;                       /* whose profile was asked for */
+static void update_menus(void);
+static void person_action(int id);
 static char *pending_open;        /* room to open as soon as it is in the list */
 static char prog_dir[256];
 static char status_buf[300];
@@ -5422,7 +5427,13 @@ static void chat_event_in(ChatWin *w, const AmxEvent *e)
         }
     } else text = format_event(e);
     if (!text) return;
-    insert_text(w, e->event_id, text, place_for(w, e), e->type == AMX_EV_UNDECRYPTABLE && e->event_id, e->own);
+    {
+        LONG at = place_for(w, e);
+        if (debug && w->room_id && strstr(text, "Nachricht "))
+            amx_log("place hist=%d cached=%d at=%ld older=%d top_day=%ld lines=%ld %.40s", e->history, e->cached, (long)at,
+                    w->loading_older, w->top_day, (long)w->lines, text);
+        insert_text(w, e->event_id, text, at, e->type == AMX_EV_UNDECRYPTABLE && e->event_id, e->own);
+    }
     amx_log("  inserted (%ld lines)", (long)w->lines);
     free(text);
     if (e->type == AMX_EV_MESSAGE && e->thread_count > 0 && !w->thread_root) {
@@ -6426,6 +6437,19 @@ static void handle_result(const AmxMsg *m)
             free(n);
         } else snprintf(w->err, sizeof w->err, "Erledigt.");
         update_status(w);
+        break;
+    }
+    case TAG_PERSON: {
+        ChatWin *w = current_chat();
+        char *n = local(m->status ? "" : (m->result ? m->result : ""));
+        if (m->status)
+            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Profil", (STRPTR)"*_OK",
+                        (STRPTR)"Profil nicht geladen:\n%s", (ULONG)(m->error ? m->error : ""));
+        else
+            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Profil", (STRPTR)"*_OK",
+                        (STRPTR)"\33c\33b%s\33n\n%s\n%s", (ULONG)(n && *n ? n : "(kein Name)"),
+                        (ULONG)(person_id ? person_id : ""), (ULONG)(m->result2 ? "mit Profilbild" : "ohne Profilbild"));
+        free(n);
         break;
     }
     case TAG_POLLVOTE:
@@ -7455,6 +7479,19 @@ HOOKPROTONH(rx_atbottom_func, LONG, Object *obj, ULONG *arg)
 }
 MakeStaticHook(rx_atbottom_hook, rx_atbottom_func);
 
+/* MENUON title: 1 if that menu item can be chosen now */
+static int menu_item_enabled(const char *title);      /* below the menu table */
+
+HOOKPROTONH(rx_menuon_func, LONG, Object *obj, ULONG *arg)
+{
+    int r;
+    (void)obj;
+    if (!arg[0] || (r = menu_item_enabled((const char *)arg[0])) < 0) return 5;
+    rexx_result(r ? "1" : "0");
+    return 0;
+}
+MakeStaticHook(rx_menuon_hook, rx_menuon_func);
+
 /* POLL room question answers ("a|b|c"), MULTI, HIDE: as from the window */
 HOOKPROTONH(rx_poll_func, LONG, Object *obj, ULONG *arg)
 {
@@ -7622,6 +7659,8 @@ HOOKPROTONH(rx_action_func, LONG, Object *obj, ULONG *arg)
     } else if (!strcmp(what, "quote")) start_quote(w, m);
     else if (!strcmp(what, "copylink")) copy_link(w, m);
     else if (!strcmp(what, "edithist")) open_edit_history(w, m);
+    else if (!strcmp(what, "mention")) { set(w->win, MUIA_Window_Activate, TRUE); person_action(ID_P_MENTION); }
+    else if (!strcmp(what, "copyid")) { set(w->win, MUIA_Window_Activate, TRUE); person_action(ID_P_COPYID); }
     else if (!strcmp(what, "report")) amx_async_report(A, w->room_id, m->eid, arg[2] ? (char *)arg[2] : "Test", TAG_REPORT);
     else if (!strcmp(what, "forward") && arg[2] && (to = room_by_name((char *)arg[2])) != NULL)
         amx_async_forward(A, to->id, w->room_id, m->eid, TAG_FWD);
@@ -7892,6 +7931,7 @@ static struct MUI_Command rexx_cmds[] = {
     { "SPACEADD",  "ROOM/A,OFF/S",    2, &rx_spaceadd_hook, { 0 } },
     { "READERS",   "ROOM/F",          1, &rx_readers_hook,  { 0 } },
     { "ATBOTTOM",  "ROOM/F",          1, &rx_atbottom_hook, { 0 } },
+    { "MENUON",    "TITLE/F",         1, &rx_menuon_hook,   { 0 } },
     { "POLL",      "ROOM/A,QUESTION/A,ANSWERS/A,MULTI/S,HIDE/S", 5, &rx_poll_hook, { 0 } },
     { "VOTE",      "ROOM/A,N/N/A",    2, &rx_vote_hook,     { 0 } },
     { "POLLROWS",  "ROOM/F",          1, &rx_pollrows_hook, { 0 } },
@@ -7934,40 +7974,74 @@ static struct MUI_Command rexx_cmds[] = {
 /* ------------------------------------------------------------------- GUI */
 
 static struct NewMenu menu[] = {
-    { NM_TITLE, (STRPTR)"Amatrix",           NULL, 0, 0, NULL },
+    { NM_TITLE, (STRPTR)"Amatrix", NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Über Amatrix ...", (STRPTR)"?", 0, 0, (APTR)ID_ABOUT },
+    { NM_ITEM,  (STRPTR)"Ikonifizieren", (STRPTR)"I", 0, 0, (APTR)ID_ICONIFY },
+    { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Abmelden", NULL, 0, 0, (APTR)ID_LOGOUT },
+    { NM_ITEM,  (STRPTR)"Beenden", (STRPTR)"Q", 0, 0, (APTR)MUIV_Application_ReturnID_Quit },
+    { NM_TITLE, (STRPTR)"Raum", NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Neuer Chat ...", (STRPTR)"N", 0, 0, (APTR)ID_NEWCHAT },
+    { NM_ITEM,  (STRPTR)"Neuer Raum ...", (STRPTR)"A", 0, 0, (APTR)ID_NEWROOM },
     { NM_ITEM,  (STRPTR)"Raum betreten ...", (STRPTR)"R", 0, 0, (APTR)ID_JOINWIN },
-    { NM_ITEM,  (STRPTR)"Neuer Chat ...",    (STRPTR)"N", 0, 0, (APTR)ID_NEWCHAT },
-    { NM_ITEM,  (STRPTR)"Neuer Raum ...",    NULL, 0, 0, (APTR)ID_NEWROOM },
-    { NM_ITEM,  (STRPTR)"Raum verlassen ...", (STRPTR)"L", 0, 0, (APTR)ID_LEAVE },
-    { NM_ITEM,  (STRPTR)"Raum stummschalten", (STRPTR)"M", 0, 0, (APTR)ID_MUTE },
-    { NM_ITEM,  (STRPTR)"Mitglieder und Einstellungen ...", (STRPTR)"T", 0, 0, (APTR)ID_INFO },
-    { NM_ITEM,  (STRPTR)"Nachricht kopieren", (STRPTR)"K", 0, 0, (APTR)ID_COPY },
-    { NM_ITEM,  (STRPTR)"Link zur Nachricht kopieren", NULL, 0, 0, (APTR)ID_COPYLINK },
-    { NM_ITEM,  (STRPTR)"Zitieren",          (STRPTR)"Z", 0, 0, (APTR)ID_QUOTE },
-    { NM_ITEM,  (STRPTR)"Weiterleiten ...",  (STRPTR)"W", 0, 0, (APTR)ID_FWD },
-    { NM_ITEM,  (STRPTR)"Anpinnen an/aus",   (STRPTR)"P", 0, 0, (APTR)ID_PIN },
-    { NM_ITEM,  (STRPTR)"Bearbeitungsverlauf ...", NULL, 0, 0, (APTR)ID_EDITHIST },
-    { NM_ITEM,  (STRPTR)"Nachricht melden ...", NULL, 0, 0, (APTR)ID_REPORT },
     { NM_ITEM,  (STRPTR)"Space durchstöbern ...", NULL, 0, 0, (APTR)ID_SPACEWIN },
-    { NM_ITEM,  (STRPTR)"Chat exportieren ...", NULL, 0, 0, (APTR)ID_EXPORT },
-    { NM_ITEM,  (STRPTR)"Nachrichten suchen ...", (STRPTR)"D", 0, 0, (APTR)ID_FIND },
-    { NM_ITEM,  (STRPTR)"Umfrage erstellen ...", (STRPTR)"U", 0, 0, (APTR)ID_POLLNEW },
-    { NM_ITEM,  (STRPTR)"Favorit an/aus",    (STRPTR)"F", 0, 0, (APTR)ID_FAV },
+    { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Mitglieder und Einstellungen ...", (STRPTR)"T", 0, 0, (APTR)ID_INFO },
+    { NM_ITEM,  (STRPTR)"Stummschalten", (STRPTR)"M", 0, 0, (APTR)ID_MUTE },
+    { NM_ITEM,  (STRPTR)"Favorit an/aus", (STRPTR)"F", 0, 0, (APTR)ID_FAV },
     { NM_ITEM,  (STRPTR)"Niedrige Priorität an/aus", NULL, 0, 0, (APTR)ID_LOWPRIO },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Sicherheitsschlüssel eingeben ...", (STRPTR)"S", 0, 0, (APTR)ID_RECOVERY },
-    { NM_ITEM,  (STRPTR)"Passwort für Amatrix-Daten ...", (STRPTR)"P", 0, 0, (APTR)ID_STOREPASS },
+    { NM_ITEM,  (STRPTR)"Nachrichten suchen ...", (STRPTR)"D", 0, 0, (APTR)ID_FIND },
+    { NM_ITEM,  (STRPTR)"Umfrage erstellen ...", (STRPTR)"U", 0, 0, (APTR)ID_POLLNEW },
+    { NM_ITEM,  (STRPTR)"Chat exportieren ...", NULL, 0, 0, (APTR)ID_EXPORT },
+    { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Raum verlassen ...", (STRPTR)"L", 0, 0, (APTR)ID_LEAVE },
+    { NM_TITLE, (STRPTR)"Nachricht", NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Zitieren", (STRPTR)"Z", 0, 0, (APTR)ID_QUOTE },
+    { NM_ITEM,  (STRPTR)"Weiterleiten ...", (STRPTR)"W", 0, 0, (APTR)ID_FWD },
+    { NM_ITEM,  (STRPTR)"Kopieren", (STRPTR)"K", 0, 0, (APTR)ID_COPY },
+    { NM_ITEM,  (STRPTR)"Link zur Nachricht kopieren", NULL, 0, 0, (APTR)ID_COPYLINK },
+    { NM_ITEM,  (STRPTR)"Anpinnen an/aus", (STRPTR)"P", 0, 0, (APTR)ID_PIN },
+    { NM_ITEM,  (STRPTR)"Bearbeitungsverlauf ...", NULL, 0, 0, (APTR)ID_EDITHIST },
+    { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Melden ...", NULL, 0, 0, (APTR)ID_REPORT },
+    { NM_TITLE, (STRPTR)"Person", NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Direktnachricht", (STRPTR)"B", 0, 0, (APTR)ID_P_DM },
+    { NM_ITEM,  (STRPTR)"Profil anzeigen ...", NULL, 0, 0, (APTR)ID_P_INFO },
+    { NM_ITEM,  (STRPTR)"Erwähnen", (STRPTR)"H", 0, 0, (APTR)ID_P_MENTION },
+    { NM_ITEM,  (STRPTR)"Benutzer-ID kopieren", NULL, 0, 0, (APTR)ID_P_COPYID },
+    { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Ignorieren ...", NULL, 0, 0, (APTR)ID_P_IGNORE },
+    { NM_ITEM,  (STRPTR)"Nicht mehr ignorieren", NULL, 0, 0, (APTR)ID_P_UNIGNORE },
+    { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Aus dem Raum werfen ...", NULL, 0, 0, (APTR)ID_P_KICK },
+    { NM_ITEM,  (STRPTR)"Im Raum sperren ...", NULL, 0, 0, (APTR)ID_P_BAN },
+    { NM_TITLE, (STRPTR)"Konto", NULL, 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Eigenes Profil ...", (STRPTR)"O", 0, 0, (APTR)ID_PROFILE },
-    { NM_ITEM,  (STRPTR)"Sitzungen ...",     (STRPTR)"G", 0, 0, (APTR)ID_SESS },
-    { NM_ITEM,  (STRPTR)"Konto ...",          NULL, 0, 0, (APTR)ID_ACCOUNT },
+    { NM_ITEM,  (STRPTR)"Sitzungen ...", (STRPTR)"G", 0, 0, (APTR)ID_SESS },
+    { NM_ITEM,  (STRPTR)"Passwort und Konto ...", NULL, 0, 0, (APTR)ID_ACCOUNT },
+    { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)"Sicherheitsschlüssel eingeben ...", (STRPTR)"S", 0, 0, (APTR)ID_RECOVERY },
+    { NM_ITEM,  (STRPTR)"Passwort für Amatrix-Daten ...", NULL, 0, 0, (APTR)ID_STOREPASS },
+    { NM_TITLE, (STRPTR)"Einstellungen", NULL, 0, 0, NULL },
     { NM_ITEM,  (STRPTR)"Einstellungen ...", (STRPTR)"E", 0, 0, (APTR)ID_SETTINGS },
     { NM_ITEM,  (STRPTR)"MUI-Einstellungen ...", NULL, 0, 0, (APTR)ID_MUIPREFS },
-    { NM_ITEM,  (STRPTR)"Ikonifizieren",     (STRPTR)"I", 0, 0, (APTR)ID_ICONIFY },
-    { NM_ITEM,  (STRPTR)"Abmelden",          NULL, 0, 0, (APTR)ID_LOGOUT },
-    { NM_ITEM,  (STRPTR)"Über Amatrix ...",  (STRPTR)"?", 0, 0, (APTR)ID_ABOUT },
-    { NM_ITEM,  (STRPTR)"Beenden",           (STRPTR)"Q", 0, 0, (APTR)MUIV_Application_ReturnID_Quit },
     { NM_END,   NULL, NULL, 0, 0, NULL }
 };
+
+static int menu_item_enabled(const char *title)
+{
+    struct NewMenu *nm;
+    for (nm = menu; nm->nm_Type != NM_END; nm++)
+        if (nm->nm_Type == NM_ITEM && nm->nm_Label != NM_BARLABEL && nm->nm_UserData
+            && !strncmp((const char *)nm->nm_Label, title, strlen(title))) {
+            Object *it = menustrip ? (Object *)DoMethod(menustrip, MUIM_FindUData, (ULONG)nm->nm_UserData) : NULL;
+            if (!it) return -1;
+            update_menus();
+            return xget(it, MUIA_Menuitem_Enabled) ? 1 : 0;
+        }
+    return -1;
+}
 
 static Object *build_app(void)
 {
@@ -7981,7 +8055,7 @@ static Object *build_app(void)
         MUIA_Application_Base, "AMATRIX",
         MUIA_Application_Commands, rexx_cmds,
         MUIA_Application_DiskObject, dob_app,
-        MUIA_Application_Menustrip, MUI_MakeObject(MUIO_MenustripNM, (ULONG)menu, 0),
+        MUIA_Application_Menustrip, menustrip = MUI_MakeObject(MUIO_MenustripNM, (ULONG)menu, 0),
 
         SubWindow, win_main = WindowObject,
             MUIA_Window_Title, "Amatrix",
@@ -8584,6 +8658,118 @@ static Object *build_app(void)
     return a;
 }
 
+/* ---- the "Person" menu: the sender of the marked message */
+
+static ChatMsg *person_target(ChatWin **wp)
+{
+    ChatWin *w = current_chat();
+    ChatMsg *m = w ? marked_msg(w) : NULL;
+    if (wp) *wp = w;
+    if (!m || m->own || !m->sender || !*m->sender) return NULL;
+    return m;
+}
+
+static void person_action(int id)
+{
+    ChatWin *w;
+    ChatMsg *m = person_target(&w);
+    char *nm;
+    if (!m) {
+        MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
+                    (STRPTR)"Bitte erst im Chatfenster eine Nachricht\nvon einer anderen Person markieren.", 0);
+        return;
+    }
+    nm = local(m->name && *m->name ? m->name : m->sender);
+    switch (id) {
+    case ID_P_DM:
+        new_chat(m->sender);
+        break;
+    case ID_P_INFO:
+        free(person_id);
+        person_id = strdup(m->sender);
+        amx_async_profile_of(A, m->sender, TAG_PERSON);
+        break;
+    case ID_P_MENTION: {
+        char *t = (char *)xget(w->input, MUIA_String_Contents), *nt;
+        if (!t) t = "";
+        if (w->n_ment < 16 && (nt = malloc(strlen(t) + strlen(nm) + 3)) != NULL) {
+            sprintf(nt, "%s%s%s ", t, *t && t[strlen(t) - 1] != ' ' ? " " : "", nm);
+            w->ment_name[w->n_ment] = amx_from_local(nm);
+            w->ment_id[w->n_ment] = strdup(m->sender);
+            w->n_ment++;
+            set(w->input, MUIA_String_Contents, nt);
+            set(w->input, MUIA_String_BufferPos, strlen(nt));
+            free(nt);
+            set(w->win, MUIA_Window_ActiveObject, w->input);
+        }
+        break;
+    }
+    case ID_P_COPYID:
+        snprintf(w->err, sizeof w->err, clip_write(m->sender) ? "Benutzer-ID kopiert" : "Kopieren hat nicht geklappt");
+        update_status(w);
+        break;
+    case ID_P_UNIGNORE:
+        amx_async_ignore(A, m->sender, 0, TAG_CMD);
+        break;
+    case ID_P_IGNORE:
+        if (MUI_Request(app, w->win, 0, (STRPTR)"Ignorieren", (STRPTR)"_Ignorieren|*_Abbrechen",
+                        (STRPTR)"\33c\33b%s\33n\nignorieren? Nachrichten und Einladungen\nvon dieser Person werden ausgeblendet.\n(Rückgängig: Person-Menü oder Einstellungen)", (ULONG)nm) == 1)
+            amx_async_ignore(A, m->sender, 1, TAG_CMD);
+        break;
+    case ID_P_KICK: case ID_P_BAN:
+        if (MUI_Request(app, w->win, 0, (STRPTR)(id == ID_P_KICK ? "Rauswerfen" : "Sperren"),
+                        (STRPTR)(id == ID_P_KICK ? "_Rauswerfen|*_Abbrechen" : "_Sperren|*_Abbrechen"),
+                        (STRPTR)(id == ID_P_KICK ? "\33c\33b%s\33n\naus diesem Raum werfen?" : "\33c\33b%s\33n\nin diesem Raum sperren?"), (ULONG)nm) == 1) {
+            amx_async_moderate(A, w->room_id, m->sender, id == ID_P_KICK ? "kick" : "ban", "", 0, TAG_CMD);
+            snprintf(w->err, sizeof w->err, "Bitte warten ...");
+            update_status(w);
+        }
+        break;
+    }
+    free(nm);
+}
+
+/* menu items that need something: a room selected, a chat window, a marked message ... */
+
+static void menu_enable(ULONG id, int on)
+{
+    Object *it = menustrip ? (Object *)DoMethod(menustrip, MUIM_FindUData, id) : NULL;
+    if (it && (int)xget(it, MUIA_Menuitem_Enabled) != !!on) set(it, MUIA_Menuitem_Enabled, !!on);
+}
+
+static void update_menus(void)
+{
+    Room *r = NULL;
+    ChatWin *w = current_chat();
+    ChatMsg *m = w ? marked_msg(w) : NULL;
+    static int menu_sig = -1;
+    int in = my_user != NULL, room, chat, msg, per, space, rp, sig;
+    if (!menustrip) return;
+    DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
+    room = in && r && !r->invited;
+    chat = in && w && !w->preview;
+    msg = chat && m && !m->redacted;
+    per = msg && !m->own && m->sender;
+    rp = per && !w->thread_root;
+    space = in && n_spaces && cyc_space && xget(cyc_space, MUIA_Cycle_Active) > 0;
+    sig = in | room << 1 | chat << 2 | msg << 3 | per << 4 | rp << 5 | space << 6 | (r != NULL) << 7
+          | (w != NULL) << 8 | (msg && m->edited) << 9;
+    if (sig == menu_sig) return;                    /* nothing changed: this runs after every event */
+    menu_sig = sig;
+    menu_enable(ID_NEWCHAT, in); menu_enable(ID_NEWROOM, in); menu_enable(ID_JOINWIN, in);
+    menu_enable(ID_SPACEWIN, space);
+    menu_enable(ID_INFO, room); menu_enable(ID_MUTE, room); menu_enable(ID_FAV, room); menu_enable(ID_LOWPRIO, room);
+    menu_enable(ID_LEAVE, in && r != NULL);
+    menu_enable(ID_FIND, in); menu_enable(ID_POLLNEW, chat); menu_enable(ID_EXPORT, w != NULL);
+    menu_enable(ID_QUOTE, msg); menu_enable(ID_FWD, msg); menu_enable(ID_COPY, msg); menu_enable(ID_COPYLINK, msg);
+    menu_enable(ID_PIN, msg); menu_enable(ID_EDITHIST, msg && m->edited); menu_enable(ID_REPORT, msg);
+    menu_enable(ID_P_DM, per); menu_enable(ID_P_INFO, per); menu_enable(ID_P_MENTION, per); menu_enable(ID_P_COPYID, per);
+    menu_enable(ID_P_IGNORE, per); menu_enable(ID_P_UNIGNORE, per);
+    menu_enable(ID_P_KICK, rp); menu_enable(ID_P_BAN, rp);
+    menu_enable(ID_PROFILE, in); menu_enable(ID_SESS, in); menu_enable(ID_ACCOUNT, in);
+    menu_enable(ID_RECOVERY, in); menu_enable(ID_STOREPASS, in); menu_enable(ID_LOGOUT, in);
+}
+
 static void handle_id(ULONG id)
 {
     switch (id) {
@@ -8838,6 +9024,10 @@ static void handle_id(ULONG id)
         }
         break;
     }
+    case ID_P_DM: case ID_P_INFO: case ID_P_MENTION: case ID_P_COPYID: case ID_P_IGNORE: case ID_P_UNIGNORE:
+    case ID_P_KICK: case ID_P_BAN:
+        person_action((int)id);
+        break;
     case ID_POLLSEND:    poll_send(); break;
     case ID_MUIPREFS:    DoMethod(app, MUIM_Application_OpenConfigWindow, 0, NULL); break;
     case ID_SESS_RENAME: sess_rename(); break;
@@ -8985,6 +9175,7 @@ int main(int argc, char **argv)
         if (id) handle_id(id);
         for (w = chats; w; w = nx) { nx = w->next; if (w->close_req) close_chat(w); }
         handle_net();
+        update_menus();
         if (A && my_user) send_read_markers();
         if (sigs) {
             sigs = Wait(sigs | (A ? amx_async_sigmask(A) : 0) | SIGBREAKF_CTRL_C);

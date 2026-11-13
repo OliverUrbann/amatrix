@@ -460,8 +460,28 @@ async def scenario(ctx, amiga, srv, me):
     check(v == "1", f"the window still shows the newest line ({v!r})")
     await amiga.shot("03c-read")
 
+    # menus: items that need a marked message / a person are greyed out otherwise
+    await amiga.rexx("MARK Alice Hallo Alice, hier schreibt der Amiga")      # our own message
+    rc, quote_on = await amiga.rexx("MENUON Zitieren")
+    rc, dm_own = await amiga.rexx("MENUON Direktnachricht")
+    rc, kick_own = await amiga.rexx("MENUON Aus dem Raum werfen")
+    check(quote_on == "1" and dm_own == "0" and kick_own == "0",
+          f"menu: own message can be quoted, but is no person ({quote_on!r}, {dm_own!r}, {kick_own!r})")
+    await amiga.rexx("MARK Alice Hier: http")                                # Alice's message
+    rc, dm_on = await amiga.rexx("MENUON Direktnachricht")
+    rc, men_on = await amiga.rexx("MENUON Erw\xe4hnen")
+    rc, ign_on = await amiga.rexx("MENUON Ignorieren")
+    rc, edh = await amiga.rexx("MENUON Bearbeitungsverlauf")
+    check(dm_on == "1" and men_on == "1" and ign_on == "1" and edh == "0",
+          f"menu: person items usable for Alice's message, edit history not ({dm_on!r}, {men_on!r}, {ign_on!r}, {edh!r})")
+    await amiga.rexx("ACTION Alice mention")
+    rc, typed = await amiga.rexx("INPUT Alice")
+    check("Alice" in typed, f"menu Person/Erw\xe4hnen puts the name into the input ({typed!r})")
+    await amiga.rexx("ACTION Alice copyid")
+    rc, clip = await amiga.rexx("CLIP")
+    check(clip.startswith("@") and ":" in clip, f"menu Person/Benutzer-ID kopieren ({clip!r})")
+    await amiga.rexx("TYPE Alice")
     # reporting a message to the admins
-    await amiga.rexx("MARK Alice Hier: http")
     await amiga.rexx("ACTION Alice report Spam")
 
     async def reported():
@@ -1427,7 +1447,7 @@ async def main():
             for line in open(dbg, encoding="latin-1").read().splitlines():
                 if any(k in line for k in ("open file", "open link", "saved attachment", "started", "moderate",
                                            "room change", "INFOMEMBER", "sending file", "lookup event", "close_chat", "cursor up", "start_edit", "ARexx", "edit button", "older pressed",
-                                           "history_done", "display option",
+                                           "history_done", "display option", "place hist",
                                            "decode")):
                     log(f"# amatrix log: {line}")
         alive = os.path.exists(os.path.join(extra, "Amatrix"))

@@ -22,6 +22,30 @@ Danach meldet sich Amatrix beim nächsten Start von selbst an (die
 Anmeldung und die Schlüssel liegen in der Schublade "Amatrix-xxxxxxxx"
 neben dem Programm - diese Schublade bitte nicht weitergeben).
 
+Die Menüs
+---------
+Amatrix:        Über Amatrix, Ikonifizieren, Abmelden, Beenden
+Raum:           Neuer Chat, Neuer Raum, Raum betreten, Space durchstöbern,
+                Mitglieder und Einstellungen, Stummschalten, Favorit,
+                Niedrige Priorität, Nachrichten suchen, Umfrage erstellen,
+                Chat exportieren, Raum verlassen
+                (wirkt auf den Raum, der in der Liste markiert ist, bzw.
+                auf das aktive Chatfenster)
+Nachricht:      Zitieren, Weiterleiten, Kopieren, Link kopieren, Anpinnen,
+                Bearbeitungsverlauf, Melden
+                (wirkt auf die im Chatfenster markierte Nachricht)
+Person:         Direktnachricht, Profil anzeigen, Erwähnen, Benutzer-ID
+                kopieren, Ignorieren / Nicht mehr ignorieren, Aus dem Raum
+                werfen, Im Raum sperren
+                (wirkt auf den Absender der markierten Nachricht, nicht auf
+                die eigenen; Rauswerfen und Sperren nur in Räumen, und der
+                Server entscheidet, ob du das darfst)
+Konto:          Eigenes Profil, Sitzungen, Passwort und Konto,
+                Sicherheitsschlüssel eingeben, Passwort für Amatrix-Daten
+Einstellungen:  Einstellungen, MUI-Einstellungen
+Was gerade nicht geht (keine Nachricht markiert, kein Raum gewählt), ist
+grau.
+
 Bedienung
 ---------
 - Liste:      Chats und Räume mit Bild; darunter die letzte Nachricht
@@ -60,7 +84,7 @@ Bedienung
               Mitglieder mit Rolle (Gründer, Admin, Moderator, Mitglied),
               einladen, rauswerfen, sperren/entsperren, Rolle zuweisen.
               Was du in dem Raum nicht darfst, ist ausgegraut.
-- Menü "Nachricht kopieren" (Amiga-K): die markierte Nachricht im
+- Menü Nachricht/Kopieren (Amiga-K): die markierte Nachricht im
               Chatfenster in die Zwischenablage
 - Chatfenster: lädt beim Öffnen die letzten 30 Nachrichten.
               Werkzeugleiste oben (Maus darüber zeigt die Erklärung):
@@ -186,7 +210,7 @@ Benachrichtigungen, Ikonifizieren, Einstellungen
   Herald nicht, gibt es keine.  Sie erscheinen für neue Nachrichten, wenn
   das Fenster des Raums nicht vorne ist oder Amatrix ikonifiziert ist.  Ein
   Doppelklick auf die Benachrichtigung öffnet den Chat.
-- Menü "Raum stummschalten" (Amiga-M) für den gewählten Raum: keine
+- Menü Raum/Stummschalten (Amiga-M) für den gewählten Raum: keine
   Benachrichtigungen, in der Liste steht "(stumm)".
 - Menü "Ikonifizieren" (Amiga-I) oder das Ikonifizieren-Symbol im Fenster:
   Amatrix wird ein AppIcon auf der Workbench.  Bei ungelesenen Nachrichten
