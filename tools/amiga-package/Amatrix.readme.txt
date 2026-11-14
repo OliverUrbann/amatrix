@@ -7,56 +7,134 @@ Architecture: m68k-amigaos >= 3.0.0
 Requires:     MUI 5 (NList, BetterString), AmiSSL 5, TCP/IP stack, 68020+
 Distribution: Aminet
 
+=== English ===
+
 Amatrix is a native Matrix client for classic AmigaOS, written in C for
 the 68020 and better (developed and tested on a Vampire V4SA with real
-Kickstart and Workbench 3.9).  It talks to a Matrix server directly:
-no bridge, no proxy.
+Kickstart and Workbench 3.9).  It talks to a Matrix server directly: no
+bridge, no proxy.
 
-Matrix is an open protocol for chat (matrix.org); Amatrix works with
-Synapse, Element's servers and others, and chats with Element, FluffyChat
-and so on.  The user interface is MUI in the style of the old ICQ: a list
-of chats and rooms with pictures, a chat window for each room.
+Matrix is an open protocol for chat (matrix.org).  Amatrix works with
+Synapse and other servers and chats with Element, FluffyChat and so on.
+The user interface is MUI in the style of the old ICQ: a list of chats and
+rooms with pictures on the left, one chat window per room.
 
 Features
 
 - End-to-end encryption (Olm/Megolm) in both directions, key backup and
   security key, so that encrypted history is readable (libolm, ported)
-- Direct chats, rooms, spaces, invitations, room settings and members
-  with roles, ban/remove, knocking, room upgrades
+- Direct chats, rooms, spaces, invitations, room settings, members with
+  roles, remove/ban, knocking, room upgrades
 - Replies, edits, deletes, threads, reactions, pinned messages, polls,
   formatted messages (bold, italic, lists, code), Markdown while typing
-- Pictures, files, voice messages: previews in the chat, send by file
+- Pictures, files, voice messages: previews in the chat, send with the file
   requester or by dropping Workbench icons into the window
 - Link previews, locations, emojis as small pictures, typing notices and
   read receipts ("read by ...")
-- Search in all rooms, export a chat as text or HTML, drafts, history
-  kept locally and shown at once at start
+- Search in all rooms, export a chat as text or HTML, drafts, history kept
+  locally and shown at once at start
 - Notifications through Herald, AppIcon with unread marker when iconified
 - Password for the stored data (AES-256), several sessions, own profile
 - Full ARexx port (AMATRIX.1)
-- English and German (locale.library catalogs); more languages need only
-  a translation file, no programming
+- Languages (locale.library catalogs): English (built in), Deutsch,
+  Francais, Espanol, Italiano, Nederlands, Svenska.  Amatrix follows the
+  Locale preferences; the tool type or argument LANGUAGE=english (or
+  deutsch, ...) forces one.  The translations other than German and
+  English are machine-assisted and not yet reviewed by native speakers.
+  A new language needs only a translation file (see the source).
 
 Requirements
 
 - 68020 or better; an FPU is recommended
-- MUI 5 with NList.mcc and BetterString.mcc (MUI 5 "contrib")
+- MUI 5 with NList.mcc and BetterString.mcc (MUI 5 "contrib" package)
 - AmiSSL 5.x and a TCP/IP stack with bsdsocket.library
-- Optional: Herald (util/cdity/Herald), openurl.library, opusdec
+- Optional: Herald (util/cdity/Herald) for notifications,
+  openurl.library to open links, opusdec for voice messages
 
 Installation
 
-Unpack the archive and double click Amatrix.  At the first start enter
-server, user name and password (the password is not stored).  The drawer
-Amatrix-xxxxxxxx that appears next to the program holds your login and
-keys - protect it with a password (menu Account) and do not pass it on.
-See ReadMe.txt (English) or LiesMich.txt (Deutsch) for all functions.
+Unpack the archive anywhere and double click Amatrix.  At the first start
+enter server, user name and password (the password is not stored).  The
+drawer Amatrix-xxxxxxxx that appears next to the program holds your login
+and keys: protect it with a password (menu Account) and do not pass it on.
 
-Not included: video and voice calls, device verification by emoji
-comparison (entering the security key verifies the device).
+Using it
 
-Source code and bug reports: https://github.com/OliverUrbann/Amatrix
+- Double click a room in the list to open its chat window; type at the
+  bottom and press Return.  Hold the mouse over a toolbar button for its
+  help (older messages, reply, edit, delete, react, send file, invite,
+  members and settings, leave).
+- The menus: Amatrix (about, iconify, log out, quit), Room (new chat, new
+  room, join, search, poll, export, leave ...), Message (quote, forward,
+  copy, pin, report ...), Person (direct message, profile, mention,
+  ignore, remove, ban), Account (profile, sessions, password, security
+  key, password for Amatrix data), Settings.  Items that do not apply to
+  the current selection are greyed out.
+- Account/Enter security key: type the security key (or passphrase) from
+  Element.  This device is then verified and old messages are decrypted.
+- Type /help in the input field for the Element-style commands.
 
-History
+Not included: voice and video calls, verification by emoji comparison
+(entering the security key verifies the device).
 
-0.1  First release.
+Source code, bug reports, how to add a language:
+https://github.com/OliverUrbann/Amatrix
+
+Known bug: thin horizontal lines sometimes appear in picture previews
+(NList drawing); a complete redraw shows the picture right.
+
+=== Deutsch ===
+
+Amatrix ist ein nativer Matrix-Client fuer das klassische AmigaOS, in C
+fuer 68020 und besser geschrieben (entwickelt und getestet auf einer
+Vampire V4SA mit echtem Kickstart und Workbench 3.9).  Er spricht direkt
+mit dem Matrix-Server: keine Bruecke, kein Proxy.
+
+Matrix ist ein offenes Chat-Protokoll (matrix.org).  Amatrix funktioniert
+mit Synapse und anderen Servern und chattet mit Element, FluffyChat usw.
+Die Oberflaeche ist MUI im Stil des alten ICQ: links die Liste der Chats
+und Raeume mit Bildern, pro Raum ein Chatfenster.
+
+Funktionen: Ende-zu-Ende-Verschluesselung (Olm/Megolm) in beide
+Richtungen, Schluesselsicherung und Sicherheitsschluessel (verschluesselter
+Verlauf lesbar); Direktchats, Raeume, Spaces, Einladungen, Raum-
+einstellungen, Mitglieder mit Rollen; Antworten, Bearbeiten, Loeschen,
+Threads, Reaktionen, angepinnte Nachrichten, Umfragen, formatierte
+Nachrichten, Markdown beim Schreiben; Bilder, Dateien und Sprach-
+nachrichten; Link-Vorschau, Emojis als Bildchen, Tippanzeige und
+Lesebestaetigungen; Suche, Export als Text oder HTML, Entwuerfe, lokal
+gespeicherter Verlauf; Benachrichtigungen ueber Herald, AppIcon;
+Passwort fuer die gespeicherten Daten (AES-256); mehrere Sitzungen;
+vollstaendiger ARexx-Port (AMATRIX.1).
+
+Sprachen (locale.library-Kataloge): Englisch (eingebaut), Deutsch,
+Franzoesisch, Spanisch, Italienisch, Niederlaendisch, Schwedisch.  Amatrix
+richtet sich nach den Locale-Voreinstellungen; mit dem Tooltype bzw.
+Argument LANGUAGE=english (oder deutsch, ...) erzwingt man eine Sprache.
+Die Uebersetzungen ausser Deutsch und Englisch sind maschinell erstellt
+und noch nicht von Muttersprachlern geprueft.
+
+Voraussetzungen: 68020 oder besser (FPU empfohlen); MUI 5 mit NList.mcc
+und BetterString.mcc; AmiSSL 5.x und ein TCP/IP-Stack.  Optional: Herald,
+openurl.library, opusdec.
+
+Installation: Archiv entpacken, "Amatrix" doppelklicken.  Beim ersten
+Start Server, Benutzer und Passwort eingeben (das Passwort wird nicht
+gespeichert).  Die Schublade Amatrix-xxxxxxxx neben dem Programm enthaelt
+Anmeldung und Schluessel: mit einem Passwort schuetzen (Menue Konto) und
+nicht weitergeben.
+
+Bedienung: Doppelklick auf einen Raum oeffnet das Chatfenster, unten
+tippen, Return sendet.  Die Werkzeugleiste erklaert sich, wenn man die
+Maus darueber haelt.  Menues: Amatrix, Raum, Nachricht, Person, Konto,
+Einstellungen; was gerade nicht geht, ist grau.  Konto/Sicherheitsschluessel
+eingeben: Schluessel oder Passphrase aus Element eintippen, danach ist
+das Geraet verifiziert und alte Nachrichten werden entschluesselt.
+/help im Eingabefeld zeigt die Befehle wie in Element.
+
+Nicht enthalten: Sprach- und Videoanrufe, Verifizieren per Emoji-Vergleich.
+Quellcode und Fehlermeldungen: https://github.com/OliverUrbann/Amatrix
+
+History / Verlauf
+
+0.1  First release / Erste Version.

@@ -4,7 +4,8 @@ palette (3 bitplanes), with a second image for the selected state.
 
     make-icon.py OUT.info [STACK] [new]
 
-"new": the AppIcon for unread messages (a pink badge on the bubble).
+"new": the AppIcon for unread messages (a pink badge on the bubble);
+"drawer": a drawer icon; "text": a document icon for ReadMe files.
 The picture is drawn in icon_art.py.
 
 After the classic planar images an OS 3.5 colour icon follows (IFF FORM
@@ -69,14 +70,10 @@ def colour_icon(art1, art2):
     return b"FORM" + struct.pack(">I", len(body)) + body
 
 
-def main():
-    out = sys.argv[1]
-    stack = int(sys.argv[2]) if len(sys.argv) > 2 else 65536
-    badge = len(sys.argv) > 3 and sys.argv[3] == "new"
-    art1, art2 = icon_art.draw(badge=badge), icon_art.selected(badge=badge)
+def build(art1, art2, wbtype=3, stack=65536, tool=None, drawer=False):
+    """WBTOOL=3, WBDRAWER=2, WBPROJECT=4; tool = DefaultTool of a project"""
     w, h, img1 = image(art1)
     _, _, img2 = image(art2)
-    # struct Gadget (44 bytes)
     gadget = struct.pack(">IhhhhHHHIIIIIHI",
                          0, 0, 0, w, h + 1,
                          0x0006,          # GADGIMAGE | GADGHIMAGE: second image when selected
@@ -87,13 +84,38 @@ def main():
                          1)               # UserData: revision 1 (OS 2 icon)
     assert len(gadget) == 44
     disk = struct.pack(">HH", 0xE310, 1) + gadget + struct.pack(
-        ">BBIIiiIII", 3, 0,               # WBTOOL
-        0, 0,                             # DefaultTool, ToolTypes
+        ">BBIIiiIII", wbtype, 0,
+        1 if tool else 0, 0,              # DefaultTool, ToolTypes
         -0x80000000, -0x80000000,         # NO_ICON_POSITION
-        0, 0, stack)
+        1 if drawer else 0, 0, stack)
     assert len(disk) == 78
+    dd = b""
+    if drawer:                            # DrawerData: NewWindow (48 bytes) + CurrentX/Y
+        dd = struct.pack(">HHHHBBIIIIIIIHHHHH", 60, 40, 400, 200, 255, 255,
+                         0, 0xF, 0, 0, 0, 0, 0, 90, 40, 65535, 65535, 1)
+        dd += struct.pack(">ii", 0, 0)
+        assert len(dd) == 56
+    dt = b""
+    if tool:
+        s = tool.encode("latin-1") + b"\0"
+        dt = struct.pack(">I", len(s)) + s
+    return disk + dd + img1 + img2 + dt + colour_icon(art1, art2)
+
+
+def main():
+    out = sys.argv[1]
+    stack = int(sys.argv[2]) if len(sys.argv) > 2 else 65536
+    kind = sys.argv[3] if len(sys.argv) > 3 else ""
+    if kind == "drawer":
+        data = build(icon_art.drawer(False), icon_art.drawer(True), 2, 4096, drawer=True)
+    elif kind == "text":
+        data = build(icon_art.document(False), icon_art.document(True), 4, 4096,
+                     tool="SYS:Utilities/MultiView")
+    else:
+        badge = kind == "new"
+        data = build(icon_art.draw(badge=badge), icon_art.selected(badge=badge), 3, stack)
     with open(out, "wb") as f:
-        f.write(disk + img1 + img2 + colour_icon(art1, art2))
+        f.write(data)
 
 
 if __name__ == "__main__":

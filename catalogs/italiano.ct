@@ -1,0 +1,1443 @@
+## version $VER: amatrix.catalog 1.0 (14.11.2026)
+## language italiano
+## codeset 0
+; Amatrix: translation into italiano (UTF-8 here, Latin-1 in the catalog).
+; Machine-assisted, not yet reviewed by a native speaker - corrections welcome.
+;
+MSG_LOAD_20_OLDER_MESSAGES
+Carica 20 messaggi più vecchi
+; Load 20 older messages
+MSG_START_OF_THE_CHAT_NO
+Inizio della chat - nessun messaggio più vecchio
+; Start of the chat - no older messages
+MSG_INVITE_SOMEONE_TO_THIS_ROOM
+Invita qualcuno in questa stanza
+; Invite someone to this room
+MSG_LEAVE_THIS_ROOM
+Lascia questa stanza
+; Leave this room
+MSG_REPLY_TO_THE_MARKED_MESSAGE
+Rispondi al messaggio selezionato
+; Reply to the marked message
+MSG_EDIT_YOUR_MARKED_MESSAGE
+Modifica il tuo messaggio selezionato
+; Edit your marked message
+MSG_DELETE_YOUR_MARKED_MESSAGE
+Elimina il tuo messaggio selezionato
+; Delete your marked message
+MSG_SEND_A_PICTURE_OR_FILE
+Invia un'immagine o un file\n(o trascina icone sulla finestra)
+; Send a picture or file\n(or drop icons on the window)
+MSG_MEMBERS_AND_ROOM_SETTINGS
+Membri e impostazioni della stanza
+; Members and room settings
+MSG_REACT_TO_THE_MARKED_MESSAGE
+Reagisci al messaggio selezionato\n(nessuna selezione: al più recente)
+; React to the marked message\n(nothing marked: to the newest)
+MSG_ALL_MESSAGES
+tutti i messaggi
+; all messages
+MSG_DIRECT_MESSAGES_AND_MENTIONS
+messaggi diretti e menzioni
+; direct messages and mentions
+MSG_ONLINE_VERIFIED
+Online - %s (verificato)
+; Online - %s (verified)
+MSG_ONLINE
+Online - %s
+; Online - %s
+MSG_LOADING_OLDER_MESSAGES
+Caricamento dei messaggi più vecchi ...
+; Loading older messages ...
+MSG_LOADING_HISTORY
+Caricamento della cronologia ...
+; Loading history ...
+MSG_UPLOADING_FILES
+Invio di %d file ...
+; Uploading %d files ...
+MSG_UPLOADING_FILE
+Invio del file ...
+; Uploading file ...
+MSG_SENDING_MESSAGES
+Invio di %d messaggi ...
+; Sending %d messages ...
+MSG_SENDING
+Invio ...
+; Sending ...
+MSG_INVITING
+Invito ...
+; Inviting ...
+MSG_ARE_TYPING
+stanno scrivendo
+; are typing
+MSG_IS_TYPING
+sta scrivendo
+; is typing
+MSG_END_TO_END_ENCRYPTED
+crittografato end-to-end
+; end-to-end encrypted
+MSG_NOT_ENCRYPTED
+non crittografato
+; not encrypted
+MSG_INVITATION_FROM
+Invito da %s
+; Invitation from %s
+MSG_YOU
+Tu: %s
+; You: %s
+MSG_DRAFT
+\33bBozza:\33n\33i %.150s
+; \33bDraft:\33n\33i %.150s
+MSG_REPLACED
+\33n\33i (sostituita)
+; \33n\33i (replaced)
+MSG_MUTED
+\33n\33i (silenziata)
+; \33n\33i (muted)
+MSG_ALL_ROOMS
+Tutte le stanze
+; All rooms
+MSG_SHOW_ONLY_THE_ROOMS_OF
+Mostra solo le stanze di uno spazio
+; Show only the rooms of a space
+MSG_ME_TEXT_ACTION_NAME_TEXT
+/me testo       - azione (\"* nome testo\")\n/shrug [testo]  - alzata di spalle davanti\n/spoiler testo   - come spoiler (nascosto)\n/plain testo     - invia senza formattazione\n/html testo      - il testo è HTML\n/nick nome       - il tuo nome visualizzato\n/myroomnick nome - nome solo in questa stanza\n/topic testo     - argomento della stanza\n/roomname nome   - nome della stanza\n/invite @user    - invita\n/join #stanza:server - entra in una stanza\n/knock #stanza:server - chiedi di entrare\n/upgraderoom [versione] - nuova versione della stanza (admin)\n/part            - lascia la stanza\n/ignore @user, /unignore @user\n/whois @user     - chi è?\n/op @user [livello], /deop @user\n/kick @user [motivo], /ban @user [motivo], /unban @user\n/jumptodate GG.MM.AAAA - vai a una data\n//testo          - testo che inizia con /
+; /me text         - action (\"* name text\")\n/shrug [text]    - shrug in front\n/spoiler text    - as a spoiler (hidden)\n/plain text      - send without formatting\n/html text       - text is HTML\n/nick name       - your display name\n/myroomnick name - name in this room only\n/topic text      - topic of the room\n/roomname name   - name of the room\n/invite @user    - invite\n/join #room:server - join a room\n/knock #room:server - ask to be let in\n/upgraderoom [version] - new room version (admins)\n/part            - leave the room\n/ignore @user, /unignore @user\n/whois @user     - who is that?\n/op @user [level], /deop @user\n/kick @user [reason], /ban @user [reason], /unban @user\n/jumptodate DD.MM.YYYY - jump to a date\n//text           - text starting with /
+MSG_PLEASE_ADD_A_TEXT
+Inserisci un testo.
+; Please add a text.
+MSG_PLEASE_ADD_A_NAME
+Inserisci un nome.
+; Please add a name.
+MSG_PLEASE_WAIT
+Attendere ...
+; Please wait ...
+MSG_PLEASE_ADD_A_USER_NAME
+Inserisci un utente (@nome:server).
+; Please add a user (@name:server).
+MSG_PLEASE_ADD_A_ROOM_NAME
+Inserisci una stanza (#nome:server).
+; Please add a room (#name:server).
+MSG_UPGRADE_CANCEL
+_Aggiorna|*_Annulla
+; _Upgrade|*_Cancel
+MSG_UPGRADE_THE_ROOM_TO_A
+Aggiornare la stanza a una nuova versione?\nIl server crea una nuova stanza;\ntutti devono trasferirsi lì.
+; Upgrade the room to a new room version?\nThe server creates a new room for it;\neveryone has to move there.
+MSG_UPGRADING
+Aggiornamento ...
+; Upgrading ...
+MSG_KNOCKING
+Richiesta di accesso ...
+; Knocking ...
+MSG_AMATRIX_COMMANDS
+Amatrix - Comandi
+; Amatrix - Commands
+MSG_OK
+*_OK
+; *_OK
+MSG_UNKNOWN_COMMAND_HELP_SHOWS_THEM
+Comando sconosciuto /%s - /help li mostra tutti.
+; Unknown command /%s - /help shows them all.
+MSG_SEND_A_PICTURE_OR_FILE_2
+Invia un'immagine o un file
+; Send a picture or file
+MSG_INVITE_TO
+Invita in \33b%s
+; Invite to \33b%s
+MSG_DECLINE_CANCEL
+*_Rifiuta|_Annulla
+; *_Decline|_Cancel
+MSG_DECLINE_THE_INVITATION_TO
+Rifiutare l'invito a \33b%s\33n?
+; Decline the invitation to \33b%s\33n?
+MSG_LEAVE_CANCEL
+*_Lascia|_Annulla
+; *_Leave|_Cancel
+MSG_REALLY_LEAVE_YOU_WILL_GET
+Lasciare davvero \33b%s\33n?\n\nNon riceverai più messaggi da questa stanza.\nPer tornare serve un nuovo invito\n(stanze pubbliche: \"Entra in una stanza\").
+; Really leave \33b%s\33n?\n\nYou will get no more messages from this room.\nThe way back is a new invitation\n(public rooms: \"Join room\").
+MSG_LEAVING
+Uscita da %s ...
+; Leaving %s ...
+MSG_INVITATION_ONLY
+Solo su invito
+; Invitation only
+MSG_PUBLIC
+Pubblica
+; Public
+MSG_ON_REQUEST_KNOCK
+Su richiesta (bussare)
+; On request (knock)
+MSG_MEMBERS_WHOLE_HISTORY
+Membri: tutta la cronologia
+; Members: whole history
+MSG_MEMBERS_SINCE_THEIR_INVITATION
+Membri: dall'invito
+; Members: since their invitation
+MSG_MEMBERS_SINCE_THEY_JOINED
+Membri: dall'ingresso
+; Members: since they joined
+MSG_ANYONE_EVEN_WITHOUT_JOINING
+Chiunque (anche senza entrare)
+; Anyone (even without joining)
+MSG_MEMBER
+Membro
+; Member
+MSG_MODERATOR
+Moderatore
+; Moderator
+MSG_ADMIN
+Admin
+; Admin
+MSG_DEFAULT
+Predefinito
+; Default
+MSG_ALL_MESSAGES_2
+Tutti i messaggi
+; All messages
+MSG_ONLY_MENTIONS_AND_KEYWORDS
+Solo menzioni e parole chiave
+; Only mentions and keywords
+MSG_OFF_MUTED
+Disattivate (silenziata)
+; Off (muted)
+MSG_FOUNDER
+Fondatore
+; Founder
+MSG_MEMBER_2
+Membro+
+; Member+
+MSG_NAME
+Nome
+; Name
+MSG_ROLE
+Ruolo
+; Role
+MSG_MATRIX_ID
+ID Matrix
+; Matrix ID
+MSG_SAVING
+Salvataggio ...
+; Saving ...
+MSG_ROOM
+Stanza: %s
+; Room: %s
+MSG_LOADING
+Caricamento ...
+; Loading ...
+MSG_ONLY_ADMINS_AND_MODERATORS_MAY
+Solo admin e moderatori possono cambiare questo.
+; Only admins and moderators may change things here.
+MSG_TURN_ON_CANCEL
+_Attiva|*_Annulla
+; _Turn on|*_Cancel
+MSG_ENCRYPTION_CANNOT_BE_TURNED_OFF
+La crittografia non può più essere disattivata.\nAttivarla?
+; Encryption cannot be turned off again afterwards.\nTurn it on?
+MSG_NOTHING_CHANGED
+Nulla è cambiato.
+; Nothing changed.
+MSG_PICTURE_FOR_THE_ROOM_PNG
+Immagine della stanza (PNG, JPEG, GIF)
+; Picture for the room (PNG, JPEG, GIF)
+MSG_UPLOADING_THE_PICTURE
+Caricamento dell'immagine ...
+; Uploading the picture ...
+MSG_YES_NO
+_Sì|*_No
+; _Yes|*_No
+MSG_BAN_CANNOT_JOIN_AGAIN
+Bandire %s? (Non potrà più entrare.)
+; Ban %s? (Cannot join again.)
+MSG_THAT_DID_NOT_WORK
+\33bNon ha funzionato:\33n %.240s
+; \33bThat did not work:\33n %.240s
+MSG_NO_PICTURE_YET
+Ancora nessuna immagine.
+; No picture yet.
+MSG_PROFILE_PICTURE_PNG_JPEG_GIF
+Immagine del profilo (PNG, JPEG, GIF)
+; Profile picture (PNG, JPEG, GIF)
+MSG_SESSION
+Sessione
+; Session
+MSG_LAST_ACTIVE
+Ultima attività
+; Last active
+MSG_STATUS
+Stato
+; Status
+MSG_THIS_ONE
+questa
+; this one
+MSG_VERIFIED
+verificata
+; verified
+MSG_NOT_VERIFIED
+non verificata
+; not verified
+MSG_WITHOUT_KEYS
+senza chiavi
+; without keys
+MSG_PLEASE_ENTER_YOUR_PASSWORD_TO
+Inserisci la tua password per disconnetterti.
+; Please enter your password to log out.
+MSG_LOG_OUT_CANCEL
+_Disconnetti|*_Annulla
+; _Log out|*_Cancel
+MSG_LOG_OUT_THE_SESSION_IT
+Disconnettere la sessione \"%s\"?\nNon sarà più connessa.
+; Log out the session \"%s\"?\nIt will no longer be logged in.
+MSG_LOGGING_OUT
+Disconnessione ...
+; Logging out ...
+MSG_THE_MARKED_ROOM
+La stanza selezionata
+; The marked room
+MSG_WHEN
+Quando
+; When
+MSG_ROOM_2
+Stanza
+; Room
+MSG_MESSAGE
+Messaggio
+; Message
+MSG_PLEASE_MARK_A_ROOM_IN
+Seleziona prima una stanza nell'elenco.
+; Please mark a room in the list first.
+MSG_SEARCHING
+Ricerca ...
+; Searching ...
+MSG_HITS_DOUBLE_CLICK_OPENS_THE
+%d risultati - doppio clic apre la chat
+; %d hits - double-click opens the chat
+MSG_NOTHING_FOUND_ENCRYPTED_ROOMS_ONLY
+Nessun risultato. (Stanze crittografate: solo la cronologia salvata.)
+; Nothing found. (Encrypted rooms: only the stored history.)
+MSG_PLEASE_SELECT_A_ROOM_IN
+Seleziona prima una stanza nell'elenco.
+; Please select a room in the list first.
+MSG_PLEASE_OPEN_THE_CHAT_WINDOW
+Apri prima la finestra di chat della stanza.
+; Please open the chat window of the room first.
+MSG_A_POLL_NEEDS_A_QUESTION
+Un sondaggio richiede una domanda e almeno due risposte.
+; A poll needs a question and at least two answers.
+MSG_DIR_INFO
+%s%.150s%s%s, %d membri%s%s
+; %s%.150s%s%s, %d members%s%s
+MSG_HISTORY_READABLE_WITHOUT_JOINING
+, cronologia leggibile senza entrare
+; , history readable without joining
+MSG_HISTORY_ONLY_AFTER_JOINING
+, cronologia solo dopo l'ingresso
+; , history only after joining
+MSG_YOU_ARE_IN
+, ci sei dentro
+; , you are in
+MSG_MEMBERS_2
+Membri
+; Members
+MSG_THE_SPACE
+(lo spazio)
+; (the space)
+MSG_JOINED
+entrato
+; joined
+MSG_SPACE
+Spazio
+; Space
+MSG_SPACE_2
+Spazio: %s
+; Space: %s
+MSG_ROOMS_DOUBLE_CLICK_OPEN_OR
+%d stanze - doppio clic: apri o anteprima
+; %d rooms - double-click: open or preview
+MSG_PLEASE_MARK_A_ROOM_IN_2
+Seleziona prima una stanza nell'elenco delle stanze.
+; Please mark a room in the room list first.
+MSG_ADDING
+Aggiunta ...
+; Adding ...
+MSG_PLEASE_MARK_A_ROOM_FIRST
+Seleziona prima una stanza.
+; Please mark a room first.
+MSG_REMOVING
+Rimozione ...
+; Removing ...
+MSG_JOINING
+Ingresso ...
+; Joining ...
+MSG_THE_HISTORY_IS_ONLY_AVAILABLE
+La cronologia è disponibile solo dopo l'ingresso.
+; The history is only available after joining.
+MSG_SPAM
+Spam
+; Spam
+MSG_OFFENSIVE
+Offensivo
+; Offensive
+MSG_OTHER
+Altro
+; Other
+MSG_REPORT_MESSAGE
+Segnala messaggio
+; Report message
+MSG_SPAM_OFFENSIVE_OTHER_CANCEL
+_Spam|_Offensivo|_Altro|*_Annulla
+; _Spam|_Offensive|_Other|*_Cancel
+MSG_REPORT_THIS_MESSAGE_TO_THE
+Segnalare questo messaggio agli admin del tuo server?\nPerché?
+; Report this message to the admins of your server?\nWhy?
+MSG_REPORTING
+Segnalazione ...
+; Reporting ...
+MSG_AND_MORE
+ e altri %d
+;  and %d more
+MSG_808080_READ_BY
+      \33i\33P[808080]letto da %s
+;       \33i\33P[808080]read by %s
+MSG_VOTE
+voto
+; vote
+MSG_VOTES
+voti
+; votes
+MSG_ENDED
+ - terminato
+;  - ended
+MSG_RESULT_AT_THE_END
+ (risultato alla fine)
+;  (result at the end)
+MSG_SEVERAL_CHOICES
+, più scelte
+; , several choices
+MSG_END
+  \33n\33o[%d@%ld] termina
+;   \33n\33o[%d@%ld] end
+MSG_END_CANCEL
+_Termina|*_Annulla
+; _End|*_Cancel
+MSG_END_THE_POLL_NO_MORE
+Terminare il sondaggio? Dopo non conteranno più voti.
+; End the poll? No more votes count after that.
+MSG_THUMBS_UP
+Pollice su
+; Thumbs up
+MSG_THUMBS_DOWN
+Pollice giù
+; Thumbs down
+MSG_HEART
+Cuore
+; Heart
+MSG_SMILE
+Sorriso
+; Smile
+MSG_LAUGH
+Risata
+; Laugh
+MSG_THINKING
+Pensieroso
+; Thinking
+MSG_EYES
+Occhi
+; Eyes
+MSG_CELEBRATE
+Festa
+; Celebrate
+MSG_ROCKET
+Razzo
+; Rocket
+MSG_REACTION
+Reazione
+; Reaction
+MSG_THREAD
+Discussione - %s
+; Thread - %s
+MSG_PREVIEW
+Anteprima: %s
+; Preview: %s
+MSG_CLICK_GO_TO_THE_PINNED
+Clic: vai al messaggio fissato
+; Click: go to the pinned message
+MSG_THIS_ROOM_WAS_REPLACED_BY
+\33c\33bQuesta stanza è stata sostituita da una nuova.\33n Clic: vai lì
+; \33c\33bThis room was replaced by a new one.\33n Click: go there
+MSG_CANCEL
+_Annulla
+; _Cancel
+MSG_PREVIEW_YOU_ARE_NOT_IN
+Anteprima - non sei ancora nella stanza
+; Preview - you are not in the room yet
+MSG_LOCATION
+%s\33b%s:\33n Posizione: %s
+; %s\33b%s:\33n Location: %s
+MSG_POLL
+%s\33b%s:\33n Sondaggio: \33b%s
+; %s\33b%s:\33n Poll: \33b%s
+MSG_VOICE_MESSAGE
+%s\33b%s:\33n [Messaggio vocale %ld:%02ld]
+; %s\33b%s:\33n [Voice message %ld:%02ld]
+MSG_VOICE_MESSAGE_2
+%s\33b%s:\33n [Messaggio vocale]
+; %s\33b%s:\33n [Voice message]
+MSG_ENCRYPTED_THE_KEY_ONLY_STARTS
+%s\33b%s:\33n \33i(crittografato, la chiave inizia solo con un messaggio successivo)
+; %s\33b%s:\33n \33i(encrypted, the key only starts with a later message)
+MSG_ENCRYPTED_NO_KEY_ON_THIS
+%s\33b%s:\33n \33i(crittografato, nessuna chiave su questo dispositivo)
+; %s\33b%s:\33n \33i(encrypted, no key on this device)
+MSG_ENCRYPTED_NOT_READABLE
+%s\33b%s:\33n \33i(crittografato, illeggibile: %s)
+; %s\33b%s:\33n \33i(encrypted, not readable: %s)
+MSG_FILE
+File
+; File
+MSG_THE_LINK_COULD_NOT_BE
+Impossibile aprire il link\n(openurl.library installata?):\n\n%s
+; The link could not be opened\n(openurl.library installed?):\n\n%s
+MSG_LOADING_2
+Caricamento di %s ...
+; Loading %s ...
+MSG_SAVE_FILE
+Salva file
+; Save file
+MSG_SAVING_2
+Salvataggio di %s ...
+; Saving %s ...
+MSG_LOADING_FAILED
+Caricamento non riuscito: %.280s
+; Loading failed: %.280s
+MSG_SAVED
+Salvato: %.140s
+; Saved: %.140s
+MSG_AN_OLDER_MESSAGE
+\33i  \xbb (un messaggio più vecchio)
+; \33i  \xbb (an older message)
+MSG_X
+\33i  \xbb %s: %s
+; \33i  \xbb %s: %s
+MSG_EDITED
+%s \33i(modificato)
+; %s \33i(edited)
+MSG_SUNDAY
+domenica
+; Sunday
+MSG_MONDAY
+lunedì
+; Monday
+MSG_TUESDAY
+martedì
+; Tuesday
+MSG_WEDNESDAY
+mercoledì
+; Wednesday
+MSG_THURSDAY
+giovedì
+; Thursday
+MSG_FRIDAY
+venerdì
+; Friday
+MSG_SATURDAY
+sabato
+; Saturday
+MSG_JANUARY
+gennaio
+; January
+MSG_FEBRUARY
+febbraio
+; February
+MSG_MARCH
+marzo
+; March
+MSG_APRIL
+aprile
+; April
+MSG_MAY
+maggio
+; May
+MSG_JUNE
+giugno
+; June
+MSG_JULY
+luglio
+; July
+MSG_AUGUST
+agosto
+; August
+MSG_SEPTEMBER
+settembre
+; September
+MSG_OCTOBER
+ottobre
+; October
+MSG_NOVEMBER
+novembre
+; November
+MSG_DECEMBER
+dicembre
+; December
+MSG_TEXT_COPIED
+Testo copiato
+; Text copied
+MSG_COPYING_DID_NOT_WORK
+Copia non riuscita
+; Copying did not work
+MSG_REPLY_TO
+Risposta a%s
+; Reply to%s
+MSG_EDIT_MESSAGE_RETURN_SAVES
+Modifica messaggio (Invio salva)
+; Edit message (Return saves)
+MSG_DELETE_CANCEL
+*_Elimina|_Annulla
+; *_Delete|_Cancel
+MSG_DELETE_THIS_MESSAGE_FOR_EVERYONE
+Eliminare questo messaggio per tutti?
+; Delete this message for everyone?
+MSG_THREAD_2
+      \33o[%d@%ld] \33iDiscussione: %d %s
+;       \33o[%d@%ld] \33iThread: %d %s
+MSG_REPLY
+risposta
+; reply
+MSG_REPLIES
+risposte
+; replies
+MSG_IS_KNOCKING_LET_THEM_IN
+%s sta bussando - fallo entrare nella finestra della stanza (i)
+; %s is knocking - let them in in the room window (i)
+MSG_THE_HISTORY_DOES_NOT_GO
+La cronologia non arriva così indietro (o è troppo lunga).
+; The history does not go back that far (or is too long).
+MSG_THERE_ARE_NO_MESSAGES_AFTER
+Non ci sono messaggi dopo questo.
+; There are no messages after that.
+MSG_PLEASE_GIVE_THE_DATE_AS
+Indica la data come GG.MM.AAAA.
+; Please give the date as DD.MM.YYYY.
+MSG_THAT_DATE_DOES_NOT_WORK
+Quella data non va bene.
+; That date does not work.
+MSG_LOOKING_FOR_THE_DAY
+Ricerca del giorno ...
+; Looking for the day ...
+MSG_NEW_MESSAGES
+\33c\33b--- nuovi messaggi ---
+; \33c\33b--- new messages ---
+MSG_MORE_UNREAD_MESSAGES_THE_UP
+Altri messaggi non letti: la freccia su li carica.
+; More unread messages: the up arrow loads them.
+MSG_THE_FILE_CANNOT_BE_WRITTEN
+Impossibile scrivere il file.
+; The file cannot be written.
+MSG_MESSAGES_EXPORTED
+%d messaggi esportati.
+; %d messages exported.
+MSG_LOADING_THE_WHOLE_HISTORY
+Caricamento di tutta la cronologia ...
+; Loading the whole history ...
+MSG_HISTORY
+Cronologia: %.290s
+; History: %.290s
+MSG_ERROR
+Errore
+; Error
+MSG_THE_NETWORK_PROCESS_COULD_NOT
+Impossibile avviare il processo di rete
+; The network process could not start
+MSG_PASSWORD_FOR_THE_AMATRIX_DATA
+Serve la password dei dati di Amatrix
+; Password for the Amatrix data needed
+MSG_LOGGING_IN_AS
+Accesso come %s ...
+; Logging in as %s ...
+MSG_CHECKING
+Verifica ...
+; Checking ...
+MSG_AT_LEAST_4_CHARACTERS_PLEASE
+Almeno 4 caratteri, per favore.
+; At least 4 characters, please.
+MSG_RE_ENCRYPTING_THE_DATA
+Ricrittografia dei dati ...
+; Re-encrypting the data ...
+MSG_ENTER_SERVER_AND_USER
+Inserisci server e utente.
+; Enter server and user.
+MSG_LOGGING_IN
+Accesso ...
+; Logging in ...
+MSG_CREATING_CHAT_WITH
+Creazione della chat con %s ...
+; Creating chat with %s ...
+MSG_CREATING_ROOM
+Creazione della stanza ...
+; Creating room ...
+MSG_CHECKING_A_PASSPHRASE_CAN_TAKE
+Verifica ... (una frase segreta può richiedere alcuni minuti)
+; Checking ... (a passphrase can take a few minutes)
+MSG_CHECKING_THE_SECURITY_KEY
+Verifica della chiave di sicurezza ...
+; Checking the security key ...
+MSG_INVITING_2
+Invito a %s ...
+; Inviting %s ...
+MSG_INVITATION
+Invito
+; Invitation
+MSG_ACCEPT_DECLINE_DECLINE_BLOCK_LATER
+*_Accetta|_Rifiuta|Rifiuta + _blocca|_Più tardi
+; *_Accept|_Decline|Decline + _block|_Later
+MSG_INVITES_YOU
+%s ti invita:\n\n\33b%s
+; %s invites you:\n\n\33b%s
+MSG_SOMEONE
+Qualcuno
+; Someone
+MSG_ADDRESS
+Indirizzo
+; Address
+MSG_JOINING_ROOM
+Ingresso nella stanza ...
+; Joining room ...
+MSG_PINNED
+\33bFissato%s:\33n %s
+; \33bPinned%s:\33n %s
+MSG_NEWEST
+ (più recente)
+;  (newest)
+MSG_JOINING_THE_NEW_ROOM
+Ingresso nella nuova stanza ...
+; Joining the new room ...
+MSG_THE_PINNED_MESSAGE_IS_OLDER
+Il messaggio fissato è più vecchio della cronologia caricata (la freccia su ne carica altra).
+; The pinned message is older than the loaded history (the up arrow loads more).
+MSG_QUOTE
+Citazione:%s
+; Quote:%s
+MSG_LINK_COPIED
+Link copiato
+; Link copied
+MSG_LOGIN_FAILED
+Accesso non riuscito
+; Login failed
+MSG_CONNECTING_AS
+Connessione come %s ...
+; Connecting as %s ...
+MSG_LOGGED_OUT
+Disconnesso
+; Logged out
+MSG_WRONG_PASSWORD
+Password errata.
+; Wrong password.
+MSG_THE_AMATRIX_DATA_IS_NOW
+\33bI dati di Amatrix sono ora protetti dalla password.\33n\nAmatrix la chiede all'avvio.
+; \33bThe Amatrix data is now protected by the password.\33n\nAmatrix asks for it at startup.
+MSG_THE_PASSWORD_PROTECTION_IS_REMOVED
+\33bLa protezione con password è stata rimossa.\33n
+; \33bThe password protection is removed.\33n
+MSG_WRONG_KEY_OR_PASSPHRASE
+Chiave o frase segreta errata.
+; Wrong key or passphrase.
+MSG_THIS_DEVICE_IS_VERIFIED_NOW
+Questo dispositivo ora è verificato.
+; This device is verified now.
+MSG_VERIFYING_WAS_NOT_POSSIBLE_CROSS
+Verifica non possibile (cross-signing non configurato?).
+; Verifying was not possible (cross-signing not set up?).
+MSG_OLD_MESSAGES_ARE_DECRYPTED_WHEN
+I vecchi messaggi vengono decifrati all'apertura di una stanza.
+; Old messages are decrypted when a room is opened.
+MSG_THERE_IS_NO_KEY_BACKUP
+Sul server non c'è un backup delle chiavi.
+; There is no key backup on the server.
+MSG_INVITING_FAILED
+Invito non riuscito: %.120s
+; Inviting failed: %.120s
+MSG_INVITING_DID_NOT_WORK
+L'invito non ha funzionato:\n%s
+; Inviting did not work:\n%s
+MSG_SENDING_FAILED
+Invio non riuscito: %.120s
+; Sending failed: %.120s
+MSG_MESSAGE_NOT_SENT
+Messaggio non inviato:\n%s
+; Message not sent:\n%s
+MSG_FILE_NOT_SENT
+File non inviato: %.280s
+; File not sent: %.280s
+MSG_FILE_NOT_SENT_2
+File non inviato:\n%s
+; File not sent:\n%s
+MSG_LEAVING_DID_NOT_WORK
+Uscire non ha funzionato:\n%s
+; Leaving did not work:\n%s
+MSG_THREAD_3
+Discussione: %.140s
+; Thread: %.140s
+MSG_REPORTING_DID_NOT_WORK
+La segnalazione non ha funzionato: %.250s
+; Reporting did not work: %.250s
+MSG_PASSWORD_CHANGED
+Password cambiata.
+; Password changed.
+MSG_ACCOUNT_DEACTIVATED
+Account disattivato.
+; Account deactivated.
+MSG_THAT_DID_NOT_WORK_2
+Non ha funzionato: %.280s
+; That did not work: %.280s
+MSG_NO_NAME
+(senza nome)
+; (no name)
+MSG_WITH_PICTURE
+ - con immagine
+;  - with picture
+MSG_PROFILE
+Profilo
+; Profile
+MSG_PROFILE_NOT_LOADED
+Profilo non caricato:\n%s
+; Profile not loaded:\n%s
+MSG_WITH_PROFILE_PICTURE
+con immagine del profilo
+; with profile picture
+MSG_WITHOUT_PROFILE_PICTURE
+senza immagine del profilo
+; without profile picture
+MSG_POLL_2
+Sondaggio: %.280s
+; Poll: %.280s
+MSG_THAT_DID_NOT_WORK_3
+Non ha funzionato:\n%s
+; That did not work:\n%s
+MSG_OFFLINE
+Offline: %s
+; Offline: %s
+MSG_DRAFT_2
+Bozza: %.150s
+; Draft: %.150s
+MSG_REPLACED_2
+ (sostituita)
+;  (replaced)
+MSG_MUTED_2
+ (silenziata)
+;  (muted)
+MSG_ABOUT_AMATRIX
+Informazioni su Amatrix ...
+; About Amatrix ...
+MSG_ICONIFY
+Iconifica
+; Iconify
+MSG_LOG_OUT
+Disconnetti
+; Log out
+MSG_QUIT
+Esci
+; Quit
+MSG_NEW_CHAT
+Nuova chat ...
+; New chat ...
+MSG_NEW_ROOM
+Nuova stanza ...
+; New room ...
+MSG_JOIN_ROOM
+Entra in una stanza ...
+; Join room ...
+MSG_BROWSE_SPACE
+Sfoglia spazio ...
+; Browse space ...
+MSG_MEMBERS_AND_SETTINGS
+Membri e impostazioni ...
+; Members and settings ...
+MSG_MUTE
+Silenzia
+; Mute
+MSG_FAVOURITE_ON_OFF
+Preferita sì/no
+; Favourite on/off
+MSG_LOW_PRIORITY_ON_OFF
+Bassa priorità sì/no
+; Low priority on/off
+MSG_SEARCH_MESSAGES
+Cerca messaggi ...
+; Search messages ...
+MSG_CREATE_POLL
+Crea sondaggio ...
+; Create poll ...
+MSG_EXPORT_CHAT
+Esporta chat ...
+; Export chat ...
+MSG_LEAVE_ROOM
+Lascia la stanza ...
+; Leave room ...
+MSG_QUOTE_2
+Cita
+; Quote
+MSG_FORWARD
+Inoltra ...
+; Forward ...
+MSG_COPY
+Copia
+; Copy
+MSG_COPY_LINK_TO_MESSAGE
+Copia link al messaggio
+; Copy link to message
+MSG_PIN_ON_OFF
+Fissa sì/no
+; Pin on/off
+MSG_EDIT_HISTORY
+Cronologia modifiche ...
+; Edit history ...
+MSG_REPORT
+Segnala ...
+; Report ...
+MSG_PERSON
+Persona
+; Person
+MSG_DIRECT_MESSAGE
+Messaggio diretto
+; Direct message
+MSG_SHOW_PROFILE
+Mostra profilo ...
+; Show profile ...
+MSG_MENTION
+Menziona
+; Mention
+MSG_COPY_USER_ID
+Copia ID utente
+; Copy user ID
+MSG_IGNORE
+Ignora ...
+; Ignore ...
+MSG_STOP_IGNORING
+Non ignorare più
+; Stop ignoring
+MSG_REMOVE_FROM_ROOM
+Rimuovi dalla stanza ...
+; Remove from room ...
+MSG_BAN_FROM_ROOM
+Bandisci dalla stanza ...
+; Ban from room ...
+MSG_ACCOUNT
+Account
+; Account
+MSG_MY_PROFILE
+Il mio profilo ...
+; My profile ...
+MSG_SESSIONS
+Sessioni ...
+; Sessions ...
+MSG_PASSWORD_AND_ACCOUNT
+Password e account ...
+; Password and account ...
+MSG_ENTER_SECURITY_KEY
+Inserisci chiave di sicurezza ...
+; Enter security key ...
+MSG_PASSWORD_FOR_AMATRIX_DATA
+Password dei dati di Amatrix ...
+; Password for Amatrix data ...
+MSG_SETTINGS
+Impostazioni
+; Settings
+MSG_SETTINGS_2
+Impostazioni ...
+; Settings ...
+MSG_MUI_SETTINGS
+Impostazioni MUI ...
+; MUI settings ...
+MSG_MATRIX_CLIENT
+Client Matrix
+; Matrix client
+MSG_FILTER_ROOMS_BY_NAME
+Filtra le stanze per nome
+; Filter rooms by name
+MSG_NEW_CHAT_2
+Nuova _chat
+; New _chat
+MSG_NEW_ROOM_2
+Nuova _stanza
+; New _room
+MSG_AMATRIX_LOG_IN
+Amatrix - Accesso
+; Amatrix - Log in
+MSG_SERVER
+Server:
+; Server:
+MSG_USER
+Utente:
+; User:
+MSG_PASSWORD
+Password:
+; Password:
+MSG_LOG_IN
+_Accedi
+; _Log in
+MSG_NEW_CHAT_3
+Nuova chat
+; New chat
+MSG_WITH_WHOM_E_G_NAME
+Con chi? (es. @nome:server)
+; With whom? (e.g. @name:server)
+MSG_START_CHAT
+_Avvia chat
+; _Start chat
+MSG_NEW_ROOM_3
+Nuova stanza
+; New room
+MSG_NAME_2
+Nome:
+; Name:
+MSG_ENCRYPTED
+Crittografata:
+; Encrypted:
+MSG_IN_THE_DIRECTORY
+Nella directory:
+; In the directory:
+MSG_AS_A_SPACE
+Come spazio:
+; As a space:
+MSG_CRE_ATE_ROOM
+_Crea stanza
+; Cre_ate room
+MSG_JOIN_ROOM_2
+Entra in una stanza
+; Join room
+MSG_SEARCH
+_Cerca
+; _Search
+MSG_PREVIEW_2
+_Anteprima
+; _Preview
+MSG_JOIN
+_Entra
+; _Join
+MSG_AMATRIX_PASSWORD
+Amatrix - Password
+; Amatrix - Password
+MSG_THE_AMATRIX_DATA_LOGIN_KEYS
+I dati di Amatrix (accesso, chiavi) sono\nprotetti da una password.
+; The Amatrix data (login, keys) is\nprotected by a password.
+MSG_UNLOCK
+_Sblocca
+; _Unlock
+MSG_MY_PROFILE_2
+Il mio profilo
+; My profile
+MSG_CHANGE_PICTURE
+Cambia _immagine ...
+; Change _picture ...
+MSG_SAVE
+_Salva
+; _Save
+MSG_FORWARD_TO
+Inoltra a ...
+; Forward to ...
+MSG_FORWARD_2
+_Inoltra
+; _Forward
+MSG_EDIT_HISTORY_2
+Cronologia modifiche
+; Edit history
+MSG_CHANGE_PASSWORD
+Cambia password
+; Change password
+MSG_OLD_PASSWORD
+Vecchia password
+; Old password
+MSG_NEW_PASSWORD
+Nuova password
+; New password
+MSG_AGAIN
+Di nuovo
+; Again
+MSG_CHANGE_PASSWORD_2
+Cambia _password
+; Change _password
+MSG_DEACTIVATE_ACCOUNT
+Disattiva account
+; Deactivate account
+MSG_FINAL_THE_ACCOUNT_CAN_NO
+\33bDefinitivo:\33n dopo l'account non sarà più utilizzabile,\nil nome non viene mai riassegnato.
+; \33bFinal:\33n the account can no longer be used afterwards,\nthe name is never given out again.
+MSG_PASSWORD_2
+Password
+; Password
+MSG_HAVE_MY_MESSAGES_ERASED
+Cancella i miei messaggi
+; Have my messages erased
+MSG_DEACTIVATE_ACCOUNT_2
+_Disattiva account ...
+; _Deactivate account ...
+MSG_CREATE_POLL_2
+Crea sondaggio
+; Create poll
+MSG_QUESTION
+Domanda
+; Question
+MSG_ANSWER_1
+Risposta 1
+; Answer 1
+MSG_ANSWER_2
+Risposta 2
+; Answer 2
+MSG_ANSWER_3
+Risposta 3
+; Answer 3
+MSG_ANSWER_4
+Risposta 4
+; Answer 4
+MSG_ANSWER_5
+Risposta 5
+; Answer 5
+MSG_ANSWER_6
+Risposta 6
+; Answer 6
+MSG_SEVERAL_CHOICES_2
+Più scelte
+; Several choices
+MSG_RESULT_ONLY_AT_THE_END
+Risultato solo alla fine
+; Result only at the end
+MSG_SEND
+_Invia
+; _Send
+MSG_JOIN_OPEN
+_Entra/Apri
+; _Join/Open
+MSG_ADD_MARKED_ROOM
+_Aggiungi stanza selezionata
+; _Add marked room
+MSG_REMOVE
+_Rimuovi
+; _Remove
+MSG_SEARCH_MESSAGES_2
+Cerca messaggi
+; Search messages
+MSG_SESSIONS_2
+Sessioni
+; Sessions
+MSG_RENAME
+_Rinomina
+; _Rename
+MSG_LOG_OUT_2
+_Disconnetti
+; _Log out
+MSG_TOPIC
+Argomento
+; Topic
+MSG_JOINING_2
+Ingresso
+; Joining
+MSG_READ_HISTORY
+Leggere la cronologia
+; Read history
+MSG_NOTIFICATIONS
+Notifiche
+; Notifications
+MSG_APPLIES_ON_ALL_YOUR_DEVICES
+Vale per tutti i tuoi dispositivi (regole di notifica sul server)
+; Applies on all your devices (push rules on the server)
+MSG_ENCRYPTED_2
+Crittografata
+; Encrypted
+MSG_PICTURE
+_Immagine ...
+; _Picture ...
+MSG_INVITE
+_Invita ...
+; _Invite ...
+MSG_LET_IN
+_Fai entrare
+; _Let in
+MSG_REMOVE_2
+_Rimuovi
+; _Remove
+MSG_BAN
+_Bandisci
+; _Ban
+MSG_ASSIGN
+_Assegna
+; _Assign
+MSG_AMATRIX_SETTINGS
+Amatrix - Impostazioni
+; Amatrix - Settings
+MSG_NOTIFY
+Notifica
+; Notify
+MSG_FOR
+per
+; for
+MSG_SINGLE_ROOMS_MENU_ROOM_MUTE
+\33iSingole stanze: menu \"Stanza/Silenzia\"
+; \33iSingle rooms: menu \"Room/Mute\"
+MSG_CHAT
+Chat
+; Chat
+MSG_PICTURE_PREVIEW_IN_THE_CHAT
+Anteprima immagini nella chat
+; Picture preview in the chat
+MSG_WITHOUT_PREVIEW_A_CLICK_ON
+\33iSenza anteprima un clic sul simbolo del file\napre comunque l'immagine.
+; \33iWithout preview a click on the file symbol\nstill opens the picture.
+MSG_LINK_PREVIEW
+Anteprima link
+; Link preview
+MSG_ALSO_IN_ENCRYPTED_ROOMS
+anche nelle stanze crittografate
+; also in encrypted rooms
+MSG_THE_SERVER_FETCHES_THE_PREVIEW
+\33iIl server recupera l'anteprima - così vede il link.
+; \33iThe server fetches the preview - it sees the link then.
+MSG_PRIVACY
+Privacy
+; Privacy
+MSG_SHOW_THAT_I_AM_TYPING
+Mostra che sto scrivendo
+; Show that I am typing
+MSG_SEND_READ_RECEIPTS
+Invia conferme di lettura
+; Send read receipts
+MSG_STORE_HISTORY_LOCALLY
+Salva la cronologia localmente
+; Store history locally
+MSG_KEYWORDS_LIKE_A_MENTION
+Parole chiave (come una menzione)
+; Keywords (like a mention)
+MSG_ADD
+_Aggiungi
+; _Add
+MSG_R_EMOVE
+_Rimuovi
+; R_emove
+MSG_IGNORED_USERS
+Utenti ignorati
+; Ignored users
+MSG_STOP_IGNORING_2
+Non _ignorare più
+; Stop _ignoring
+MSG_STARTUP_AND_LOOK
+Avvio e aspetto
+; Startup and look
+MSG_START_ICONIFIED
+Avvia iconificato
+; Start iconified
+MSG_PICTURES_IN_THE_ROOM_LIST
+Immagini nell'elenco delle stanze
+; Pictures in the room list
+MSG_SHOW_WHO_HAS_READ_WHAT
+Mostra chi ha letto cosa
+; Show who has read what
+MSG_SHOW_JOINS_AND_LEAVES
+Mostra ingressi e uscite
+; Show joins and leaves
+MSG_24_HOUR_CLOCK
+Orologio a 24 ore
+; 24-hour clock
+MSG_COMPACT_NAME_ONLY_ON_CHANGE
+Compatto (nome solo al cambio)
+; Compact (name only on change)
+MSG_FONT_AND_COLOURS_MENU_MUI
+\33iCarattere e colori: menu \"Impostazioni MUI\".
+; \33iFont and colours: menu \"MUI settings\".
+MSG_PASSWORD_FOR_AMATRIX_DATA_2
+Password dei dati di Amatrix
+; Password for Amatrix data
+MSG_PROTECTS_LOGIN_KEYS_AND_SESSIONS
+Protegge accesso, chiavi e sessioni nel\ncassetto accanto al programma.  Senza la password sono\ninutili - non può essere recuperata.
+; Protects login, keys and sessions in the\ndrawer next to the program.  Without the password they\nare useless - it cannot be recovered.
+MSG_AGAIN_2
+Di nuovo:
+; Again:
+MSG_SET
+_Imposta
+; _Set
+MSG_REMOVE_PROTECTION
+_Rimuovi protezione
+; _Remove protection
+MSG_SECURITY_KEY
+Chiave di sicurezza
+; Security key
+MSG_THE_SECURITY_KEY_FROM_ELEMENT
+La chiave di sicurezza di Element (es. \33bEsTc 9xYz ...\33n)\no la frase di sicurezza.  Verifica questo dispositivo\ne i vecchi messaggi diventano leggibili.
+; The security key from Element (e.g. \33bEsTc 9xYz ...\33n)\nor the security passphrase.  It verifies this device,\nand old messages become readable.
+MSG_INVITE_2
+Invita
+; Invite
+MSG_WHOM_E_G_NAME_SERVER
+Chi? (es. @nome:server)
+; Whom? (e.g. @name:server)
+MSG_INVITE_3
+_Invita
+; _Invite
+MSG_PLEASE_MARK_A_MESSAGE_FROM
+Seleziona prima un messaggio di un'altra persona\nnella finestra di chat.
+; Please mark a message from another person\nin the chat window first.
+MSG_USER_ID_COPIED
+ID utente copiato
+; User ID copied
+MSG_IGNORE_2
+Ignora
+; Ignore
+MSG_IGNORE_CANCEL
+_Ignora|*_Annulla
+; _Ignore|*_Cancel
+MSG_IGNORE_MESSAGES_AND_INVITATIONS_FROM
+Ignorare\n\33c\33b%s\33n?\nI messaggi e gli inviti di questa\npersona verranno nascosti.\n(Annulla: menu Persona o impostazioni)
+; Ignore\n\33c\33b%s\33n?\nMessages and invitations from this\nperson will be hidden.\n(Undo: Person menu or settings)
+MSG_REMOVE_3
+Rimuovi
+; Remove
+MSG_BAN_2
+Bandisci
+; Ban
+MSG_REMOVE_CANCEL
+_Rimuovi|*_Annulla
+; _Remove|*_Cancel
+MSG_BAN_CANCEL
+_Bandisci|*_Annulla
+; _Ban|*_Cancel
+MSG_REMOVE_FROM_THIS_ROOM
+Rimuovere\n\33c\33b%s\33n\nda questa stanza?
+; Remove\n\33c\33b%s\33n\nfrom this room?
+MSG_BAN_FROM_THIS_ROOM
+Bandire\n\33c\33b%s\33n\nda questa stanza?
+; Ban\n\33c\33b%s\33n\nfrom this room?
+MSG_CURRENTLY_PROTECTED_BY_A_PASSWORD
+Attualmente protetto da password.
+; Currently protected by a password.
+MSG_CURRENTLY_WITHOUT_A_PASSWORD
+Attualmente senza password.
+; Currently without a password.
+MSG_PLEASE_MARK_A_MESSAGE_IN
+Seleziona prima un messaggio nella finestra di chat.
+; Please mark a message in the chat window first.
+MSG_NOTIFICATIONS_APPEAR_VIA_HERALD
+Le notifiche appaiono tramite Herald.
+; Notifications appear via Herald.
+MSG_HERALD_IS_NOT_RUNNING_WITHOUT
+\33bHerald non è in esecuzione\33n - senza Herald (Aminet: util/cdity/Herald)\nAmatrix non mostra notifiche.
+; \33bHerald is not running\33n - without Herald (Aminet: util/cdity/Herald)\nAmatrix shows no notifications.
+MSG_PLEASE_CHOOSE_A_SPACE_ABOVE
+Scegli prima uno spazio sopra l'elenco delle stanze.
+; Please choose a space above the room list first.
+MSG_PLEASE_ENTER_YOUR_PASSWORD
+Inserisci la tua password.
+; Please enter your password.
+MSG_DEACTIVATE_CANCEL
+_Disattiva|*_Annulla
+; _Deactivate|*_Cancel
+MSG_REALLY_DEACTIVATE_THE_ACCOUNT_FOR
+\33cDisattivare davvero e per sempre l'account\n\33b%s\33n?
+; \33cReally deactivate the account\n\33b%s\33n\nfor good?
+MSG_PLEASE_OPEN_A_CHAT_WINDOW
+Apri prima una finestra di chat.
+; Please open a chat window first.
+MSG_EXPORT_CHAT_2
+Esporta chat
+; Export chat
+MSG_WHOLE_HISTORY_ONLY_LOADED_CANCEL
+_Tutta la cronologia|_Solo il caricato|*_Annulla
+; _Whole history|_Only loaded|*_Cancel
+MSG_WHAT_SHOULD_GO_INTO_THE
+Cosa deve contenere il file?\n(estensione .html: pagina web, altrimenti testo)
+; What should go into the file?\n(ending .html: as a web page, otherwise text)
+MSG_THIS_MESSAGE_WAS_NOT_EDITED
+Questo messaggio non è stato modificato.
+; This message was not edited.
+MSG_PINNING
+Fissaggio ...
+; Pinning ...
+MSG_UNPINNING
+Rimozione del fissaggio ...
+; Unpinning ...
+MSG_LETTING_IN
+Accesso consentito ...
+; Letting in ...
+MSG_LOG_OUT_NO
+*_Disconnetti|_No
+; *_Log out|_No
+MSG_LOG_OUT_THIS_DEVICE_AND
+Disconnettersi? Questo dispositivo e le sue chiavi\nverranno eliminati.
+; Log out? This device and its keys\nwill be deleted.
+MSG_ABOUT_AMATRIX_2
+Informazioni su Amatrix
+; About Amatrix
+MSG_AMATRIX_0_1_MATRIX_WITH
+\33cAmatrix 0.1\n\nMatrix con crittografia end-to-end\nper Amiga.\n\n%s
+; \33cAmatrix 0.1\n\nMatrix with end-to-end encryption\nfor the Amiga.\n\n%s
+MSG_NOT_LOGGED_IN
+non connesso
+; not logged in
+MSG_AMATRIX_NEEDS_MUI_5_MUIMASTER
+Amatrix richiede MUI 5 (muimaster.library V20).\n
+; Amatrix needs MUI 5 (muimaster.library V20).\n
+MSG_AMATRIX_THE_MUI_INTERFACE_COULD
+Amatrix: impossibile creare l'interfaccia MUI (NList, BetterString installati?)\n
+; Amatrix: the MUI interface could not be created (NList, BetterString installed?)\n
+MSG_NOT_LOGGED_IN_2
+Non connesso
+; Not logged in
+MSG_DELETED
+(eliminato)
+; (deleted)
+MSG_MESSAGE_DELETED
+(messaggio eliminato)
+; (message deleted)
+MSG_N_MEMBER
+%d membro
+; %d member
+MSG_N_MEMBERS
+%d membri
+; %d members
+MSG_N_SESSION
+%d sessione
+; %d session
+MSG_N_SESSIONS
+%d sessioni
+; %d sessions
+MSG_DATE_LINE
+\33c\33i- %s %d %s %d -
+; \33c\33i- %s, %d %s %d -
+MSG_FMT_DAY
+%d/%m
+; %d %b
+MSG_FMT_DATETIME
+%d/%m/%Y %H:%M
+; %d %b %Y %H:%M
+MSG_FMT_DATETIME_SHORT
+%d/%m/%y %H:%M
+; %d %b %y %H:%M
+MSG_FMT_DAYTIME
+%d/%m %H:%M
+; %d %b %H:%M
+MSG_PUBLIC_LC
+pubblica
+; public
+MSG_ON_REQUEST
+su richiesta
+; on request
+MSG_INVITATION_ONLY_LC
+solo su invito
+; invitation only
+MSG_IS_IN_THE_ROOM
+è nella stanza
+; is in the room
+MSG_LEFT_THE_ROOM
+ha lasciato la stanza
+; left the room
+MSG_WAS_INVITED
+è stato invitato
+; was invited
+MSG_WAS_BANNED
+è stato bandito
+; was banned
+MSG_PASSWORDS_DIFFER
+Le nuove password non coincidono.
+; The new passwords do not match.
+MSG_REMOVE_FROM_ROOM_Q
+Rimuovere %s dalla stanza?
+; Remove %s from the room?

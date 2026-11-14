@@ -71,3 +71,49 @@ def draw(front_fill=2,front_hi=2,front_lo=5,gcol=3,brk=1,badge=False):
 
 def selected(badge=False):
     return draw(front_fill=3, front_hi=5, front_lo=1, gcol=2, brk=2, badge=badge)
+
+
+def _rect(c, x0, y0, x1, y1, v):
+    for y in range(y0, y1 + 1):
+        for x in range(x0, x1 + 1):
+            put(c, x, y, v)
+
+
+def drawer(selected=False):
+    """a filing drawer: blue body, white front plate with a handle"""
+    w, h = 44, 30
+    c = [[0] * w for _ in range(h)]
+    _rect(c, 3, 5, w - 2, h - 2, 4)                   # shadow
+    body = 5 if selected else 3
+    top = 1 if selected else 2
+    _rect(c, 1, 3, w - 4, h - 4, 1)                   # outline
+    _rect(c, 2, 4, w - 5, h - 5, body)
+    _rect(c, 2, 4, w - 5, 4, top)                     # light top edge / dark opening
+    _rect(c, 2, 4, 2, h - 5, 2)                       # left highlight
+    _rect(c, 7, 10, w - 10, h - 9, 1)                 # label plate
+    _rect(c, 8, 11, w - 11, h - 10, 2)
+    _rect(c, 12, 15, w - 15, 16, 1)                   # handle
+    return c
+
+
+def document(selected=False):
+    """a text page with a folded corner and lines of text"""
+    w, h = 32, 38
+    c = [[0] * w for _ in range(h)]
+    _rect(c, 3, 3, w - 2, h - 2, 4)                   # shadow
+    page = 5 if selected else 2
+    _rect(c, 1, 1, w - 4, h - 4, 1)
+    _rect(c, 2, 2, w - 5, h - 5, page)
+    for i in range(8):                                # folded corner
+        _rect(c, w - 12 + i, 1 + i, w - 4, 1 + i, 0 if i == 0 else 0)
+    for i in range(9):
+        put(c, w - 13 + i, 1 + i, 1)
+    _rect(c, w - 12, 2, w - 5, 9, 5 if not selected else 2)
+    for i in range(9):
+        put(c, w - 13 + i, 1 + i, 1)
+    for x in range(w - 13, w - 3):
+        put(c, x, 10 if False else 9, 1) if False else None
+    _rect(c, 5, 6, 14, 8, 3)                          # blue heading bar
+    for k, y in enumerate(range(13, h - 7, 4)):       # lines of text
+        _rect(c, 5, y, w - 9 - (6 if k % 3 == 2 else 0), y + 1, 4)
+    return c
