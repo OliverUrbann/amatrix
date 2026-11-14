@@ -5462,6 +5462,11 @@ static void chat_event_in(ChatWin *w, const AmxEvent *e)
     }
     amx_log("  inserted (%ld lines)", (long)w->lines);
     free(text);
+    if (e->type == AMX_EV_MESSAGE && e->event_id) {     /* replies to it came first (history): now with the quote */
+        int i;
+        for (i = 0; i < w->n_msgs; i++)
+            if (w->msgs[i].reply_to && !strcmp(w->msgs[i].reply_to, e->event_id)) rerender(w, &w->msgs[i]);
+    }
     if (e->type == AMX_EV_MESSAGE && e->thread_count > 0 && !w->thread_root) {
         ChatMsg *m = find_msg(w, e->event_id);
         if (m) {

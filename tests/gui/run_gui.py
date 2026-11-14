@@ -1118,8 +1118,14 @@ async def scenario(ctx, amiga, srv, me):
     ok = await p.wait(lambda: p.joined(archiv, me.user_id), 240)
     check(ok, "joined Archiv")
     await p.refresh_devices(me.user_id)
+    ids = {}
     for i in range(1, 46):
-        await p.send(archiv, f"Nachricht {i:02d}")
+        if i == 6:                           # a reply to the message before it (on the same older page)
+            await p.c.room_send(archiv, "m.room.message", {
+                "msgtype": "m.text", "body": "Nachricht 06",
+                "m.relates_to": {"m.in_reply_to": {"event_id": ids[5]}}}, ignore_unverified_devices=True)
+            continue
+        ids[i] = await p.send(archiv, f"Nachricht {i:02d}")
     await p.sync(1000)
     await amiga.rexx("OPENCHAT Archiv")      # the window may have opened on accepting; reopen = front
 
@@ -1147,6 +1153,12 @@ async def scenario(ctx, amiga, srv, me):
         n2 = await amiga.until(has45, 60)
     rc, first2 = await amiga.rexx("FIRSTLINE Archiv")
     check(n2 and "Nachricht 01" in first2, f"older messages loaded on top ({n2} lines, top: {first2!r})")
+    rc, tx = await amiga.rexx("TEXTS Archiv 80")
+    tl = tx.split("|")
+    i6 = next((k for k, t in enumerate(tl) if "Nachricht 06" in t), -1)
+    q = tl[i6 - 1] if i6 > 0 else ""
+    check("Nachricht 05" in q and i6 > 1 and "Nachricht 05" in tl[i6 - 2],
+          f"a reply loaded before its original (older page) quotes it ({q!r})")
     async def archiv_readable():
         rc, r = await amiga.rexx("UNREADABLE Archiv")
         return r == "0"
