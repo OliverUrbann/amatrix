@@ -63,7 +63,6 @@ tools/amiga-package/make-gui-package.sh   # build/amiga/Amatrix.lha + Amatrix.re
 | `catalogs/` | the languages of the client, see below |
 | `libolm-amiga/` | libolm on AmigaOS: patches, unit tests, benchmark, see [its README](libolm-amiga/README.md) |
 | `third_party/` | libolm 3.2.16 (patched), cJSON, AmiSSL SDK, stb_image; licences in [third_party/NOTICE.md](third_party/NOTICE.md) |
-| `docs/` | [feature list](docs/matrix-library-features.md) |
 
 ## Languages
 

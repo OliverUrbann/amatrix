@@ -1,7 +1,6 @@
 # Tests
 
-Feature tests on the level of [docs/matrix-library-features.md](../docs/matrix-library-features.md):
-each feature is exercised end to end against a real Matrix homeserver, from
+Feature tests: each feature is exercised end to end against a real Matrix homeserver, from
 our C core on one side and an independent client (matrix-nio, the same
 vodozemac/Olm crypto as Element) on the other.
 
@@ -62,7 +61,6 @@ front of the GUI (redirect the program's output).
    `mxt_client()`, checks with `MXT_OK`, end with `return mxt_done();`.
 2. `tests/features/<name>/peer.py`: `async def peer(ctx)`, `p = await ctx.peer()`,
    checks with `ctx.check(cond, "name")`.  Use `ctx.scale` for waits.
-3. Add the test name to the "Test" column in the feature list.
 
 ## Requirements
 
@@ -70,8 +68,7 @@ front of the GUI (redirect the program's output).
 - The Python environment (Synapse 1.164.1, matrix-nio[e2e]) is created on
   first use in `~/.cache/amatrix/venv` (`AMX_VENV` overrides).
 - `--target amiga`: the m68k-amigaos toolchain in `/opt/amiga` and the
-  FS-UAE test environment (`TESTENV`, default `~/amiga/testenv/amiga-testenv`,
-  from the amiga_rsync port) with AmiSSL installed by `emu/setup-emu-amissl.sh`.
+  FS-UAE test environment (`TESTENV`, default `~/amiga/testenv/amiga-testenv`) with AmiSSL installed by `emu/setup-emu-amissl.sh`.
   Kickstart/Workbench are not part of the repository.
 
 ## Lessons learned (keep in mind when writing peers)
