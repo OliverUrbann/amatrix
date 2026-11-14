@@ -5,6 +5,8 @@ better, AmigaOS 3.x), with end-to-end encryption and without a proxy or
 bridge.  It consists of a client library, `libamatrix`, and **Amatrix**, a
 MUI chat client built on it.
 
+![Amatrix: the room list and a chat window on the Workbench](screenshots/amatrix.png)
+
 ## Features
 
 - End-to-end encryption (Olm/Megolm, via a ported libolm), key backup and

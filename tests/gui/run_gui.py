@@ -2,6 +2,7 @@
 """GUI test of the MUI client in FS-UAE, against a private Synapse.
 
     tests/gui/run_gui.py [-v]
+    tests/gui/run_gui.py --screenshot     # only the README screenshot -> screenshots/amatrix.png
 
 The Amiga runs Amatrix (build/amiga/gui/Amatrix) on its Workbench screen and
 a small AmigaDOS loop that executes command files the host drops into the
@@ -28,7 +29,7 @@ Assign AmiSSL: SYS:AmiSSL
 Assign LIBS: AmiSSL:Libs ADD
 {verbose}
 {herald}
-Run >NIL: Extra:Amatrix >SYS:gui-out.txt SERVER={server} USER={user} PASSWORD={password} DEBUG LANGUAGE=deutsch
+Run >NIL: Extra:Amatrix >SYS:gui-out.txt SERVER={server} USER={user} PASSWORD={password} DEBUG LANGUAGE={lang}
 Lab loop
 If EXISTS Extra:go
   Delete Extra:go QUIET
@@ -1430,6 +1431,128 @@ async def notify_part(ctx, amiga, p, dm, me):
     await asyncio.sleep(2)
 
 
+def boing(w, h):
+    """a picture to send: a red and white chequered ball over a grid (PNG)"""
+    from PIL import Image, ImageDraw
+    import math
+    im = Image.new("RGB", (w, h), (170, 170, 170))
+    d = ImageDraw.Draw(im)
+    for x in range(0, w, 12):
+        d.line((x, 0, x, h), fill=(150, 60, 160))
+    for y in range(0, h, 12):
+        d.line((0, y, w, y), fill=(150, 60, 160))
+    cx, cy, r = w // 2, h // 2 - 4, min(w, h) // 3
+    d.ellipse((cx - r + 8, cy - r + 10, cx + r + 8, cy + r + 10), fill=(110, 110, 110))   # shadow
+    for y in range(cy - r, cy + r + 1):
+        for x in range(cx - r, cx + r + 1):
+            dx, dy = (x - cx) / r, (y - cy) / r
+            if dx * dx + dy * dy > 1:
+                continue
+            lat = math.asin(dy)
+            lon = math.asin(max(-1, min(1, dx / max(math.cos(lat), 1e-6)))) + 0.3
+            cell = (int((lat + 2) * 8 / math.pi) + int((lon + 2) * 8 / math.pi)) % 2
+            im.putpixel((x, y), (220, 20, 20) if cell else (255, 255, 255))
+    b = io.BytesIO()
+    im.save(b, "PNG")
+    return b.getvalue()
+
+
+async def screenshot_scenario(ctx, amiga, srv, me):
+    """Rooms, people and a chat for the README screenshot (English)."""
+    check = ctx.check
+    alice = await ctx.peer()
+    await alice.c.set_displayname("Alice")
+    await alice.c.set_avatar(await upload(alice, png(96, 96, (40, 90, 220)), "alice.png"))
+    bob = await ctx.peer(ctx.bob)
+    await bob.c.set_displayname("Bob")
+    await bob.c.set_avatar(await upload(bob, png(96, 96, (230, 140, 30)), "bob.png"))
+
+    async def online():
+        rc, r = await amiga.rexx("STATUS")
+        return r if r.startswith("Online") else None
+    check(await amiga.until(online, 300), "client online")
+    myself = await ctx.peer(me)                       # our display name, set from outside
+    await myself.c.set_displayname("Olaf")
+    await myself.c.set_avatar(await upload(myself, png(96, 96, (60, 160, 60)), "me.png"))
+
+    async def room(owner, name, rgb, invite):
+        r = await owner.create_room(invite=invite, encrypted=True, name=name)
+        await owner.c.room_put_state(r, "m.room.avatar", {"url": await upload(owner, png(96, 96, rgb), "r.png")})
+        return r
+    lounge = await room(alice, "Amiga Lounge", (200, 40, 40), [me.user_id, ctx.bob.user_id])
+    retro = await room(alice, "Retro Computing", (30, 160, 140), [me.user_id])
+    demo = await room(bob, "Demoscene", (120, 60, 180), [me.user_id])
+    from nio import RoomCreateResponse
+    dms = {}
+    for who in (alice, bob):
+        r = await who.c.room_create(is_direct=True, invite=[me.user_id],
+                                    initial_state=[{"type": "m.room.encryption", "state_key": "",
+                                                    "content": {"algorithm": "m.megolm.v1.aes-sha2"}}])
+        dms[who] = r.room_id if isinstance(r, RoomCreateResponse) else None
+    check(await bob.wait_invite(120) == lounge, "Bob in the lounge")
+
+    async def invites():
+        rc, r = await amiga.rexx("STATUS")
+        return "invites=5" in r
+    check(await amiga.until(invites, 180), "five invitations")
+    for n in ("Amiga Lounge", "Retro Computing", "Demoscene", "Alice", "Bob"):
+        rc, _ = await amiga.rexx(f"ACCEPT {n}")
+    ok = await alice.wait(lambda: all(alice.joined(r, me.user_id) for r in (lounge, retro, dms[alice])), 240)
+    check(ok, "joined everything")
+    await bob.wait(lambda: bob.joined(demo, me.user_id) and bob.joined(dms[bob], me.user_id), 240)
+    for x in (alice, bob):
+        await x.refresh_devices(me.user_id)
+        await x.refresh_devices(ctx.bob.user_id if x is alice else ctx.peer_user.user_id)
+
+    await bob.send(demo, "The new party release is up on scene.org!")
+    await alice.send(retro, "Found a boxed A1200 at the flea market today.")
+    await bob.send(dms[bob], "Thanks for the disks, they all still work!")
+    await alice.send(dms[alice], "See you at the Amiga meeting on Saturday?")
+    rc, _ = await amiga.rexx("FAVOURITE \"Retro Computing\"")
+    check(rc == "0", "favourite")
+
+    await alice.send(lounge, "Hi all! Does anyone still have the Boing Ball demo?")
+    q = await bob.send(lounge, "Of course - here is a frame of it:")
+    data = boing(160, 120)
+    resp, keys = await bob.c.upload(lambda *a: io.BytesIO(data), content_type="image/png", filename="boing.png",
+                                    encrypt=True, filesize=len(data))
+    await bob.c.room_send(lounge, "m.room.message", {
+        "msgtype": "m.image", "body": "boing.png",
+        "file": {"url": resp.content_uri, "key": keys["key"], "iv": keys["iv"], "hashes": keys["hashes"], "v": "v2"},
+        "info": {"mimetype": "image/png", "size": len(data), "w": 160, "h": 120}}, ignore_unverified_devices=True)
+    await alice.c.room_send(lounge, "m.room.message", {
+        "msgtype": "m.text", "body": "Still looks great after almost 40 years!",
+        "m.relates_to": {"m.in_reply_to": {"event_id": q}}}, ignore_unverified_devices=True)
+    await alice.sync(1000)
+    await amiga.rexx("OPENCHAT Amiga Lounge")
+
+    async def pic():
+        rc, r = await amiga.rexx("MEDIA Amiga Lounge")
+        return ":2:" in r
+    check(await amiga.until(pic, 180), "picture shown")
+    rc, _ = await amiga.rexx("SAY \"Amiga Lounge\" And now chatting from my Amiga - end-to-end encrypted :)")
+    check(await alice.wait(lambda: alice.got(lounge, me.user_id,
+                                             "And now chatting from my Amiga - end-to-end encrypted :)"), 120),
+          "Alice got our message")
+    ev = alice.ids.get((lounge, me.user_id, "And now chatting from my Amiga - end-to-end encrypted :)"))
+    for who, key in ((alice, "\u2764\ufe0f"), (bob, "\U0001F44D")):
+        await who.c.room_send(lounge, "m.reaction", {"m.relates_to": {"rel_type": "m.annotation",
+                              "event_id": ev, "key": key}}, ignore_unverified_devices=True)
+    async def reacted():
+        rc, r = await amiga.rexx("REACTIONS Amiga Lounge")
+        return "heart 1" in r and "thumbsup 1" in r
+    check(await amiga.until(reacted, 120), "reactions shown")
+    await asyncio.sleep(8)
+    await amiga.rexx("OPENCHAT Amiga Lounge")
+    await asyncio.sleep(3)
+    await amiga.shot("readme")
+    dst = os.path.join(TOP, "screenshots")
+    os.makedirs(dst, exist_ok=True)
+    from PIL import Image
+    im = Image.open(os.path.join(SHOTS, "readme.png")).crop((24, 92, 612, 446))   # the windows
+    im.resize((im.width * 2, im.height * 2), Image.NEAREST).save(os.path.join(dst, "amatrix.png"))
+
+
 async def main():
     import logging
     logging.basicConfig(level=logging.ERROR)
@@ -1437,6 +1560,7 @@ async def main():
         logging.getLogger(n).setLevel(logging.ERROR)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--screenshot", action="store_true", help="only the README screenshot (screenshots/amatrix.png)")
     a = ap.parse_args()
 
     r = subprocess.run(["make", "-j4", "TARGET=amiga", "gui"], cwd=TOP, capture_output=True, text=True)
@@ -1483,7 +1607,7 @@ async def main():
         script = os.path.join(extra, ".autotest")
         v = os.environ.get("AMX_VERBOSE")
         with open(script, "w", encoding="latin-1") as f:
-            f.write(LOOP.format(server=srv.https_url, user=me.localpart, password=me.password, herald=herald,
+            f.write(LOOP.format(lang="english" if a.screenshot else "deutsch", server=srv.https_url, user=me.localpart, password=me.password, herald=herald,
                                 verbose=f"SetEnv AMX_VERBOSE {v}" if v else "UnSetEnv AMX_VERBOSE"))
         for fn in ("gui-out.txt",):
             if os.path.exists(os.path.join(sysdir, fn)):
@@ -1500,7 +1624,7 @@ async def main():
         amiga = Amiga(extra, log)
         t0 = time.time()
         try:
-            await asyncio.wait_for(scenario(ctx, amiga, srv, me), 1600)
+            await asyncio.wait_for((screenshot_scenario if a.screenshot else scenario)(ctx, amiga, srv, me), 1600)
         except asyncio.TimeoutError:
             ctx.check(False, "scenario finished in time")
         except Exception as e:

@@ -4083,6 +4083,17 @@ static int seen_before(ChatWin *w, const char *id)
     return 0;
 }
 
+/* a button label as a plain word: "_Picture ..." -> "Picture" */
+static const char *plain_label(const char *s)
+{
+    static char b[64];
+    char *o = b;
+    for (; *s && o < b + sizeof b - 1; s++) if (*s != '_') *o++ = *s;
+    *o = 0;
+    if (o - b > 4 && !strcmp(o - 4, " ...")) o[-4] = 0;
+    return b;
+}
+
 /* one event as text lines for the chat list (local charset, NList codes) */
 static char *format_event(const AmxEvent *e)
 {
@@ -4120,7 +4131,7 @@ static char *format_event(const AmxEvent *e)
             else snprintf(out, n, tr(MSG_VOICE_MESSAGE_2), tbuf, name);
         } else if (!strcmp(mt, "m.image") || !strcmp(mt, "m.file") || !strcmp(mt, "m.video") || !strcmp(mt, "m.audio"))
             snprintf(out, n, "%s\33b%s:\33n [%s: %s]", tbuf, name,
-                     !strcmp(mt, "m.image") ? tr(MSG_PICTURE) : !strcmp(mt, "m.video") ? "Video" :
+                     !strcmp(mt, "m.image") ? plain_label(tr(MSG_PICTURE)) : !strcmp(mt, "m.video") ? "Video" :
                      !strcmp(mt, "m.audio") ? "Audio" : tr(MSG_FILE), body);
         else
             snprintf(out, n, "%s\33b%s:\33n %s", tbuf, name, body);

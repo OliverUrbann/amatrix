@@ -44,6 +44,7 @@ timeouts are tripled.
 ```sh
 tests/emu/setup-emu-mui.sh           # once: MUI 5 + NList etc. into the emulator, 256-colour screen
 tests/gui/run_gui.py [-v]            # builds Amatrix, runs the chat scenario, screenshots
+tests/gui/run_gui.py --screenshot    # only the README screenshot: screenshots/amatrix.png (English)
 ```
 
 The emulated Amiga runs Amatrix and a small AmigaDOS loop that executes
