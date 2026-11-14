@@ -1,6 +1,6 @@
 Short:        Matrix chat client, E2E encrypted (MUI)
-Uploader:     YOUR@EMAIL (Oliver Urbann)
-Author:       YOUR@EMAIL (Oliver Urbann)
+Uploader:     oliver.urbann@gmail.com (Oliver Urbann)
+Author:       Oliver Urbann
 Type:         comm/misc
 Version:      0.1
 Architecture: m68k-amigaos >= 3.0.0
