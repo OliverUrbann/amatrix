@@ -1,7 +1,8 @@
 #!/bin/bash
 # Builds the Aminet upload pair build/amiga/Amatrix.lha + Amatrix.readme:
 # the MUI client Amatrix with its icons, the language catalogs and
-# Amatrix.readme (English + German, Aminet header), ISO-8859-1.
+# Amatrix.readme (English + German, Aminet header), the AmigaGuide manuals
+# Amatrix.guide / Amatrix.de.guide (from guide/*.txt), ISO-8859-1.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 top=$here/../..
@@ -18,6 +19,9 @@ done
 python3 "$here/make-icon.py" "$tmp/Amatrix/Icons/Amatrix-neu.info" 65536 new   # AppIcon: unread
 iconv -f utf-8 -t latin1 "$here/Amatrix.readme.txt" > "$tmp/Amatrix/Amatrix.readme"
 python3 "$here/make-icon.py" "$tmp/Amatrix/Amatrix.readme.info" 4096 text     # text icon, opens in MultiView
+python3 "$here/mkguide.py" en "$tmp/Amatrix/Amatrix.guide" >/dev/null           # AmigaGuide manual (en, de)
+python3 "$here/mkguide.py" de "$tmp/Amatrix/Amatrix.de.guide" >/dev/null
+for g in Amatrix.guide Amatrix.de.guide; do python3 "$here/make-icon.py" "$tmp/Amatrix/$g.info" 4096 text; done
 python3 "$here/make-icon.py" "$tmp/Amatrix.info" 4096 drawer                  # the drawer itself
 # Aminet: Short <= 40 characters, lines <= 78
 short=$(sed -n 's/^Short: *//p' "$here/Amatrix.readme.txt")

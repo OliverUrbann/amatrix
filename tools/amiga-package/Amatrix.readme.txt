@@ -10,14 +10,11 @@ Distribution: Aminet
 === English ===
 
 Amatrix is a native Matrix client for classic AmigaOS, written in C for
-the 68020 and better (developed and tested on a Vampire V4SA with real
-Kickstart and Workbench 3.9).  It talks to a Matrix server directly: no
-bridge, no proxy.
-
-Matrix is an open protocol for chat (matrix.org).  Amatrix works with
-Synapse and other servers and chats with Element, FluffyChat and so on.
-The user interface is MUI in the style of the old ICQ: a list of chats and
-rooms with pictures on the left, one chat window per room.
+the 68020 and better.  It talks to a Matrix server directly: no bridge,
+no proxy.  Matrix is an open protocol for chat (matrix.org); Amatrix
+connects to the Matrix network and chats with Element, FluffyChat and the
+other clients.  The user interface is MUI: a list of chats and rooms with
+pictures on the left, one chat window per room.
 
 Features
 
@@ -44,7 +41,6 @@ Features
   A new language needs only a translation file (see the source).
 
 Requirements
-------------
 - 68020 or better
 - MUI 5 (muimaster.library V20) with NList.mcc and BetterString.mcc
   (both are in the MUI 5 "contrib" package)
@@ -52,629 +48,28 @@ Requirements
 - Optional: Herald (Aminet util/cdity/Herald) for notifications,
   openurl.library to open links, opusdec for voice messages
 
+An account to log in with
+You need a Matrix account with a user name and a PASSWORD on a server that
+allows password logins (matrix.org does).  Accounts that only work
+through single sign-on ("Continue with Google/GitHub/...") or the newer
+browser login cannot log in.  If your account has no password yet, set
+one in Element first (Settings > Account > Change password).
+
 Installation
-------------
-Copy the drawer "Amatrix" wherever you like.  Nothing else is needed; the
-program, its icon and the language catalogs are all inside the drawer.
+Copy the drawer "Amatrix" wherever you like and double click "Amatrix".
+Program, icon and language catalogs are all inside the drawer.
 
-First start
------------
-Double click "Amatrix".  Three things happen the first time: you log in,
-you should protect the stored data with a password, and you can verify the
-new device so that old encrypted messages become readable.
-
-1. Logging in
-
-The login window asks for
-  Server:    the address of your Matrix homeserver including https://,
-             e.g. https://matrix.org - the same address other Matrix
-             clients ask for as "homeserver"
-  User:      your user name, e.g. alice
-  Password:  the password of your Matrix account
-Amatrix uses the password once to log in and does not store it.  What it
-keeps instead is the login of this device (an access token) and the keys
-this device made for the encryption.  In your account's session list (in
-Element: Settings > Sessions) Amatrix shows up as a device of its own.
-The very first login takes a little longer, because the device has to
-create its encryption keys.  The status line then reads "Online - @alice:
-matrix.org", and the room list fills.  From the second start on Amatrix
-logs in by itself.
-
-Only the login with a password is supported.  Accounts that are used
-through single sign-on (a "Continue with Google/GitHub/..." button instead
-of a password field) or through the newer browser login of some servers
-cannot log in, because that needs a web page and a hand-over back to the
-program.  Often there is a way round it: if your account has no password
-yet, set one in Element (Settings > Account > Change password, or on the
-server's own account page; with SSO accounts it is sometimes called "Set
-password").  If the server allows it, you can then log in with user name
-and that password.  Some servers switched password logins off for good;
-there Amatrix cannot be used with that account at the moment.
-
-2. Why you should set a password for the Amatrix data
-
-All of this is kept in a drawer named "Amatrix-xxxxxxxx" next to the
-program: the login, the private encryption keys of this device, the keys
-of your rooms and the latest messages of every room.  Whoever gets a copy
-of that drawer can read your encrypted rooms as you.  Without a password
-the files in it are plain.  With one they are encrypted (AES-256-GCM, the
-key is derived from your password); then a copy of the drawer is useless
-without it.
-
-Set it in the menu Account, "Password for Amatrix data ...".  It is not
-your Matrix password and the server never sees it; you make it up, at
-least 4 characters, and type it twice.  From then on Amatrix asks for it
-at every start (a small window "Password for the Amatrix data needed"),
-before it logs in.  The same menu item can remove the protection again.  It
-is worth doing whenever other people can reach your Amiga or its disk,
-when the drawer lies on a network drive, or when it ends up in backups.
-
-There is no way to get a forgotten password back.  Then log out (or
-delete the drawer), start Amatrix again and log in anew; the old keys are
-gone, but your account is not affected, and with the security key (next
-section) the old messages become readable again.  Not covered by the
-password: pictures you open are copied to T:Amatrix for the viewer, and
-the small avatar pictures are kept as they are.
-
-3. Verifying this device - different from other clients
-
-A new device is "unverified" until your account vouches for it: other
-people's clients show a warning shield for its messages, and Amatrix
-cannot read messages that were sent before it existed, because it does not
-have their keys.  Element and most other clients verify a new device by
-comparing emojis (or scanning a QR code) with another device.  Amatrix
-does not do that.  It verifies in a different way: you type in your
-security key.
-
-Where you get it: it is the key of your "secure backup" (also called
-recovery key or security key).  In Element it is shown once when you set
-the backup up, a long string in groups of four characters starting with
-"EsTc" (Element: Settings > Security & Privacy > Secure Backup, in newer
-versions Settings > Encryption).  If you set a security phrase instead of
-a key, you can type that phrase.  If you have not set up a secure backup
-yet, do it in Element first - Amatrix cannot create one.
-
-Then choose the menu Account, "Enter security key ...", type the key (or
-the phrase) and press Enter.  Amatrix opens your account's secret storage
-with it and does two things:
-  - it signs this device with your account's cross-signing key.  From
-    then on this device counts as verified: the warning disappears in
-    Element and everywhere else, and the status line says "(verified)";
-  - it fetches the key of your key backup (and keeps it in the drawer, so
-    protected by the password of section 2).  Whenever you open a room,
-    Amatrix now loads the old room keys from the backup and decrypts the
-    older messages.  Before that they read "(encrypted, no key on this
-    device)".
-The key is checked against the server's secret storage, so a wrong key is
-refused ("Wrong key or passphrase").  A security phrase takes a few
-minutes on the Amiga to check; the key itself is fast.  The messages
-"There is no key backup on the server" and "Verifying was not possible
-(cross-signing not set up?)" tell you that the account has no backup or no
-cross-signing yet; set it up in Element and try again.  You only need to
-do this once per login.  The window Account > Sessions shows which of
-your devices are verified.
-
-If another client sends Amatrix a verification request (the emoji
-comparison), Amatrix does not answer it; cancel it there and use the
-security key instead.  Treat the key like a password: type it in, do not
-keep it in a file on the Amiga - Amatrix does not store it, only the
-backup key derived from it.
-
-Language
---------
-Amatrix speaks English (built in), Deutsch, Francais, Espanol, Italiano,
-Nederlands and Svenska.  It follows the languages in the Locale
-preferences; the catalogs are Catalogs/<language>/amatrix.catalog next to
-the program (without a matching catalog Amatrix is English).  To force a
-language, add the tool type
-    LANGUAGE=english
-to the icon, or start from a shell with "Amatrix LANGUAGE=deutsch".
-The translations other than German and English are machine-assisted and
-not reviewed by native speakers yet - corrections are welcome.  More
-languages: a translation is one text file, see the source on GitHub.
-
-Using it
---------
-The menu bar has six menus: Amatrix (about, iconify, log out, quit), Room,
-Message, Person, Account and Settings.  Room items act on the room that is
-selected in the list (or on the active chat window), Message items on the
-message selected in a chat window, Person items on the sender of that
-message (never on yourself).  Whatever does not apply right now is greyed
-out.  What the items do:
-
-- List:       Chats and rooms with a picture; below it the last message
-              (or topic, members, invitation), the time on the right;
-              (n) = unread messages; a double click opens the chat or,
-              for invitations, asks whether to accept or decline
-- Above the list: a field filters the rooms by name; if you are in
-              Spaces, a choice above it selects "All rooms" or the rooms
-              of one space.  Favourites (star) are on top, low priority
-              rooms at the bottom (menu "Favourite on/off", Amiga-F, and
-              "Low priority on/off").
-- New chat (Amiga-N): a private chat with one person.  Enter their Matrix
-              ID (@name:server) or, if they are on your server, just the
-              name.  The chat is end-to-end encrypted.  The other person
-              gets an invitation and sees your messages once they accept;
-              a chat that already exists is opened instead of making a
-              second one.
-- New room (Amiga-A): a room for several people.  You give it a name and
-              choose: "Encrypted" (end-to-end encryption, cannot be turned
-              off again later), "In the directory" (the room is listed in
-              the public room directory so anybody can find and join it),
-              "As a space" (a collection of rooms instead of a chat room).
-- Menu "Join room ..." (Amiga-R): search the public rooms of your server
-              or enter #alias:server to join a room you know; with
-              "Preview" you read the history without joining (if the room
-              allows it).
-- Menu "Enter security key ...": verifies this device and makes old
-              messages readable, see "First start", section 3.
-- Menu "Password for Amatrix data ...": encrypts the drawer
-              "Amatrix-xxxxxxxx" with a password of your choice, see
-              "First start", section 2.
-- Menu "Log out": logs this device out of your account (it disappears from
-              the session list) and deletes the drawer's login and keys.
-              Your account and its messages are not touched.  Logging in
-              again creates a new device; the security key makes the old
-              messages readable again.
-- Menu "My profile ..." (Amiga-O): change your display name and profile
-              picture (PNG, JPEG or GIF).  Everybody who shares a room
-              with you sees them.
-- Menu "Sessions ..." (Amiga-G): all devices logged in to your account,
-              with their last activity and whether they are verified.
-              You can rename them, and log out others (after typing your
-              Matrix password), e.g. a lost phone.
-- Menu "Search messages ..." (Amiga-D): in all rooms or the selected one.
-              The server searches unencrypted rooms, for encrypted rooms
-              only the history stored on the Amiga is searched.  A double
-              click on a hit opens the chat.
-- Menu "Members and settings ..." (Amiga-T), also the i symbol in the chat
-              window: name, topic, picture, who may join, who may read the
-              history, switch on encryption; the members with their role
-              (founder, admin, moderator, member), invite, remove, ban/
-              unban, assign a role.  What you may not do in that room is
-              greyed out.
-- Chat window: loads the last 30 messages when opened.
-              Toolbar on top (hold the mouse over a button for its help):
-                arrow up      = load 20 older messages
-                arrow back    = reply to the selected message (the line
-                                above the input shows what to; "Cancel"
-                                takes it back)
-                pen           = edit your own selected message (the text
-                                goes into the input, Return saves)
-                waste basket  = delete your own selected message
-                smiley + plus = react to the selected message (without a
-                                selection: the newest from someone else);
-                                opens a small choice; the same one again
-                                takes your reaction back
-                paper clip    = send a picture or file (requester, several
-                                at once); or drag icons from the Workbench
-                                into the chat window
-                person + plus = invite someone to this room
-                i in a circle = members and room settings
-                door + arrow  = leave the room for good (asks first)
-              Replies show a quote line above them (» Name: text), edited
-              messages "(edited)", deleted ones "(message deleted)".  The
-              date is shown where the day changes.  Threads: under the
-              first message it says "Thread: n replies"; a click on the
-              speech bubble symbol opens the thread in its own window,
-              what you write there goes into the thread.
-              Formatted messages (from Element): bold, italic and
-              underline are shown as such, lists, quotes ("| "), headings
-              and code blocks as lines of their own, links as
-              "text (address)".  Messages that mention you have a bold "@"
-              before the time; the room list then says "(3 @)".
-              Emojis in the text appear as small pictures; unknown ones as
-              a yellow face with a question mark.
-              Pictures: a small preview below the message; a click opens
-              the picture with the default program (Workbench/DefIcons,
-              otherwise MultiView; copy in T:Amatrix).  The file symbol
-              behind the name saves the picture or file wherever you like.
-              Links are underlined; the globe behind opens the browser
-              (openurl.library).
-              Below a link there is a preview (title - description) which
-              your server fetches; in encrypted rooms only if switched on
-              in the settings.
-              Type at the bottom, Return sends.  On the right of the
-              toolbar it says "Alice is typing ..." when someone writes; a
-              blue check mark behind your message means: read.
-              Amatrix keeps the latest messages of every room in its
-              drawer; a chat window shows them at once (even without a
-              network), then the rest comes from the server.
-              Reactions are shown below the message with a count (people);
-              similar emojis count together (all laughing smileys, all
-              hearts/kisses).  Your own count is bold.  A click on a small
-              picture there sets or takes back your reaction.
-              ARexx: REACT <room> heart (thumbsup, thumbsdown, heart,
-              smile, joy, confused, eyes, tada, rocket).
-
-ARexx port: AMATRIX.1 - all commands are described in "ARexx reference"
-below.
-
-Warning: after you enter the security key, the drawer "Amatrix-xxxxxxxx"
-also holds the key to the key backup.  Best protect it with a password
-(see above) and do not give it to anybody.
-
-More features (as in Element)
------------------------------
-- Commands in the input field: /help shows them all (/me, /shrug,
-  /spoiler, /plain, /html, /nick, /myroomnick, /topic, /roomname,
-  /invite, /join, /knock, /part, /ignore, /unignore, /whois,
-  /upgraderoom, /jumptodate ...).
-- Formatting while typing, as Markdown: *italic*, **bold**, `code`, lists,
-  > quote.  :smile: and other short codes become emojis.  A started @name
-  or :code is completed with the Tab key (@name becomes a real mention).
-- Arrow up in an empty input field: edit your own last message.  What is
-  left in the field when you close a chat window is kept as a draft (room
-  list: "Draft: ...").
-- Polls: shown with their answers, a click votes; menu "Create poll ..."
-  (Amiga-U), end your own polls.
-- Locations: as text with a link to OpenStreetMap.
-- Voice messages: "[Voice message 0:12]"; a click saves and plays it.  If
-  opusdec (Aminet mus/edit/opus-tools) is in C: or in the Amatrix drawer,
-  a WAV file is made first.
-- Menu: "Quote" (Amiga-Z), "Forward ..." (Amiga-W), "Copy link to
-  message", "Pin on/off" (pinned messages are shown in a bar above the
-  history), "Edit history ...", "Report ..." (to the server's admins),
-  "Export chat ..." (text or HTML), "Browse space ..." (the rooms of a
-  space: join, preview, add/remove the selected room), "Password and
-  account ..." (change password, deactivate account).
-- Unread: when you open a chat, a marker stands above the first unread
-  message.  /jumptodate DD.MM.YYYY jumps to a day.
-- Notifications per room on the server (room window: default, all,
-  mentions only, off) and keywords in the settings - also for your other
-  devices.
-- Ignore users (/ignore, the list is in the settings); decline an
-  invitation and block the sender at once.
-- Knocking: ask for entry to "knock" rooms (/knock); who knocks is shown in
-  the room window and can be let in.
-- A replaced room (room upgrade) shows a bar leading to the new room.
-- Under a message "read by ..." shows who has read up to there.
-- Settings: show joins/leaves/name changes, 24-hour clock, compact
-  display, "Show who has read what".
-
-Not planned: verifying other devices by comparing emojis (the security key
-is enough), voice and video calls.
-
-Notifications, iconify, settings
---------------------------------
-- Notifications come through Herald (Aminet util/cdity/Herald).  If Herald
-  is not running there are none.  They appear for new messages when the
-  window of the room is not in front or Amatrix is iconified.  A double
-  click on the notification opens the chat.
-- Menu Room/Mute (Amiga-M) for the chosen room: no notifications from that
-  room (useful for busy rooms); the list says "(muted)".  The menu item
-  again turns notifications back on.
-- Menu "Iconify" (Amiga-I) or the iconify symbol in the window: Amatrix
-  becomes an AppIcon on the Workbench.  With unread messages it gets a
-  pink exclamation mark (Icons/Amatrix-neu); the window title shows the
-  number of unread messages.
-- Menu "Settings ..." (Amiga-E): notifications on/off, for all messages or
-  only direct messages and mentions, picture previews in the chat on/off,
-  link previews (also in encrypted rooms), show that I am typing, send
-  read receipts, store history locally, pictures in the room list, start
-  iconified (also with the argument HIDE).
-- Menu "MUI settings ...": font, colours etc. for Amatrix.
-
-ARexx reference
-===============
-
-Amatrix has an ARexx port named AMATRIX.1.  It lets scripts do what you do
-with the mouse, and read back what the windows show.  Every command runs
-the same code as the matching menu item, button or key.
-
-Example (rexx, e.g. from Shell: rx hello.rexx):
-
-    /* hello.rexx */
-    OPTIONS RESULTS
-    ADDRESS AMATRIX.1
-    'STATUS'              /* "Online - @me:matrix.org|rooms=3|invites=0" */
-    SAY RESULT
-    'SAY Test hello from ARexx'    /* sends it to the room Test */
-    'LASTLINE Test'
-    SAY RESULT
-
-Conventions
-- Without OPTIONS RESULTS the result strings are not delivered.
-- Return codes: 0 done; 5 not found (no such room, window not open, no
-  message to act on); 10 not possible now (not logged in, invitation not
-  accepted yet, no browser, ...).  The commands that only read a value
-  return 0 and put it into RESULT.
-- ROOM is the name of the room as shown in the room list (upper and lower
-  case do not matter) or its Matrix room ID (!abc:server).  A ROOM/F
-  argument takes the rest of the line, so room names with spaces need no
-  quotes; where more arguments follow (ROOM/A), put the name in quotes.
-  The window of a directory preview is addressed with the room name
-  "Vorschau" where a command says so.
-- Lists in results are separated by "|".  Text colours and styles of the
-  chat window (escape sequences) are shown as "^" where text is returned.
-- Texts are ISO-8859-1.  [ ] marks an optional keyword; /S is a switch.
-- The names of commands are not abbreviated.  Besides these commands MUI
-  adds its own, e.g. HIDE and SHOW (iconify/restore) and QUIT.
-
---- Status, room list ----------------------------------------------------
-
-STATUS
-    RESULT: the status line of the main window, then "rooms=N" (rooms in
-    the list) and "invites=N" (open invitations), separated by "|".
-ROOMS
-    RESULT: the room list as shown (filter and space selection applied),
-    names separated by "|"; a "*" after a name marks a favourite.
-ROOMLINE ROOM/F
-    RESULT: the second line of the room's list entry (last message, draft,
-    "(3)" unread count with "@" for mentions, "(muted)", "(replaced)").
-UNREAD ROOM/F
-    RESULT: number of unread messages of the room; -1 if there is no such
-    room.
-FILTER TEXT/F
-    Types TEXT into the filter field above the room list; no text clears
-    it.
-SPACE NAME/F
-    Chooses the space in the selection above the room list; no name
-    selects "All rooms".  RC 5 if you are not in a space of that name.
-FAVOURITE ROOM/A,OFF/S
-    Makes ROOM a favourite (star); with OFF takes it back.
-MUTE ROOM/A,OFF/S
-    Mutes ROOM (no notifications); OFF switches them back on.  This is a
-    setting on the server and holds for all your devices.
-NOTIFYLEVEL ROOM/A,LEVEL/N
-    Sets the notification level of ROOM (0 default, 1 all messages, 2 only
-    mentions and keywords, 3 off) and returns the level in RESULT.  Without
-    LEVEL it only returns it.
-KEYWORD WORD/A,OFF/S
-    Adds WORD to the notification keywords (treated like a mention); OFF
-    removes it.
-KEYWORDS
-    RESULT: the keywords.
-
---- Chats and rooms --------------------------------------------------
-
-NEWCHAT USER/A
-    Starts an encrypted direct chat with USER (@name:server or just name);
-    opens the existing one if there is one.  RC 10 if not logged in.
-NEWROOM NAME/A
-    Creates an encrypted room NAME (not listed in the directory).
-ACCEPT ROOM/F
-    Accepts the invitation to ROOM.  RC 5 if there is none.
-INVITE ROOM/A,USER/A
-    Invites USER to ROOM, as the toolbar button does.
-LEAVE ROOM/F
-    Leaves ROOM for good, without the safety question.
-OPENCHAT ROOM/F
-    Opens the chat window of ROOM and brings it to the front (also leaves
-    iconify).  RC 10 if it is an invitation that is not accepted yet.
-CLOSECHAT ROOM/F
-    Closes the chat window, as the close gadget does.
-CHATSTATUS ROOM/F
-    RESULT: the busy/status text of the chat window ("Loading older
-    messages ...", "Sending ..." or empty).
-CHATLINES ROOM/F
-    RESULT: number of lines in the chat window (a wrapped message has
-    several); -1 if no window is open.
-CHATCACHED ROOM/F
-    RESULT: how many of the shown messages came from the local history
-    cache rather than from the server.
-OLDER ROOM/F
-    Loads 20 older messages, as the arrow button does.  RC 10 if the button
-    is greyed out (nothing older).
-REPLACED ROOM/F
-    RESULT: the name of the room that replaced ROOM after a room upgrade,
-    "(no bar)" if the window does not show the bar yet, "" if not replaced.
-GOREPLACEMENT ROOM/F
-    Clicks on the bar "This room was replaced" and goes to the new room.
-
---- Writing -------------------------------------------------------------
-
-SAY ROOM/A,TEXT/A/F
-    Sends TEXT to ROOM as if typed into the input field and Return was
-    pressed (so Markdown, :emoji: and /commands work); opens the window if
-    needed.
-TYPE ROOM/A,TEXT/F
-    Puts TEXT into the input field without sending it; no text empties the
-    field.
-INPUT ROOM/F
-    RESULT: the text in the input field.
-SENDINPUT ROOM/F
-    Sends the input field's text, as Return does.
-DRAFT ROOM/F
-    RESULT: the saved draft of the room ("" if none).
-REPLY ROOM/A,TEXT/F
-    Answers the newest message of somebody else in ROOM with TEXT.
-EDITLAST ROOM/A,TEXT/F
-    Replaces your newest message in ROOM by TEXT (an edit).
-EDITUP ROOM/F
-    Like cursor up in an empty input field: loads your newest message for
-    editing.
-DELETELAST ROOM/F
-    Deletes your newest message in ROOM for everyone, without the question.
-SENDFILE ROOM/A,FILE/A,THREAD/S
-    Sends the picture or file FILE to ROOM (as if chosen in the file
-    requester); THREAD: into the open thread window of ROOM.
-POLL ROOM/A,QUESTION/A,ANSWERS/A,MULTI/S,HIDE/S
-    Creates a poll.  ANSWERS is one string with the answers separated by
-    "|".  MULTI allows several choices, HIDE shows the result only at the
-    end.
-VOTE ROOM/A,N/N/A
-    Votes for answer N (0, 1, ...) of the newest poll in ROOM; N = 255 ends
-    the poll (your own).
-REACT ROOM/A,NAME/A
-    Reacts to the newest message of somebody else in ROOM with NAME:
-    thumbsup, thumbsdown, heart, smile, joy, confused, eyes, tada or
-    rocket.  The same again takes the reaction back.  RC 10 for an unknown
-    NAME or if there is no such message.
-OPENTHREAD ROOM/F
-    Opens the thread window of the newest message that has a thread.
-    RC 10 if there is none.
-THREADSAY ROOM/A,TEXT/F
-    Like SAY, but in the open thread window of ROOM.
-SUGGEST ROOM/F
-    RESULT: the completion suggestions currently shown for a started @name
-    or :emoji: in the input field.
-COMPLETE ROOM/A,N/N/A
-    Picks suggestion N (0, 1, ...) of the list.
-
---- Reading what a chat window shows --------------------------------------
-
-LASTLINE ROOM/F
-    RESULT: the text of the newest line.  The room "Vorschau" addresses a
-    directory preview window.
-FIRSTLINE ROOM/F
-    RESULT: the text of the oldest message line (no date separator).
-TEXTS ROOM/A,N/N,THREAD/S
-    RESULT: the last N lines (default 10), separated by "|".  THREAD reads
-    the thread window instead.
-VISIBLE ROOM/F
-    RESULT: "m|f|text": m is the line number of the "new messages" marker
-    (-1 if none), f the number of the first line that is visible, then
-    its text.
-ATBOTTOM ROOM/F
-    RESULT: 1 if the newest line is visible, otherwise 0.
-TYPING ROOM/F
-    RESULT: who is typing, as shown in the toolbar.
-READ ROOM/F
-    RESULT: how many of your messages in ROOM carry the check mark (read).
-READERS ROOM/F
-    RESULT: the "read by ..." lines of the window, separated by "|".
-UNREADABLE ROOM/F
-    RESULT: number of messages that could not be decrypted yet.
-REACTIONS ROOM/F
-    RESULT: the reaction lines as "name count" pairs ("heart 2*": a star
-    marks your own reaction), the lines separated by " | ".
-PREVIEWS ROOM/F
-    RESULT: the link preview lines, separated by "|".
-POLLROWS ROOM/F
-    RESULT: the answer lines of all polls ("<X>" marks your choice).
-PINBAR ROOM/F
-    RESULT: the text of the pinned-messages bar ("" if hidden).
-MEDIA ROOM/F
-    RESULT: the attachments as "name:state:strips", separated by "|"; state
-    1 loading, 2 shown, 3 no preview.
-LINKS ROOM/F
-    RESULT: the links of the window, separated by blanks.
-
---- Working on a message -----------------------------------------------
-
-MARK ROOM/A,TEXT/F
-    Marks (selects) the newest message of ROOM that contains TEXT.  RC 5 if
-    there is none.  MARK is the way to choose the message that ACTION, COPY
-    and the Message and Person menus work on.
-ACTION ROOM/A,WHAT/A,TO/F
-    Does a menu action on the marked message.  WHAT is one of
-        pin         pins it, or unpins it if it is pinned
-        quote       starts a reply with the quote in the input field
-        copylink    copies the link to the message
-        edithist    opens the edit history (see EDITHIST)
-        mention     puts an @mention of its sender into the input field
-        copyid      copies the sender's user ID
-        report      reports it to the server admins, TO is the reason
-        forward     forwards it to the room named in TO
-    RC 5 if no message is marked or WHAT is unknown.
-EDITHIST
-    RESULT: the rows of the open edit history window, separated by "|".
-COPY ROOM/F
-    Copies the text of the marked message (else the newest) to the
-    clipboard.
-CLIP
-    RESULT: the text on the clipboard.
-SAVEMEDIA ROOM/A,N/N/A,PATH/A
-    Saves attachment N (0, 1, ... as in MEDIA) to PATH.
-OPENMEDIA ROOM/A,N/N/A
-    Opens attachment N with the default viewer.
-OPENLINK ROOM/A,N/N/A
-    Opens link N of LINKS in the browser; RC 10 if no browser was found.
-
---- Room settings, members, export -------------------------------------
-
-ROOMINFO ROOM/F
-    Opens the "Members and settings" window of ROOM.
-INFOSTATE
-    RESULT: what that window shows: "name|topic|join|history|encrypted|
-    status" (join: invite, public or knock; history: shared, invited,
-    joined or world_readable; encrypted: 1 or 0).
-INFOSET WHAT/A,VALUE/F
-    Changes a setting in that window and saves it.  WHAT is name, topic,
-    join or history, VALUE the new text or one of the values above.
-MEMBERS
-    RESULT: the members listed in the window as "name:role", separated by
-    "|"; a banned or invited member has " gesperrt" or " eingeladen"
-    appended.
-INFOMEMBER N/N/A,ACTION/A,LEVEL/N
-    Selects member N (0, 1, ...) in that window and does ACTION: kick, ban,
-    unban or role (LEVEL 0 member, 1 moderator, 2 admin), without
-    questions.  The server decides whether you are allowed to.
-EXPORT ROOM/A,PATH/A,ALL/S
-    Writes the chat to the file PATH (.html: as a web page, otherwise
-    text).  ALL loads the whole history first, otherwise only what is
-    loaded is exported.
-
---- Account, settings -------------------------------------------------
-
-RECOVERY KEY/F
-    Enters the security key or passphrase (Account menu, see "First
-    start").
-UNLOCK PASS/F
-    Types the password for the Amatrix data into the unlock window shown at
-    start.  RC 5 if that window is not open.
-STOREPASS PASS/F
-    Sets the password for the Amatrix data; no text removes the
-    protection.
-PROFILE NAME/K,PICTURE/K
-    Opens the profile window; NAME sets the display name, PICTURE the
-    profile picture (path of a PNG, JPEG or GIF).
-PROFILESTATE
-    RESULT: "name|picture|status" of the profile window (picture 1 or 0).
-SESSIONS
-    Opens the sessions window.
-SESSIONLIST
-    RESULT: the devices as "name:id:state", state current, verified or
-    unverified, separated by "|".
-SESSIONSET N/N/A,NAME/K,PASSWORD/K
-    Renames device N (0, 1, ... as in SESSIONLIST) with NAME, and/or logs
-    it out with PASSWORD (your Matrix password).  RC 10 for this device.
-PASSWORD OLD/A,NEW/A
-    Changes the Matrix password, as the account window does.
-ACCOUNTSTATE
-    RESULT: the status line of that window.
-SETOPTION NAME/A,VALUE/N/A
-    Sets an option of the settings window to VALUE (0 or 1), without
-    saving it: linkprev, linkprev_enc (link preview, also in encrypted
-    rooms), typing, previews, avatars, joins, 24h, compact.  RC 5 for an
-    unknown NAME.
-MENUON TITLE/F
-    RESULT: 1 if the menu item whose title starts with TITLE can be chosen
-    now, otherwise 0 (greyed out).  RC 5 if there is no such item.
-
---- Search, directory, spaces -------------------------------------
-
-FIND TERM/F
-    Opens the search window and searches TERM in all rooms.
-HITS
-    RESULT: the hits as "room:sender:text", separated by "|".
-OPENPREVIEW ROOM/A
-    Opens a preview window for a room you have not joined (room ID or
-    #alias:server), as from the directory.
-SUMMARY ROOM/A
-    Asks the directory for the info line of ROOM (see PUBINFO).
-PUBINFO
-    RESULT: that info line (members, whether the history is readable).
-SPACEWIN NAME/F
-    Opens the window of the space NAME.  RC 5 if it is not a space.
-SPACELIST
-    RESULT: the rooms of that window as "name:state" (space, joined or -),
-    separated by "|".
-SPACEADD ROOM/A,OFF/S
-    Adds ROOM to the space of that window; OFF takes it out.
-PICKER ROOM/F
-    Opens the reaction choice of the chat window.
+Documentation
+Amatrix.guide (AmigaGuide, open it with MultiView) is the manual: first
+start (login, password for the stored data, verifying the device with the
+security key), every menu and button, all functions and the complete ARexx
+reference.  It is in the drawer; Amatrix.de.guide is the German version.
 
 Known bugs
-----------
-- Thin horizontal lines sometimes appear in picture previews, mostly while
-  scrolling.  For the strips a preview is made of, NList now and then does
-  not draw the bottom row.  The picture itself is fine; after a complete
-  redraw it is right.
+Thin horizontal lines sometimes appear in picture previews, mostly while
+scrolling (NList does not draw the bottom row of a strip now and then).
 
 Credits and licences
---------------------
 Amatrix uses libolm (Apache-2.0), cJSON (MIT), stb_image (public domain),
 the AmiSSL SDK (Apache-2.0) and the MUI SDK (not included).  Their texts
 are in the source tree (third_party/).  Matrix is an open standard of the
@@ -700,363 +95,84 @@ source repository (LICENSE).
 === Deutsch ===
 
 Amatrix ist ein nativer Matrix-Client für das klassische AmigaOS, in C
-für 68020 und besser geschrieben (entwickelt und getestet auf einer
-Vampire V4SA mit echtem Kickstart und Workbench 3.9).  Er spricht direkt
-mit dem Matrix-Server: keine Brücke, kein Proxy.
+für 68020 und besser geschrieben.  Er spricht direkt mit dem Matrix-
+Server: keine Brücke, kein Proxy.  Matrix ist ein offenes Chat-Protokoll
+(matrix.org); Amatrix verbindet sich mit dem Matrix-Netzwerk und chattet
+mit Element, FluffyChat und den anderen Clients.  Die Oberfläche ist MUI:
+links die Liste der Chats und Räume mit Bildern, pro Raum ein Chatfenster.
 
-Matrix ist ein offenes Chat-Protokoll (matrix.org).  Amatrix funktioniert
-mit Synapse und anderen Servern und chattet mit Element, FluffyChat usw.
-Die Oberfläche ist MUI im Stil des alten ICQ: links die Liste der Chats
-und Räume mit Bildern, pro Raum ein Chatfenster.
+Merkmale
+
+- Ende-zu-Ende-Verschlüsselung (Olm/Megolm) in beide Richtungen,
+  Schlüssel-Backup und Sicherheitsschlüssel, damit verschlüsselter Verlauf
+  lesbar ist (libolm, portiert)
+- Direktchats, Räume, Spaces, Einladungen, Raum-Einstellungen, Mitglieder
+  mit Rollen, Entfernen/Sperren, Anklopfen, Raum-Upgrades
+- Antworten, Bearbeiten, Löschen, Threads, Reaktionen, angeheftete
+  Nachrichten, Umfragen, formatierte Nachrichten (fett, kursiv, Listen,
+  Code), Markdown beim Tippen
+- Bilder, Dateien, Sprachnachrichten: Vorschau im Chat, Senden mit dem
+  Dateirequester oder per Drag-and-drop von Workbench-Icons ins Fenster
+- Link-Vorschauen, Standorte, Emojis als kleine Bilder, Tippanzeige und
+  Lesebestätigungen ("gelesen von ...")
+- Suche in allen Räumen, Chat als Text oder HTML exportieren, Entwürfe,
+  Verlauf lokal gespeichert und beim Start sofort sichtbar
+- Benachrichtigungen über Herald, AppIcon mit Ungelesen-Markierung beim
+  Ikonifizieren
+- Passwort für die gespeicherten Daten (AES-256), mehrere Sitzungen,
+  eigenes Profil
+- Vollständiger ARexx-Port (AMATRIX.1)
+- Sprachen (locale.library-Kataloge): Englisch (eingebaut), Deutsch,
+  Francais, Espanol, Italiano, Nederlands, Svenska.  Amatrix folgt den
+  Locale-Einstellungen; der Tooltype bzw. das Argument LANGUAGE=english
+  (oder deutsch, ...) erzwingt eine.  Die Übersetzungen außer Deutsch und
+  Englisch sind maschinell unterstützt und noch nicht von Muttersprachlern
+  geprüft.  Eine neue Sprache braucht nur eine Übersetzungsdatei (siehe
+  Quellcode).
 
 Voraussetzungen
----------------
 - 68020 oder besser
 - MUI 5 (muimaster.library V20) mit NList.mcc und BetterString.mcc
   (beide im MUI-5-Paket "contrib" enthalten)
 - AmiSSL 5 und ein laufender TCP/IP-Stack (Roadshow, AmiTCP, ...)
+- Optional: Herald (Aminet util/cdity/Herald) für Benachrichtigungen,
+  openurl.library zum Öffnen von Links, opusdec für Sprachnachrichten
+
+Ein Konto zum Anmelden
+Nötig ist ein Matrix-Konto mit Benutzername und PASSWORT auf einem Server,
+der Passwort-Anmeldung erlaubt (matrix.org tut das).  Konten, die nur über
+Single Sign-on ("Weiter mit Google/GitHub/...") oder die neuere Browser-
+Anmeldung funktionieren, können sich nicht anmelden.  Hat dein Konto noch
+kein Passwort, vergib zuerst in Element eines (Einstellungen > Konto >
+Passwort ändern).
 
 Installation
-------------
-Die Schublade "Amatrix" an einen beliebigen Ort kopieren.  Mehr ist nicht
-nötig; Programm, Icon und Sprachkataloge liegen alle darin.
+Die Schublade "Amatrix" an einen beliebigen Ort kopieren und "Amatrix"
+doppelklicken.  Programm, Icon und Sprachkataloge liegen alle darin.
 
-Erster Start
-------------
-Doppelklick auf "Amatrix".  Beim ersten Mal geht es um drei Dinge: sich
-anmelden, die gespeicherten Daten mit einem Passwort schützen und das neue
-Gerät verifizieren, damit alte verschlüsselte Nachrichten lesbar werden.
-
-1. Anmelden
-
-Das Anmeldefenster fragt nach
-  Server:    der Adresse deines Matrix-Servers mit https://, z.B.
-             https://matrix.org - dieselbe Adresse, die andere
-             Matrix-Clients als "Homeserver" verlangen
-  Benutzer:  dein Benutzername, z.B. alice
-  Passwort:  das Passwort deines Matrix-Kontos
-Amatrix benutzt das Passwort einmal zum Anmelden und speichert es nicht.
-Gespeichert wird stattdessen die Anmeldung dieses Geräts (ein Zugriffs-
-token) und die Schlüssel, die dieses Gerät für die Verschlüsselung
-erzeugt hat.  In der Sitzungsliste deines Kontos (in Element: Einstel-
-lungen > Sitzungen) erscheint Amatrix als eigenes Gerät.  Die allererste
-Anmeldung dauert etwas länger, weil das Gerät seine Schlüssel erzeugen
-muss.  Danach steht in der Statuszeile "Online - @alice:matrix.org" und
-die Raumliste füllt sich.  Ab dem zweiten Start meldet sich Amatrix von
-selbst an.
-
-Unterstützt wird nur die Anmeldung mit Passwort.  Konten, die über Single
-Sign-on benutzt werden (ein Knopf "Weiter mit Google/GitHub/..." statt
-eines Passwortfelds) oder über die neuere Browser-Anmeldung mancher
-Server, können sich nicht anmelden, denn dafür braucht es eine Webseite
-und die Übergabe zurück an das Programm.  Oft gibt es einen Ausweg: Hat
-dein Konto noch kein Passwort, vergib in Element eines (Einstellungen >
-Konto > Passwort ändern, oder auf der Konto-Seite des Servers; bei SSO-
-Konten heißt es manchmal "Passwort festlegen").  Erlaubt der Server es,
-kannst du dich dann mit Benutzername und diesem Passwort anmelden.  Manche
-Server haben Passwort-Anmeldungen ganz abgeschaltet; dort lässt sich
-Amatrix mit diesem Konto derzeit nicht benutzen.
-
-2. Warum man ein Passwort für die Amatrix-Daten vergeben sollte
-
-Alles Gespeicherte liegt in einer Schublade "Amatrix-xxxxxxxx" neben dem
-Programm: die Anmeldung, die privaten Schlüssel dieses Geräts, die
-Schlüssel deiner Räume und die letzten Nachrichten jedes Raums.  Wer eine
-Kopie dieser Schublade bekommt, kann deine verschlüsselten Räume als du
-lesen.  Ohne Passwort liegen die Dateien darin im Klartext.  Mit
-Passwort sind sie verschlüsselt (AES-256-GCM, der Schlüssel wird aus
-deinem Passwort abgeleitet); eine Kopie der Schublade nützt dann ohne
-das Passwort nichts.
-
-Eingestellt wird es im Menü Konto, "Passwort für Amatrix-Daten ...".  Es
-ist nicht dein Matrix-Passwort, und der Server sieht es nie; du denkst es
-dir aus (mindestens 4 Zeichen) und gibst es zweimal ein.  Ab dann fragt
-Amatrix bei jedem Start danach (ein kleines Fenster "Passwort für die
-Amatrix-Daten nötig"), noch bevor es sich anmeldet.  Derselbe
-Menüpunkt kann den Schutz wieder entfernen.  Es lohnt sich, sobald andere
-Zugriff auf den Amiga oder seine Platte haben, wenn die Schublade auf
-einem Netzlaufwerk liegt oder in Sicherungen landet.
-
-Ein vergessenes Passwort lässt sich nicht zurückholen.  Dann abmelden
-(oder die Schublade löschen), Amatrix neu starten und neu anmelden; die
-alten Schlüssel sind weg, dein Konto aber nicht betroffen, und mit dem
-Sicherheitsschlüssel (nächster Abschnitt) werden alte Nachrichten wieder
-lesbar.  Nicht vom Passwort erfasst: Bilder, die du öffnest, werden für
-den Betrachter nach T:Amatrix kopiert, und die kleinen Profilbilder
-bleiben unverändert.
-
-3. Dieses Gerät verifizieren - anders als in anderen Clients
-
-Ein neues Gerät gilt als "nicht verifiziert", bis dein Konto für es
-bürgt: Clients anderer Leute zeigen bei seinen Nachrichten ein
-Warnschild, und Amatrix kann Nachrichten, die vor seiner Einrichtung
-gesendet wurden, nicht lesen, weil ihm deren Schlüssel fehlen.  Element
-und die meisten anderen Clients verifizieren ein neues Gerät durch einen
-Emoji-Vergleich (oder QR-Code) mit einem anderen Gerät.  Amatrix macht
-das nicht.  Es verifiziert auf einem anderen Weg: du tippst deinen
-Sicherheitsschlüssel ein.
-
-Woher: Es ist der Schlüssel deiner "sicheren Sicherung" (auch
-Wiederherstellungsschlüssel oder Sicherheitsschlüssel genannt).  In
-Element wird er einmal angezeigt, wenn du die Sicherung einrichtest, eine
-lange Zeichenfolge in Vierergruppen, die mit "EsTc" beginnt (Element:
-Einstellungen > Sicherheit & Datenschutz > Sichere Sicherung, in neueren
-Versionen Einstellungen > Verschlüsselung).  Hast du statt eines
-Schlüssels eine Sicherheitsphrase festgelegt, tippst du diese.  Hast du
-noch keine sichere Sicherung, richte sie zuerst in Element ein - Amatrix
-kann keine anlegen.
-
-Dann im Menü Konto "Sicherheitsschlüssel eingeben ..." wählen, den
-Schlüssel (oder die Phrase) tippen und Return drücken.  Amatrix öffnet
-damit den geheimen Speicher deines Kontos und tut zwei Dinge:
-  - es signiert dieses Gerät mit dem Cross-Signing-Schlüssel deines
-    Kontos.  Ab dann gilt das Gerät als verifiziert: die Warnung ver-
-    schwindet in Element und überall sonst, und die Statuszeile zeigt
-    "(verifiziert)";
-  - es holt den Schlüssel deiner Schlüsselsicherung (und behält ihn in
-    der Schublade, geschützt durch das Passwort aus Abschnitt 2).  Wenn
-    du einen Raum öffnest, lädt Amatrix jetzt die alten Raumschlüssel aus
-    der Sicherung und entschlüsselt die älteren Nachrichten.  Vorher
-    stehen dort "(verschlüsselt, kein Schlüssel auf diesem Gerät)".
-Der Schlüssel wird gegen den geheimen Speicher des Servers geprüft; ein
-falscher wird abgelehnt ("Falscher Schlüssel bzw. falsche Passphrase").
-Eine Sicherheitsphrase braucht auf dem Amiga einige Minuten zum Prüfen,
-der Schlüssel selbst geht schnell.  Die Meldungen "Auf dem Server gibt es
-keine Schlüsselsicherung" und "Verifizieren war nicht möglich
-(Cross-Signing nicht eingerichtet?)" sagen dir, dass das Konto noch keine
-Sicherung bzw. kein Cross-Signing hat; richte es in Element ein und
-versuche es noch einmal.  Das ist nur einmal pro Anmeldung nötig.  Das
-Fenster Konto > Sitzungen zeigt, welche deiner Geräte verifiziert sind.
-
-Schickt dir ein anderer Client eine Verifizierungsanfrage (den
-Emoji-Vergleich), beantwortet Amatrix sie nicht; brich sie dort ab und
-nimm stattdessen den Sicherheitsschlüssel.  Behandle den Schlüssel wie ein
-Passwort: eintippen, nicht in einer Datei auf dem Amiga aufbewahren -
-Amatrix speichert ihn nicht, nur den daraus abgeleiteten Sicherungs-
-schlüssel.
-
-Sprache
--------
-Amatrix spricht Englisch (eingebaut), Deutsch, Französisch, Spanisch,
-Italienisch, Niederländisch und Schwedisch.  Es richtet sich nach den
-Sprachen in den Locale-Voreinstellungen; die Kataloge liegen als
-Catalogs/<Sprache>/amatrix.catalog neben dem Programm (ohne passenden
-Katalog ist Amatrix englisch).  Eine Sprache erzwingen: im Icon das
-Merkmal (Tooltype)
-    LANGUAGE=english
-eintragen, bzw. in der Shell "Amatrix LANGUAGE=deutsch".
-Die Übersetzungen außer Deutsch und Englisch sind maschinell erstellt und
-noch nicht von Muttersprachlern geprüft - Korrekturen willkommen.  Weitere
-Sprachen: eine Übersetzung ist eine Textdatei, siehe Quellcode auf GitHub.
-
-Bedienung
----------
-Die Menüleiste hat sechs Menüs: Amatrix (Info, Ikonifizieren, Abmelden,
-Beenden), Raum, Nachricht, Person, Konto und Einstellungen.  Punkte im
-Menü Raum wirken auf den Raum, der in der Liste markiert ist (bzw. auf das
-aktive Chatfenster), Punkte im Menü Nachricht auf die im Chatfenster
-markierte Nachricht, Punkte im Menü Person auf den Absender dieser
-Nachricht (nie auf dich selbst).  Was gerade nicht geht, ist grau.  Was
-die Punkte tun:
-
-- Liste:      Chats und Räume mit Bild; darunter die letzte Nachricht
-              (bzw. Thema, Mitglieder, Einladung), rechts die Uhrzeit;
-              (n) = ungelesene Nachrichten; Doppelklick öffnet den Chat
-              bzw. fragt bei Einladungen nach Annehmen/Ablehnen
-- Über der Liste: ein Feld filtert die Räume nach Namen; bist du in
-              Spaces, wählt eine Auswahl darüber "Alle Räume" oder die
-              Räume eines Space.  Favoriten (Stern) stehen oben, Räume mit
-              niedriger Priorität unten (Menü "Favorit an/aus", Amiga-F,
-              und "Niedrige Priorität an/aus").
-- Neuer Chat (Amiga-N): ein privater Chat mit einer Person.  Gib ihre
-              Matrix-ID (@name:server) ein oder, wenn sie auf deinem
-              Server ist, nur den Namen.  Der Chat ist Ende-zu-Ende-
-              verschlüsselt.  Die Person bekommt eine Einladung und sieht
-              deine Nachrichten, sobald sie annimmt; gibt es den Chat
-              schon, wird er geöffnet statt einen zweiten anzulegen.
-- Neuer Raum (Amiga-A): ein Raum für mehrere Leute.  Du gibst einen Namen
-              an und wählst: "Verschlüsselt" (Ende-zu-Ende-Verschlüsselung,
-              lässt sich später nicht wieder abschalten), "Im Verzeichnis"
-              (der Raum steht im öffentlichen Raumverzeichnis, jeder kann
-              ihn finden und betreten), "Als Space" (eine Sammlung von
-              Räumen statt eines Chatraums).
-- Menü "Raum betreten ..." (Amiga-R): die öffentlichen Räume deines
-              Servers durchsuchen oder #alias:server eingeben, um einem
-              bekannten Raum beizutreten; mit "Vorschau" liest man den
-              Verlauf, ohne beizutreten (wenn der Raum das erlaubt).
-- Menü "Sicherheitsschlüssel eingeben ...": verifiziert dieses Gerät und
-              macht alte Nachrichten lesbar, siehe "Erster Start",
-              Abschnitt 3.
-- Menü "Passwort für Amatrix-Daten ...": verschlüsselt die Schublade
-              "Amatrix-xxxxxxxx" mit einem Passwort deiner Wahl, siehe
-              "Erster Start", Abschnitt 2.
-- Menü "Abmelden": meldet dieses Gerät von deinem Konto ab (es
-              verschwindet aus der Sitzungsliste) und löscht Anmeldung und
-              Schlüssel der Schublade.  Dein Konto und seine Nachrichten
-              bleiben unberührt.  Beim nächsten Anmelden entsteht ein
-              neues Gerät; mit dem Sicherheitsschlüssel sind die alten
-              Nachrichten wieder lesbar.
-- Menü "Eigenes Profil ..." (Amiga-O): Anzeigename und Profilbild (PNG,
-              JPEG oder GIF) ändern.  Alle, die einen Raum mit dir teilen,
-              sehen sie.
-- Menü "Sitzungen ..." (Amiga-G): alle an deinem Konto angemeldeten Geräte
-              mit letzter Aktivität und Verifizierungsstatus.  Du kannst
-              sie umbenennen und andere abmelden (nach Eingabe deines
-              Matrix-Passworts), z.B. ein verlorenes Handy.
-- Menü "Nachrichten suchen ..." (Amiga-D): in allen Räumen oder dem
-              markierten.  Unverschlüsselte Räume durchsucht der Server,
-              verschlüsselte nur der auf dem Amiga gespeicherte Verlauf.
-              Doppelklick auf einen Treffer öffnet den Chat.
-- Menü "Mitglieder und Einstellungen ..." (Amiga-T), auch das i-Symbol im
-              Chatfenster: Name, Thema, Bild, wer beitreten darf, wer den
-              Verlauf lesen darf, Verschlüsselung einschalten; die
-              Mitglieder mit Rolle (Gründer, Admin, Moderator, Mitglied),
-              einladen, rauswerfen, sperren/entsperren, Rolle zuweisen.
-              Was du in dem Raum nicht darfst, ist ausgegraut.
-- Menü Nachricht/Kopieren (Amiga-K): die markierte Nachricht im
-              Chatfenster in die Zwischenablage
-- Chatfenster: lädt beim Öffnen die letzten 30 Nachrichten.
-              Werkzeugleiste oben (Maus darüber zeigt die Erklärung):
-                Pfeil nach oben  = 20 ältere Nachrichten laden
-                Pfeil zurück     = auf die markierte Nachricht antworten
-                                   (über der Eingabe steht dann, worauf;
-                                   "Abbrechen" nimmt das zurück)
-                Stift            = eigene markierte Nachricht bearbeiten
-                                   (Text kommt in die Eingabe, Return
-                                   speichert)
-                Papierkorb       = eigene markierte Nachricht löschen
-                Smiley mit Plus  = Reaktion auf die markierte Nachricht (ohne
-                                   Markierung: die neueste fremde); öffnet
-                                   eine kleine Auswahl, nochmal dieselbe
-                                   nimmt die eigene Reaktion zurück
-                Büroklammer      = Bild oder Datei senden (Requester, mehrere
-                                   auf einmal); oder Icons von der Workbench
-                                   ins Chatfenster ziehen
-                Person mit Plus  = jemanden in diesen Raum einladen
-                i im Kreis       = Mitglieder und Raum-Einstellungen
-                Tür mit Pfeil    = Raum endgültig verlassen (mit Rückfrage);
-                                   auch im Menü "Raum verlassen ..." für
-                                   den in der Liste gewählten Raum
-              Antworten zeigen darüber eine Zitatzeile (» Name: Text),
-              bearbeitete Nachrichten "(bearbeitet)", gelöschte
-              "(Nachricht gelöscht)".  Wo der Tag wechselt, steht das
-              Datum.  Threads: unter der ersten Nachricht steht
-              "Thread: n Antworten"; ein Klick auf das Sprechblasen-
-              Symbol öffnet den Thread in einem eigenen Fenster, was du
-              dort schreibst, geht in den Thread.
-              Formatierte Nachrichten (aus Element): fett, kursiv und
-              unterstrichen werden so gezeigt, Listen, Zitate ("| "),
-              Überschriften und Code-Blöcke als eigene Zeilen, Links als
-              "Text (Adresse)".  Nachrichten, die dich erwähnen, haben
-              ein fettes "@" vor der Uhrzeit; in der Raumliste steht
-              dann "(3 @)".
-              Emojis im Text erscheinen als kleine Bilder; unbekannte als
-              gelbes Gesicht mit Fragezeichen.
-              Bilder: eine kleine Vorschau unter der Nachricht; ein Klick
-              darauf öffnet das Bild mit dem Standardprogramm (Workbench /
-              DefIcons, sonst MultiView; Kopie in T:Amatrix).  Das Datei-
-              Symbol hinter dem Namen speichert Bild oder Datei, wohin du
-              willst.  Links sind unterstrichen; die Weltkugel dahinter
-              öffnet den Browser (openurl.library).
-              Unter einem Link steht eine Vorschau (Titel - Beschreibung),
-              die dein Server holt; in verschlüsselten Räumen nur, wenn in
-              den Einstellungen eingeschaltet.
-              Unten tippen, Return sendet.  Rechts in der Werkzeugleiste
-              steht "Alice tippt ...", wenn jemand schreibt; ein blauer
-              Haken hinter deiner Nachricht heißt: gelesen.
-              Die letzten Nachrichten jedes Raums speichert Amatrix in
-              seiner Schublade; ein Chatfenster zeigt sie sofort (auch
-              ohne Netz), dann kommt der Rest vom Server.
-              Reaktionen stehen unter der Nachricht, mit Anzahl (Personen);
-              ähnliche Emojis zählen zusammen (alle Lach-Smileys, alle
-              Herzen/Kussmünder).  Deine eigene Anzahl ist fett.  Ein
-              Klick auf ein Bildchen dort setzt deine Reaktion bzw. nimmt
-              sie zurück.  ARexx: REACT <Raum> heart (thumbsup, thumbsdown,
-              heart, smile, joy, confused, eyes, tada, rocket).
-
-ARexx-Port: AMATRIX.1 - alle Befehle stehen in der "ARexx reference" im
-englischen Teil dieser Datei (die Befehlsnamen sind ohnehin englisch).
-
-Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
-schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem
-Passwort schützen (siehe oben) und nicht weitergeben.
-
-Weitere Funktionen (wie in Element)
------------------------------------
-- Befehle im Eingabefeld: /help zeigt alle (/me, /shrug, /spoiler, /plain,
-  /html, /nick, /myroomnick, /topic, /roomname, /invite, /join, /knock,
-  /part, /ignore, /unignore, /whois, /upgraderoom, /jumptodate ...).
-- Formatieren beim Schreiben wie Markdown: *kursiv*, **fett**, `Code`,
-  Listen, > Zitat.  :smile: und andere Kürzel werden zu Emojis.  Ein
-  angefangener @Name oder :kürzel wird mit der Tab-Taste vervollständigt
-  (aus @Name wird eine echte Erwähnung).
-- Pfeil nach oben in leerem Eingabefeld: die eigene letzte Nachricht
-  bearbeiten.  Was beim Schließen eines Chatfensters noch im Feld steht,
-  bleibt als Entwurf (Raumliste: "Entwurf: ...").
-- Umfragen: werden mit ihren Antworten angezeigt, ein Klick stimmt ab;
-  Menü "Umfrage erstellen ..." (Amiga-U), eigene Umfragen beenden.
-- Standorte: als Text mit Link zu OpenStreetMap.
-- Sprachnachrichten: "[Sprachnachricht 0:12]"; ein Klick speichert sie und
-  spielt sie ab.  Ist opusdec (Aminet mus/edit/opus-tools) in C: oder in
-  der Amatrix-Schublade, wird daraus zuerst eine WAV-Datei.
-- Menü: "Zitieren" (Amiga-Z), "Weiterleiten ..." (Amiga-W), "Link zur
-  Nachricht kopieren", "Anpinnen an/aus" (angepinnte Nachrichten stehen
-  in einer Leiste über dem Verlauf), "Bearbeitungsverlauf ...", "Nachricht
-  melden ..." (an die Admins des Servers), "Chat exportieren ..." (Text
-  oder HTML), "Space durchstöbern ..." (die Räume eines Space: beitreten,
-  Vorschau, markierten Raum hinzufügen/herausnehmen), "Konto ..."
-  (Passwort ändern, Konto deaktivieren).
-- Ungelesenes: beim Öffnen eines Chats steht über der ersten ungelesenen
-  Nachricht eine Markierung.  /jumptodate TT.MM.JJJJ springt zu einem Tag.
-- Benachrichtigungen pro Raum auf dem Server (Raum-Fenster: Standard, alle,
-  nur Erwähnungen, aus) und Stichwörter in den Einstellungen - gilt auch
-  für deine anderen Geräte.
-- Nutzer ignorieren (/ignore, Liste in den Einstellungen); eine Einladung
-  ablehnen und den Absender gleich blockieren.
-- Anklopfen: in Räumen "auf Anfrage" um Einlass bitten (/knock); wer
-  anklopft, steht im Raum-Fenster und kann eingelassen werden.
-- Ein ersetzter Raum (Raum-Upgrade) zeigt eine Leiste zum neuen Raum.
-- Raum betreten: unter der Liste steht, was der markierte Raum ist; mit
-  "Vorschau" liest man den Verlauf, ohne beizutreten (wenn der Raum das
-  erlaubt).  "Neuer Raum ..." kann auch einen Space anlegen.
-- Unter einer Nachricht steht "gelesen von ...", wer bis dahin gelesen hat.
-- Einstellungen: Beitritte/Austritte/Namensänderungen zeigen, 24-Stunden-
-  Uhr, kompakte Darstellung, "Zeigen, wer was gelesen hat".
-
-Nicht geplant: andere Geräte per Emoji-Vergleich verifizieren (der
-Sicherheitsschlüssel genügt), Sprach- und Videoanrufe.
-
-Benachrichtigungen, Ikonifizieren, Einstellungen
-------------------------------------------------
-- Benachrichtigungen kommen über Herald (Aminet: util/cdity/Herald).  Läuft
-  Herald nicht, gibt es keine.  Sie erscheinen für neue Nachrichten, wenn
-  das Fenster des Raums nicht vorne ist oder Amatrix ikonifiziert ist.  Ein
-  Doppelklick auf die Benachrichtigung öffnet den Chat.
-- Menü Raum/Stummschalten (Amiga-M) für den gewählten Raum: keine
-  Benachrichtigungen aus diesem Raum (praktisch bei lebhaften Räumen), in
-  der Liste steht "(stumm)".  Derselbe Menüpunkt schaltet sie wieder ein.
-- Menü "Ikonifizieren" (Amiga-I) oder das Ikonifizieren-Symbol im Fenster:
-  Amatrix wird ein AppIcon auf der Workbench.  Bei ungelesenen Nachrichten
-  bekommt es ein rosa Ausrufezeichen (Icons/Amatrix-neu); der Fenstertitel
-  zeigt die Zahl ungelesener Nachrichten.
-- Menü "Einstellungen ..." (Amiga-E): Benachrichtigungen an/aus, bei allen
-  Nachrichten oder nur Direktnachrichten und Erwähnungen, Bildvorschau im
-  Chat an/aus, Link-Vorschau (auch in verschlüsselten Räumen), zeigen dass
-  ich tippe, Lesebestätigungen senden, Verlauf lokal speichern, Bilder in
-  der Raumliste, ikonifiziert starten (auch mit dem Argument HIDE).
-- Menü "MUI-Einstellungen ...": Schrift, Farben usw. für Amatrix.
+Dokumentation
+Amatrix.de.guide (AmigaGuide, mit MultiView öffnen) ist das Handbuch:
+erster Start (Anmeldung, Passwort für die gespeicherten Daten, Gerät mit
+dem Sicherheitsschlüssel verifizieren), jedes Menü und jeder Knopf, alle
+Funktionen und die vollständige ARexx-Referenz (englisch).  Es liegt in
+der Schublade; Amatrix.guide ist die englische Fassung.
 
 Bekannte Fehler
----------------
-- In Bildvorschauen erscheinen manchmal dünne waagerechte Linien, vor
-  allem beim Scrollen.  NList zeichnet bei den Streifen, aus denen die
-  Vorschau besteht, ab und zu die unterste Zeile nicht.  Das Bild selbst
-  ist in Ordnung; nach einem vollständigen Neuzeichnen ist es richtig.
+In Bildvorschauen erscheinen manchmal dünne waagerechte Linien, meist beim
+Scrollen (NList zeichnet die unterste Zeile eines Streifens hin und
+wieder nicht).
 
-Quellcode und Fehlermeldungen: https://github.com/OliverUrbann/Amatrix
+Credits und Lizenzen
+Amatrix benutzt libolm (Apache-2.0), cJSON (MIT), stb_image (Public
+Domain), das AmiSSL-SDK (Apache-2.0) und das MUI-SDK (nicht enthalten).
+Die Texte liegen im Quellbaum (third_party/).  Matrix ist ein offener
+Standard der Matrix.org Foundation; Element ist eine Marke von Element.
 
-Fehlermeldungen und Ideen sind willkommen - bitte als Issue auf GitHub
-(Version, was du getan hast und was du erwartet hast, helfen sehr).
+Quellcode, Fehlermeldungen, Sprache hinzufügen:
+https://github.com/OliverUrbann/Amatrix
+
+Fehlermeldungen und Ideen sind willkommen - bitte ein Issue auf GitHub
+eröffnen (Version, was du getan hast und was du erwartet hast, helfen sehr).
 
 Sicherheit: Amatrix verarbeitet deine Anmeldung und deine Schlüssel, du
 sollst seine Sicherheit also nicht auf Treu und Glauben annehmen müssen.
