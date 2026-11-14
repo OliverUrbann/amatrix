@@ -146,6 +146,12 @@ def from_template(name, wbtype, tool, decorate, stack=4096):
     here = os.path.dirname(os.path.abspath(__file__))
     t = parse_info(open(os.path.join(here, "templates", name + ".info"), "rb").read())
     a1, a2 = t["images"]
+    if t["dd"]:
+        # a drawer: not the template's window and view settings, but a plain
+        # window that shows only the files with icons, as icons
+        t["dd"] = struct.pack(">HHHHBBIIIIIIIHHHHH", 60, 40, 400, 200, 255, 255,
+                              0, 0xF, 0, 0, 0, 0, 0, 90, 40, 65535, 65535, 1) + struct.pack(">ii", 0, 0)
+        t["tooltypes"] = t["tooltypes"][:-6] + struct.pack(">IH", 1, 1)   # dd_Flags: icons only, dd_ViewModes: as icons
     decorate(a1, False); decorate(a2, True)
     w, h, img1 = image(a1)
     _, _, img2 = image(a2)
