@@ -11,7 +11,7 @@ with `Amatrix.readme` (English and German, the only documentation file):
 first).  Third-party licences: [third_party/NOTICE.md](third_party/NOTICE.md).
 
 **Status 2026-11-02:** a Vampire V4SA chats end-to-end encrypted with Element
-on matrix.org (receive and send).  The core has been split out into a
+on a private Synapse server (receive and send).  The core has been split out into a
 library with an API and is covered by feature tests that run on Linux,
 under AddressSanitizer and on the Amiga build inside FS-UAE, each against a
 private Synapse started by the tests.
