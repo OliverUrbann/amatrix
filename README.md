@@ -96,6 +96,15 @@ The runner starts its own private Synapse, registers fresh users and runs
 each feature's C test against an independent E2EE client.  Details in
 [tests/README.md](tests/README.md).
 
+## Bug reports and security
+
+Bug reports and ideas are welcome as [GitHub issues](https://github.com/OliverUrbann/Amatrix/issues).
+Amatrix handles logins and encryption keys, so nobody should have to take
+its safety on trust: the complete source is here, and the Aminet archive is
+built from it.  To check it yourself, read the code or let an AI of your
+choice review it - ask what is stored, what is sent where, and how keys and
+passwords are handled.  Findings are welcome as issues.
+
 ## Licence
 
 Amatrix is released under the [MIT licence](LICENSE).  The third-party code

@@ -369,6 +369,16 @@ Matrix.org Foundation; Element is a trademark of Element.
 Source code, bug reports, how to add a language:
 https://github.com/OliverUrbann/Amatrix
 
+Bug reports and ideas are welcome - please open an issue on GitHub (the
+version, what you did and what you expected help a lot).
+
+Security: Amatrix handles your login and your encryption keys, so you
+should not have to take its safety on trust.  The complete source code is
+public at the address above; this archive is built from it.  If you want
+to convince yourself, read the code or let an AI of your choice review it,
+and ask it what Amatrix stores, what it sends where, and how it handles
+keys and passwords.  Findings are very welcome as an issue.
+
 Licence: MIT, Copyright (c) 2026 Oliver Urbann.  Free to use, copy, modify
 and distribute; provided as is, without warranty.  The full text is in the
 source repository (LICENSE).
@@ -726,6 +736,17 @@ Bekannte Fehler
   ist in Ordnung; nach einem vollständigen Neuzeichnen ist es richtig.
 
 Quellcode und Fehlermeldungen: https://github.com/OliverUrbann/Amatrix
+
+Fehlermeldungen und Ideen sind willkommen - bitte als Issue auf GitHub
+(Version, was du getan hast und was du erwartet hast, helfen sehr).
+
+Sicherheit: Amatrix verarbeitet deine Anmeldung und deine Schlüssel, du
+sollst seine Sicherheit also nicht auf Treu und Glauben annehmen müssen.
+Der komplette Quellcode ist unter der obigen Adresse öffentlich; dieses
+Archiv wird daraus gebaut.  Wenn du dich selbst überzeugen willst, lies den
+Code oder lass ihn von einer KI deiner Wahl prüfen und frag sie, was
+Amatrix speichert, was es wohin sendet und wie es mit Schlüsseln und
+Passwörtern umgeht.  Ergebnisse sind als Issue sehr willkommen.
 
 Lizenz: MIT, Copyright (c) 2026 Oliver Urbann.  Frei nutz-, kopier-, änder-
 und weitergebbar; ohne Gewährleistung.  Der volle Text liegt im
