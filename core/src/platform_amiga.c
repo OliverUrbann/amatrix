@@ -71,33 +71,52 @@ int plat_random(void *buf, size_t n)
 #endif
 }
 
+/* Files through dos.library, not stdio: libnix keeps one list of open FILEs
+ * for the whole program, and the network process and the GUI work on files
+ * at the same time - stdio from both left handles open (and files locked). */
+int plat_read_bin(const char *path, unsigned char **out, long *len, long max)
+{
+    BPTR f = Open((STRPTR)path, MODE_OLDFILE);
+    LONG n;
+    unsigned char *b;
+    *out = NULL;
+    *len = 0;
+    if (!f) return -1;
+    if (Seek(f, 0, OFFSET_END) < 0 || (n = Seek(f, 0, OFFSET_BEGINNING)) < 0) { Close(f); return -3; }
+    if (max > 0 && n > max) { Close(f); return -2; }
+    if (!(b = malloc(n + 1))) { Close(f); return -3; }
+    if (n && Read(f, b, n) != n) { free(b); Close(f); return -3; }
+    Close(f);
+    b[n] = 0;
+    *out = b;
+    *len = n;
+    return 0;
+}
+
+int plat_write_bin(const char *path, const void *data, size_t n)
+{
+    BPTR f = Open((STRPTR)path, MODE_NEWFILE);
+    int ok;
+    if (!f) return -1;
+    ok = !n || Write(f, (APTR)data, (LONG)n) == (LONG)n;
+    if (!Close(f)) ok = 0;
+    return ok ? 0 : -1;
+}
+
 char *plat_read_file(const char *path)
 {
-    FILE *f = fopen(path, "rb");
+    unsigned char *b;
     long n;
-    char *b;
-    if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    b = malloc(n + 1);
-    if (!b || fread(b, 1, n, f) != (size_t)n) { free(b); fclose(f); return NULL; }
-    b[n] = 0;
-    fclose(f);
-    return b;
+    return plat_read_bin(path, &b, &n, 0) == 0 ? (char *)b : NULL;
 }
 
 int plat_write_file(const char *path, const char *data)
 {
     char *tmp = malloc(strlen(path) + 5);
-    FILE *f;
     int ok;
     if (!tmp) return -1;
     sprintf(tmp, "%s.new", path);
-    f = fopen(tmp, "wb");
-    if (!f) { free(tmp); return -1; }
-    ok = fwrite(data, 1, strlen(data), f) == strlen(data);
-    ok = (fclose(f) == 0) && ok;
+    ok = plat_write_bin(tmp, data, strlen(data)) == 0;
     if (ok) {
         DeleteFile((STRPTR)path);                 /* Rename() does not replace */
         ok = Rename((STRPTR)tmp, (STRPTR)path) != 0;

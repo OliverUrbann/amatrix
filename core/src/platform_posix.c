@@ -73,6 +73,35 @@ char *plat_from_local(const char *local)
     return r;
 }
 
+int plat_read_bin(const char *path, unsigned char **out, long *len, long max)
+{
+    FILE *f = fopen(path, "rb");
+    long n;
+    unsigned char *b;
+    *out = NULL;
+    *len = 0;
+    if (!f) return -1;
+    if (fseek(f, 0, SEEK_END) || (n = ftell(f)) < 0 || fseek(f, 0, SEEK_SET)) { fclose(f); return -3; }
+    if (max > 0 && n > max) { fclose(f); return -2; }
+    if (!(b = malloc(n + 1))) { fclose(f); return -3; }
+    if (n && fread(b, 1, n, f) != (size_t)n) { free(b); fclose(f); return -3; }
+    fclose(f);
+    b[n] = 0;
+    *out = b;
+    *len = n;
+    return 0;
+}
+
+int plat_write_bin(const char *path, const void *data, size_t n)
+{
+    FILE *f = fopen(path, "wb");
+    int ok;
+    if (!f) return -1;
+    ok = !n || fwrite(data, 1, n, f) == n;
+    if (fclose(f)) ok = 0;
+    return ok ? 0 : -1;
+}
+
 void plat_append_line(const char *path, const char *line)
 {
     FILE *f = fopen(path, "a");

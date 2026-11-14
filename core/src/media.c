@@ -440,7 +440,6 @@ int amx_media_save(AmxClient *c, const char *media, int index, const char *path)
     const cJSON *file;
     HttpResponse r;
     int got;
-    FILE *f;
     if (!c->token) return amx__fail(c, "not logged in");
     if (!(m = media_at(media, index, &root))) { cJSON_Delete(root); return amx__fail(c, "bad media description"); }
     file = cJSON_GetObjectItemCaseSensitive(m, "file");
@@ -448,10 +447,7 @@ int amx_media_save(AmxClient *c, const char *media, int index, const char *path)
         : amx__jstr(m, "mxc") ? download(c, amx__jstr(m, "mxc"), &r) : amx__fail(c, "no file");
     cJSON_Delete(root);
     if (got) return -1;
-    f = fopen(path, "wb");
-    if (!f) { http_response_free(&r); return amx__fail(c, "cannot write %s", path); }
-    got = fwrite(r.body, 1, r.body_len, f) == r.body_len ? 0 : -1;
-    if (fclose(f)) got = -1;
+    got = plat_write_bin(path, r.body, r.body_len);
     http_response_free(&r);
     if (got) return amx__fail(c, "cannot write %s", path);
     LOG(c, "saved attachment to %s", path);
@@ -556,24 +552,18 @@ static char *upload(AmxClient *c, const void *data, size_t len, const char *name
  * uploaded (AES-256-CTR encrypted first when enc); NULL on error */
 cJSON *amx__file_content(AmxClient *c, const char *path, const char *name, int enc)
 {
-    FILE *f = fopen(path, "rb");
     unsigned char *d = NULL;
     long n;
+    int rd;
     const char *mime, *msgtype;
     char *mxc;
     cJSON *ct, *info;
     int iw = 0, ih = 0, ich = 0;
 
-    if (!f) { amx__fail(c, "cannot open %s", path); return NULL; }
-    if (fseek(f, 0, SEEK_END) || (n = ftell(f)) < 0 || fseek(f, 0, SEEK_SET)) {
-        fclose(f);
-        amx__fail(c, "cannot read %s", path);
-        return NULL;
-    }
-    if (n > MAX_SEND) { fclose(f); amx__fail(c, "%s is too large (over 100 MB)", path); return NULL; }
-    d = amx__malloc(n ? n : 1);
-    if (n && fread(d, 1, n, f) != (size_t)n) { fclose(f); free(d); amx__fail(c, "cannot read %s", path); return NULL; }
-    fclose(f);
+    rd = plat_read_bin(path, &d, &n, MAX_SEND);
+    if (rd == -1) { amx__fail(c, "cannot open %s", path); return NULL; }
+    if (rd == -2) { amx__fail(c, "%s is too large (over 100 MB)", path); return NULL; }
+    if (rd) { amx__fail(c, "cannot read %s", path); return NULL; }
     if (!name || !*name) {
         const char *s1 = strrchr(path, '/'), *s2 = strrchr(path, ':');
         name = s1 > s2 ? s1 + 1 : s2 ? s2 + 1 : path;

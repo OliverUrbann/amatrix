@@ -54,6 +54,41 @@
 #include <SDI_hook.h>
 #include "mui_util.h"
 #include "amatrix_async.h"
+#include <proto/locale.h>
+#include <libraries/locale.h>
+#include "amatrix_strings.h"
+
+/* ---- languages: English is built in, others come from
+ * Catalogs/<language>/amatrix.catalog (made from catalogs/<language>.ct
+ * by tools/catalog.py) */
+struct LocaleBase *LocaleBase;
+static struct Catalog *catalog;
+
+/* in static tables: the ID, turned into the text by tr_tables() at startup */
+#define S_(id) ((const char *)(long)((id) + 1))
+
+static char *tr(LONG id)
+{
+    if (id < 0 || id >= MSG_COUNT) return "";
+    return catalog ? (char *)GetCatalogStr(catalog, id, (STRPTR)amx_builtin[id]) : (char *)amx_builtin[id];
+}
+
+static void close_catalog(void)
+{
+    if (catalog) CloseCatalog(catalog);
+    catalog = NULL;
+    if (LocaleBase) CloseLibrary((struct Library *)LocaleBase);
+    LocaleBase = NULL;
+}
+
+/* lang NULL: the languages from the Locale prefs */
+static void open_catalog(const char *lang)
+{
+    if (!LocaleBase && !(LocaleBase = (struct LocaleBase *)OpenLibrary((STRPTR)"locale.library", 38))) return;
+    if (catalog) CloseCatalog(catalog);
+    catalog = OpenCatalog(NULL, (STRPTR)"amatrix.catalog", OC_BuiltInLanguage, (ULONG)"english", OC_Version, 1,
+                          lang ? OC_Language : TAG_IGNORE, (ULONG)lang, TAG_DONE);
+}
 
 struct Library *MUIMasterBase;
 unsigned long __stack = 64 * 1024;
@@ -63,16 +98,16 @@ static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.20
 #define N_PLACEHOLDER 8
 #define FIRST_PAGE 30             /* messages loaded when a chat window opens */
 #define OLDER_PAGE 20             /* per click on "20 ältere Nachrichten laden" */
-#define OLDER_HELP "20 ältere Nachrichten laden"
-#define OLDER_HELP_END "Anfang des Chats - keine älteren Nachrichten"
-#define INVITE_HELP "Jemanden in diesen Raum einladen"
-#define LEAVE_HELP "Diesen Raum verlassen"
-#define REPLY_HELP "Auf die markierte Nachricht antworten"
-#define EDIT_HELP "Eigene markierte Nachricht bearbeiten"
-#define DELETE_HELP "Eigene markierte Nachricht löschen"
-#define ATTACH_HELP "Bild oder Datei senden\n(auch: Icons ins Fenster ziehen)"
-#define INFO_HELP "Mitglieder und Raum-Einstellungen"
-#define REACT_HELP "Reaktion auf die markierte Nachricht\n(ohne Markierung: auf die neueste)"
+#define OLDER_HELP tr(MSG_LOAD_20_OLDER_MESSAGES)
+#define OLDER_HELP_END tr(MSG_START_OF_THE_CHAT_NO)
+#define INVITE_HELP tr(MSG_INVITE_SOMEONE_TO_THIS_ROOM)
+#define LEAVE_HELP tr(MSG_LEAVE_THIS_ROOM)
+#define REPLY_HELP tr(MSG_REPLY_TO_THE_MARKED_MESSAGE)
+#define EDIT_HELP tr(MSG_EDIT_YOUR_MARKED_MESSAGE)
+#define DELETE_HELP tr(MSG_DELETE_YOUR_MARKED_MESSAGE)
+#define ATTACH_HELP tr(MSG_SEND_A_PICTURE_OR_FILE)
+#define INFO_HELP tr(MSG_MEMBERS_AND_ROOM_SETTINGS)
+#define REACT_HELP tr(MSG_REACT_TO_THE_MARKED_MESSAGE)
 
 enum {
     ID_LOGIN = 1, ID_NEWCHAT, ID_NEWCHAT_GO, ID_NEWROOM, ID_NEWROOM_GO, ID_ROOM_DCLICK,
@@ -238,7 +273,7 @@ static Object *win_info, *str_iname, *str_itopic, *cyc_ijoin, *cyc_ihist, *chk_i
               *b_ikick, *b_iban, *b_iunban, *cyc_irole, *b_irole, *b_iinvite, *txt_istatus, *grp_iset, *b_iadmit;
 static Object *win_prof, *txt_pimg, *txt_pid, *str_pname, *b_ppic, *b_psave, *txt_pstatus;
 static Object *win_sess, *lst_sess, *str_sname, *b_srename, *str_spass, *b_sdelete, *txt_sstatus;
-static const char *notify_modes[] = { "allen Nachrichten", "Direktnachrichten und Erwähnungen", NULL };
+static const char *notify_modes[] = { S_(MSG_ALL_MESSAGES), S_(MSG_DIRECT_MESSAGES_AND_MENTIONS), NULL };
 static struct DiskObject *dob_app, *dob_new;   /* AppIcon: normal / unread messages */
 struct Library *IconBase;
 static int store_protected;        /* the store has a passphrase */
@@ -302,7 +337,7 @@ static void set_status(const char *fmt, const char *a, const char *b)
 /* "Online - user (verifiziert)": the one place for it, so no path forgets the suffix */
 static void set_online(void)
 {
-    set_status(verified ? "Online - %s (verifiziert)" : "Online - %s", my_user, NULL);
+    set_status(verified ? tr(MSG_ONLINE_VERIFIED) : tr(MSG_ONLINE), my_user, NULL);
 }
 
 static Room *room_by_id(const char *id)
@@ -344,14 +379,14 @@ static void update_status(ChatWin *w)
     const Room *r = room_by_id(w->room_id);
     struct Window *iw;
     int busy = w->loading || w->sending || w->inviting || w->uploading;
-    if (w->loading) snprintf(t, sizeof t, w->loading_older ? "Lade ältere Nachrichten ..." : "Lade Verlauf ...");
-    else if (w->uploading) snprintf(t, sizeof t, w->uploading > 1 ? "Lade %d Dateien hoch ..." : "Lade Datei hoch ...",
+    if (w->loading) snprintf(t, sizeof t, w->loading_older ? tr(MSG_LOADING_OLDER_MESSAGES) : tr(MSG_LOADING_HISTORY));
+    else if (w->uploading) snprintf(t, sizeof t, w->uploading > 1 ? tr(MSG_UPLOADING_FILES) : tr(MSG_UPLOADING_FILE),
                                     w->uploading);
-    else if (w->sending) snprintf(t, sizeof t, w->sending > 1 ? "Sende %d Nachrichten ..." : "Sende ...", w->sending);
-    else if (w->inviting) snprintf(t, sizeof t, "Lade ein ...");
+    else if (w->sending) snprintf(t, sizeof t, w->sending > 1 ? tr(MSG_SENDING_MESSAGES) : tr(MSG_SENDING), w->sending);
+    else if (w->inviting) snprintf(t, sizeof t, tr(MSG_INVITING));
     else if (w->err[0]) snprintf(t, sizeof t, "\33b%s", w->err);
-    else if (w->typing[0]) snprintf(t, sizeof t, "\33i%s %s ...", w->typing, strchr(w->typing, ',') ? "tippen" : "tippt");
-    else snprintf(t, sizeof t, "%s", !r ? "" : r->encrypted ? "Ende-zu-Ende-verschlüsselt" : "nicht verschlüsselt");
+    else if (w->typing[0]) snprintf(t, sizeof t, "\33i%s %s ...", w->typing, strchr(w->typing, ',') ? tr(MSG_ARE_TYPING) : tr(MSG_IS_TYPING));
+    else snprintf(t, sizeof t, "%s", !r ? "" : r->encrypted ? tr(MSG_END_TO_END_ENCRYPTED) : tr(MSG_NOT_ENCRYPTED));
     set(w->busy, MUIA_Text_Contents, t);
     set(w->busy, MUIA_ShortHelp, w->err[0] ? w->err : NULL);   /* full error text */
     if ((iw = (struct Window *)xget(w->win, MUIA_Window_Window)) != NULL)
@@ -456,12 +491,14 @@ static void set_muted(const char *room, int on)
 }
 
 /* config: PROGDIR:Amatrix.prefs - server, user, then key=value lines */
+static long prefs_err;                  /* why Amatrix.prefs could not be read (debug) */
+
 static void load_prefs(void)
 {
     char path[300], line[512];
     FILE *f;
     snprintf(path, sizeof path, "%sAmatrix.prefs", prog_dir);
-    if (!(f = fopen(path, "r"))) return;
+    if (!(f = fopen(path, "r"))) { prefs_err = IoErr(); return; }
     if (fgets(line, sizeof line, f)) { line[strcspn(line, "\r\n")] = 0; cfg_server = xstrdup(line); }
     if (fgets(line, sizeof line, f)) { line[strcspn(line, "\r\n")] = 0; cfg_user = xstrdup(line); }
     while (fgets(line, sizeof line, f)) {
@@ -497,7 +534,8 @@ static void save_prefs(void)
     FILE *f;
     int i;
     snprintf(path, sizeof path, "%sAmatrix.prefs", prog_dir);
-    if (!(f = fopen(path, "w"))) return;
+    if (!(f = fopen(path, "w"))) { if (debug) amx_log("prefs: not saved (error %ld)", (long)IoErr()); return; }
+    if (debug) amx_log("prefs: saving");
     fprintf(f, "%s\n%s\n", cfg_server ? cfg_server : "", cfg_user ? cfg_user : "");
     fprintf(f, "notify=%d\nnotify_all=%d\npreviews=%d\niconified=%d\ntyping=%d\nreceipts=%d\n", opt_notify,
             opt_notify_all, opt_previews, opt_iconified, opt_typing, opt_receipts);
@@ -509,7 +547,8 @@ static void save_prefs(void)
         for (i = 0; i < n_drafts; i++) fprintf(f, "draft=%s\t%s\n", drafts[i].room, drafts[i].text);
     }
     for (i = 0; i < n_muted; i++) fprintf(f, "mute=%s\n", muted[i]);
-    fclose(f);
+    i = fclose(f);
+    if (debug) amx_log("prefs: saved (%d)", i);
 }
 
 /* ---------------------------------------------------------------- notifications (Herald) */
@@ -518,6 +557,8 @@ static void save_prefs(void)
  * through its ARexx port HERALD.  Optional: without it, none. */
 static int herald_registered;
 static time_t started_at;
+static int first_sync_done;             /* notifications only for what comes after it */
+static double backlog_ts;               /* the newest message of the first sync */
 
 /* one ARexx command to a port, waiting for the answer; res gets RESULT */
 static LONG rexx_cmd(const char *portname, const char *cmd, char *res, size_t n)
@@ -594,7 +635,13 @@ static void notify_event(const AmxEvent *e)
     char *name, *body, *title, cmd[1200], qt[200], qn[300], res[80], id[16];
     int mention;
     if (e->type != AMX_EV_MESSAGE || e->own || e->history || !e->room_id || e->redacted) return;
-    if (e->timestamp > 0 && (time_t)(e->timestamp / 1000) < started_at - 60) return;   /* the backlog */
+    /* the backlog: what the first sync brings, and nothing older.  Not the
+     * Amiga clock: it often runs in local time, the server's in UTC */
+    if (!first_sync_done) {
+        if (e->timestamp > backlog_ts) backlog_ts = e->timestamp;
+        return;
+    }
+    if (e->timestamp > 0 && e->timestamp <= backlog_ts) return;
     if (!(r = room_by_id(e->room_id)) || is_muted(r->id)) return;
     w = chat_by_room(e->room_id);
     if (w && xget(w->win, MUIA_Window_Activate) && !xget(app, MUIA_Application_Iconified)) return;
@@ -1411,9 +1458,9 @@ static void got_avatar(const AmxMsg *m)
 static void second_line(const Room *r, char *buf, size_t n)
 {
     if (r->invited)
-        snprintf(buf, n, "Einladung von %s", r->inviter ? r->inviter : "?");
+        snprintf(buf, n, tr(MSG_INVITATION_FROM), r->inviter ? r->inviter : "?");
     else if (r->last_body && r->last_own)
-        snprintf(buf, n, "Du: %s", r->last_body);
+        snprintf(buf, n, tr(MSG_YOU), r->last_body);
     else if (r->last_body && (r->direct || !r->last_sender))
         snprintf(buf, n, "%s", r->last_body);
     else if (r->last_body)
@@ -1421,7 +1468,7 @@ static void second_line(const Room *r, char *buf, size_t n)
     else if (r->topic)
         snprintf(buf, n, "%s", r->topic);
     else
-        snprintf(buf, n, "%d Mitglied%s", r->members, r->members == 1 ? "" : "er");
+        snprintf(buf, n, tr(r->members == 1 ? MSG_N_MEMBER : MSG_N_MEMBERS), r->members);
 }
 
 static void time_text(double ms, char *buf, size_t n)
@@ -1437,7 +1484,7 @@ static void time_text(double ms, char *buf, size_t n)
     tm = localtime(&t);
     if (!tm) return;
     tm_t = *tm;
-    strftime(buf, n, tm_t.tm_yday + tm_t.tm_year * 400 == today ? (opt_24h ? "%H:%M" : "%I:%M%p") : "%d.%m.", &tm_t);
+    strftime(buf, n, tm_t.tm_yday + tm_t.tm_year * 400 == today ? (opt_24h ? "%H:%M" : "%I:%M%p") : tr(MSG_FMT_DAY), &tm_t);
 }
 
 /* three columns: picture | name, second line | time */
@@ -1449,9 +1496,9 @@ HOOKPROTONH(room_disp_func, LONG, char **array, Room *r)
     if (opt_avatars) snprintf(img, sizeof img, "\33A[%08lx]", (unsigned long)&image_for(r)->ad);
     else img[0] = 0;
     second_line(r, second, sizeof second);
-    if (!r->invited && draft_of(r->id)) snprintf(second, sizeof second, "\33bEntwurf:\33n\33i %.150s", draft_of(r->id));
+    if (!r->invited && draft_of(r->id)) snprintf(second, sizeof second, tr(MSG_DRAFT), draft_of(r->id));
     {
-        const char *mu = r->replacement ? "\33n\33i (ersetzt)" : is_muted(r->id) ? "\33n\33i (stumm)" : "";
+        const char *mu = r->replacement ? tr(MSG_REPLACED) : is_muted(r->id) ? tr(MSG_MUTED) : "";
         static char star[24];
         char nm[300];
         if (r->favourite) snprintf(star, sizeof star, " \33A[%08lx]", (unsigned long)&emo_img[EMO_STAR].ad);
@@ -1578,7 +1625,7 @@ static void update_spaces(void)
     }
     if (same && cyc_space) { free(keep); return; }
     for (i = 0; i < n_spaces; i++) { free(space_ids[i]); free(space_names[i + 1]); }
-    space_names[0] = "Alle Räume";
+    space_names[0] = tr(MSG_ALL_ROOMS);
     for (i = 0; i < n; i++) {
         space_ids[i] = strdup(ids[i]);
         space_names[i + 1] = strdup(room_by_id(ids[i])->name);
@@ -1588,7 +1635,7 @@ static void update_spaces(void)
     DoMethod(grp_space, MUIM_Group_InitChange);
     if (cyc_space) { DoMethod(grp_space, OM_REMMEMBER, cyc_space); MUI_DisposeObject(cyc_space); }
     cyc_space = CycleObject, MUIA_Cycle_Entries, space_names, MUIA_CycleChain, TRUE,
-                MUIA_ShortHelp, "Nur die Räume eines Space zeigen", End;
+                MUIA_ShortHelp, tr(MSG_SHOW_ONLY_THE_ROOMS_OF), End;
     if (cyc_space) {
         DoMethod(grp_space, OM_ADDMEMBER, cyc_space);
         for (i = 0; keep && i < n; i++) if (!strcmp(space_ids[i], keep)) set(cyc_space, MUIA_Cycle_Active, i + 1);
@@ -1798,27 +1845,7 @@ static const char *after_word(const char *t)
     return t;
 }
 
-static const char *const help_text =
-    "/me Text         - Handlung (\"* Name Text\")\n"
-    "/shrug [Text]    - Schulterzucken voran\n"
-    "/spoiler Text    - als Spoiler (verdeckt)\n"
-    "/plain Text      - ohne Formatierung senden\n"
-    "/html Text       - Text ist HTML\n"
-    "/nick Name       - eigener Anzeigename\n"
-    "/myroomnick Name - Name nur in diesem Raum\n"
-    "/topic Text      - Thema des Raums\n"
-    "/roomname Name   - Name des Raums\n"
-    "/invite @nutzer  - einladen\n"
-    "/join #raum:server - Raum betreten\n"
-    "/knock #raum:server - um Einlass bitten\n"
-    "/upgraderoom [Version] - neue Raumversion (Admins)\n"
-    "/part            - Raum verlassen\n"
-    "/ignore @nutzer, /unignore @nutzer\n"
-    "/whois @nutzer   - wer ist das?\n"
-    "/op @nutzer [Stufe], /deop @nutzer\n"
-    "/kick @nutzer [Grund], /ban @nutzer [Grund], /unban @nutzer\n"
-    "/jumptodate TT.MM.JJJJ - zu einem Datum springen\n"
-    "//Text           - Text, der mit / beginnt";
+#define help_text tr(MSG_ME_TEXT_ACTION_NAME_TEXT)
 
 static void jump_to_date(ChatWin *w, const char *date);
 
@@ -1838,7 +1865,7 @@ static int chat_command(ChatWin *w, const char *t)
     while (*arg == ' ') arg++;
     if (!strcmp(cmd, "me") || !strcmp(cmd, "shrug") || !strcmp(cmd, "spoiler") || !strcmp(cmd, "plain")
         || !strcmp(cmd, "html")) {
-        if (!*arg && strcmp(cmd, "shrug")) { chat_say(w, "Bitte noch einen Text dazu."); return 1; }
+        if (!*arg && strcmp(cmd, "shrug")) { chat_say(w, tr(MSG_PLEASE_ADD_A_TEXT)); return 1; }
         v = amx_from_local((char *)arg);
         if (!strcmp(cmd, "me")) send_out(w, "m.emote", v, NULL, NULL);
         else if (!strcmp(cmd, "plain")) send_out(w, NULL, v, NULL, NULL);
@@ -1860,17 +1887,17 @@ static int chat_command(ChatWin *w, const char *t)
         }
         free(v);
     } else if (!strcmp(cmd, "nick") || !strcmp(cmd, "myroomnick") || !strcmp(cmd, "topic") || !strcmp(cmd, "roomname")) {
-        if (!*arg && strcmp(cmd, "topic")) { chat_say(w, "Bitte noch einen Namen dazu."); return 1; }
+        if (!*arg && strcmp(cmd, "topic")) { chat_say(w, tr(MSG_PLEASE_ADD_A_NAME)); return 1; }
         v = amx_from_local((char *)arg);
         if (!strcmp(cmd, "nick")) amx_async_set_profile(A, "name", v, TAG_CMD);
         else if (!strcmp(cmd, "myroomnick")) amx_async_room_nick(A, w->room_id, v, TAG_CMD);
         else amx_async_room_set(A, w->room_id, !strcmp(cmd, "topic") ? "topic" : "name", v, TAG_CMD);
-        chat_say(w, "Bitte warten ...");
+        chat_say(w, tr(MSG_PLEASE_WAIT));
         free(v);
     } else if (!strcmp(cmd, "invite") || !strcmp(cmd, "ignore") || !strcmp(cmd, "unignore") || !strcmp(cmd, "whois")
                || !strcmp(cmd, "op") || !strcmp(cmd, "deop") || !strcmp(cmd, "kick") || !strcmp(cmd, "remove")
                || !strcmp(cmd, "ban") || !strcmp(cmd, "unban")) {
-        if (!(u = full_user(arg))) { chat_say(w, "Bitte noch einen Nutzer dazu (@name:server)."); return 1; }
+        if (!(u = full_user(arg))) { chat_say(w, tr(MSG_PLEASE_ADD_A_USER_NAME)); return 1; }
         v = amx_from_local((char *)after_word(arg));
         if (!strcmp(cmd, "invite")) amx_async_invite(A, w->room_id, u, TAG_CMD);
         else if (!strcmp(cmd, "ignore") || !strcmp(cmd, "unignore")) amx_async_ignore(A, u, cmd[0] == 'i', TAG_CMD);
@@ -1879,31 +1906,31 @@ static int chat_command(ChatWin *w, const char *t)
         else if (!strcmp(cmd, "deop")) amx_async_moderate(A, w->room_id, u, "power", NULL, 0, TAG_CMD);
         else if (!strcmp(cmd, "kick") || !strcmp(cmd, "remove")) amx_async_moderate(A, w->room_id, u, "kick", v, 0, TAG_CMD);
         else amx_async_moderate(A, w->room_id, u, cmd, v, 0, TAG_CMD);
-        if (strcmp(cmd, "whois")) chat_say(w, "Bitte warten ...");
+        if (strcmp(cmd, "whois")) chat_say(w, tr(MSG_PLEASE_WAIT));
         free(u);
         free(v);
     } else if (!strcmp(cmd, "join")) {
-        if (!*arg) { chat_say(w, "Bitte noch einen Raum dazu (#name:server)."); return 1; }
+        if (!*arg) { chat_say(w, tr(MSG_PLEASE_ADD_A_ROOM_NAME)); return 1; }
         amx_async_join(A, arg, TAG_JOIN);
     } else if (!strcmp(cmd, "upgraderoom")) {
-        if (MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)"_Upgrade|*_Abbrechen",
-                        (STRPTR)"Den Raum auf eine neue Raumversion bringen?\nDer Server legt dafür einen neuen Raum an;\nalle müssen dorthin wechseln.", 0) == 1) {
+        if (MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_UPGRADE_CANCEL),
+                        (STRPTR)tr(MSG_UPGRADE_THE_ROOM_TO_A), 0) == 1) {
             amx_async_upgrade(A, w->room_id, *arg ? arg : NULL, TAG_CMD);
-            chat_say(w, "Upgrade ...");
+            chat_say(w, tr(MSG_UPGRADING));
         }
     } else if (!strcmp(cmd, "knock")) {
-        if (!*arg) { chat_say(w, "Bitte noch einen Raum dazu (#name:server)."); return 1; }
+        if (!*arg) { chat_say(w, tr(MSG_PLEASE_ADD_A_ROOM_NAME)); return 1; }
         amx_async_knock(A, arg, NULL, TAG_CMD);
-        chat_say(w, "Klopfe an ...");
+        chat_say(w, tr(MSG_KNOCKING));
     } else if (!strcmp(cmd, "part") || !strcmp(cmd, "leave")) {
         if (!w->thread_root) amx_async_leave(A, w->room_id, TAG_LEAVE);
     } else if (!strcmp(cmd, "jumptodate")) {
         jump_to_date(w, arg);
     } else if (!strcmp(cmd, "help")) {
-        MUI_Request(app, w->win, 0, (STRPTR)"Amatrix - Befehle", (STRPTR)"*_OK", (STRPTR)"%s", (ULONG)help_text);
+        MUI_Request(app, w->win, 0, (STRPTR)tr(MSG_AMATRIX_COMMANDS), (STRPTR)tr(MSG_OK), (STRPTR)"%s", (ULONG)help_text);
     } else {
         char b[100];
-        snprintf(b, sizeof b, "Unbekannter Befehl /%s - /help zeigt alle.", cmd);
+        snprintf(b, sizeof b, tr(MSG_UNKNOWN_COMMAND_HELP_SHOWS_THEM), cmd);
         chat_say(w, b);
         return 1;                                  /* the text stays in the input */
     }
@@ -2000,7 +2027,7 @@ static void pick_files(ChatWin *w)
     set(app, MUIA_Application_Sleep, TRUE);
     fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
              ASLFR_Window, (ULONG)xget(w->win, MUIA_Window_Window),
-             ASLFR_TitleText, (ULONG)"Bild oder Datei senden",
+             ASLFR_TitleText, (ULONG)tr(MSG_SEND_A_PICTURE_OR_FILE_2),
              ASLFR_InitialDrawer, (ULONG)(send_dir[0] ? send_dir : "RAM:"),
              ASLFR_DoMultiSelect, TRUE, ASLFR_RejectIcons, TRUE, TAG_DONE);
     if (fr && AslRequest(fr, NULL)) {
@@ -2299,7 +2326,7 @@ static void show_invite(const char *room_id)
     Room *r = room_by_id(room_id);
     free(invite_room);
     invite_room = strdup(room_id);
-    snprintf(title, sizeof title, "Einladen in \33b%s", r ? r->name : room_id);
+    snprintf(title, sizeof title, tr(MSG_INVITE_TO), r ? r->name : room_id);
     set(txt_inviteroom, MUIA_Text_Contents, title);
     set(str_inviteuser, MUIA_String_Contents, "");
     set(win_invite, MUIA_Window_Open, TRUE);
@@ -2316,30 +2343,27 @@ static void leave_room(const char *room_id, int ask)
     if (ask) {
         char *name = r->name ? r->name : r->id;
         LONG ok = r->invited
-            ? MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_Ablehnen|_Abbrechen",
-                          (STRPTR)"Einladung in \33b%s\33n ablehnen?", (ULONG)name)
-            : MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_Verlassen|_Abbrechen",
-                          (STRPTR)"\33b%s\33n wirklich verlassen?\n\n"
-                          "Du bekommst dann keine Nachrichten mehr aus diesem Raum.\n"
-                          "Zurück geht es nur mit einer neuen Einladung\n"
-                          "(öffentliche Räume: über \"Raum betreten\").", (ULONG)name);
+            ? MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_DECLINE_CANCEL),
+                          (STRPTR)tr(MSG_DECLINE_THE_INVITATION_TO), (ULONG)name)
+            : MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_LEAVE_CANCEL),
+                          (STRPTR)tr(MSG_REALLY_LEAVE_YOU_WILL_GET), (ULONG)name);
         if (ok != 1) return;
     }
     amx_async_leave(A, room_id, TAG_LEAVE);
     if (w) w->close_req = 1;             /* closed in the main loop, not inside its own button */
-    set_status("Verlasse %s ...", r->name ? r->name : r->id, NULL);
+    set_status(tr(MSG_LEAVING), r->name ? r->name : r->id, NULL);
 }
 
 /* ---- the room window ("Mitglieder und Raum-Einstellungen"): settings,
  * members with their role, kick/ban/unban, roles */
 
 static const char *join_rules[] = { "invite", "public", "knock", NULL };
-static const char *join_names[] = { "Nur mit Einladung", "Öffentlich", "Auf Anfrage (anklopfen)", NULL };
+static const char *join_names[] = { S_(MSG_INVITATION_ONLY), S_(MSG_PUBLIC), S_(MSG_ON_REQUEST_KNOCK), NULL };
 static const char *hist_values[] = { "shared", "invited", "joined", "world_readable", NULL };
-static const char *hist_names[] = { "Mitglieder: ganzer Verlauf", "Mitglieder: ab der Einladung",
-                                    "Mitglieder: ab dem Beitritt", "Jeder (auch ohne Beitritt)", NULL };
-static const char *role_names[] = { "Mitglied", "Moderator", "Admin", NULL };
-static const char *notify_names[] = { "Standard", "Alle Nachrichten", "Nur Erwähnungen und Stichwörter", "Aus (stumm)", NULL };
+static const char *hist_names[] = { S_(MSG_MEMBERS_WHOLE_HISTORY), S_(MSG_MEMBERS_SINCE_THEIR_INVITATION),
+                                    S_(MSG_MEMBERS_SINCE_THEY_JOINED), S_(MSG_ANYONE_EVEN_WITHOUT_JOINING), NULL };
+static const char *role_names[] = { S_(MSG_MEMBER), S_(MSG_MODERATOR), S_(MSG_ADMIN), NULL };
+static const char *notify_names[] = { S_(MSG_DEFAULT), S_(MSG_ALL_MESSAGES_2), S_(MSG_ONLY_MENTIONS_AND_KEYWORDS), S_(MSG_OFF_MUTED), NULL };
 static Object *cyc_inotify;
 static const int role_levels[] = { 0, 50, 100 };
 
@@ -2360,8 +2384,8 @@ static int idx_of(const char *const *list, const char *v)
 
 static const char *role_of(int power)
 {
-    return power >= AMX_POWER_CREATOR ? "Gründer" : power >= 100 ? "Admin" : power >= 50 ? "Moderator"
-         : power > 0 ? "Mitglied+" : "Mitglied";
+    return power >= AMX_POWER_CREATOR ? tr(MSG_FOUNDER) : power >= 100 ? tr(MSG_ADMIN) : power >= 50 ? tr(MSG_MODERATOR)
+         : power > 0 ? tr(MSG_MEMBER_2) : tr(MSG_MEMBER);
 }
 
 HOOKPROTONHNO(mem_disp_func, LONG, struct NList_DisplayMessage *m)
@@ -2369,7 +2393,7 @@ HOOKPROTONHNO(mem_disp_func, LONG, struct NList_DisplayMessage *m)
     static char b0[200], b1[40], b2[200];
     const AmxMember *p = m->entry;
     char *t;
-    if (!p) { m->strings[0] = "Name"; m->strings[1] = "Rolle"; m->strings[2] = "Matrix-ID"; return 0; }
+    if (!p) { m->strings[0] = tr(MSG_NAME); m->strings[1] = tr(MSG_ROLE); m->strings[2] = tr(MSG_MATRIX_ID); return 0; }
     t = local(p->name);
     snprintf(b0, sizeof b0, "%s%s", strcmp(p->membership, "join") ? "\33i" : "", t ? t : "");
     free(t);
@@ -2444,7 +2468,7 @@ HOOKPROTONHNO(inotify_func, LONG, APTR unused)
     (void)unused;
     if (!nnotify_set && info_room)
         amx_async_room_notify(A, info_room, (int)xget(cyc_inotify, MUIA_Cycle_Active), TAG_ROOMSET), info_busy++,
-            info_set_status("Speichere ...");
+            info_set_status(tr(MSG_SAVING));
     return 0;
 }
 MakeStaticHook(inotify_hook, inotify_func);
@@ -2461,14 +2485,14 @@ static void open_info(const char *room_id)
     amx_free_members(info_mem, n_info_mem);
     info_mem = NULL;
     n_info_mem = 0;
-    snprintf(title, sizeof title, "Raum: %s", r && r->name ? r->name : room_id);
+    snprintf(title, sizeof title, tr(MSG_ROOM), r && r->name ? r->name : room_id);
     nnotify_set = 1;
     set(cyc_inotify, MUIA_Cycle_Active, r ? r->notify : 0);
     nnotify_set = 0;
     set(win_info, MUIA_Window_Title, title);
     set(str_iname, MUIA_String_Contents, "");
     set(str_itopic, MUIA_String_Contents, "");
-    info_set_status("Lade ...");
+    info_set_status(tr(MSG_LOADING));
     info_enable();
     set(win_info, MUIA_Window_Open, TRUE);
     info_reload(1, 1);
@@ -2492,7 +2516,7 @@ static void info_got_settings(const AmxMsg *m)
     set(cyc_ijoin, MUIA_Cycle_Active, idx_of(join_rules, info_set.join_rule));
     set(cyc_ihist, MUIA_Cycle_Active, idx_of(hist_values, info_set.history));
     set(chk_ienc, MUIA_Selected, info_set.encrypted);
-    if (!info_busy) info_set_status(info_set.my_power >= 50 ? "" : "Nur Admins und Moderatoren dürfen hier etwas ändern.");
+    if (!info_busy) info_set_status(info_set.my_power >= 50 ? "" : tr(MSG_ONLY_ADMINS_AND_MODERATORS_MAY));
     info_enable();
 }
 
@@ -2539,14 +2563,14 @@ static void info_save(void)
         amx_async_room_set(A, info_room, "history", hist_values[k], TAG_ROOMSET); info_busy++;
     }
     if (xget(chk_ienc, MUIA_Selected) && !info_set.encrypted) {
-        if (MUI_Request(app, win_info, 0, (STRPTR)"Amatrix", (STRPTR)"_Einschalten|*_Abbrechen",
-                        (STRPTR)"Verschlüsselung lässt sich danach nicht mehr ausschalten.\nEinschalten?", 0) == 1) {
+        if (MUI_Request(app, win_info, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_TURN_ON_CANCEL),
+                        (STRPTR)tr(MSG_ENCRYPTION_CANNOT_BE_TURNED_OFF), 0) == 1) {
             amx_async_room_set(A, info_room, "encryption", "", TAG_ROOMSET);
             info_busy++;
         } else set(chk_ienc, MUIA_Selected, FALSE);
     }
-    if (info_busy) { info_set_status("Speichere ..."); info_reload(1, 0); }
-    else info_set_status("Nichts geändert.");
+    if (info_busy) { info_set_status(tr(MSG_SAVING)); info_reload(1, 0); }
+    else info_set_status(tr(MSG_NOTHING_CHANGED));
 }
 
 static void info_picture(void)
@@ -2557,14 +2581,14 @@ static void info_picture(void)
     if (!AslBase || !info_room) { if (AslBase) CloseLibrary(AslBase); return; }
     fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
              ASLFR_Window, (ULONG)xget(win_info, MUIA_Window_Window),
-             ASLFR_TitleText, (ULONG)"Bild für den Raum (PNG, JPEG, GIF)",
+             ASLFR_TitleText, (ULONG)tr(MSG_PICTURE_FOR_THE_ROOM_PNG),
              ASLFR_InitialDrawer, (ULONG)(send_dir[0] ? send_dir : "RAM:"), ASLFR_RejectIcons, TRUE, TAG_DONE);
     if (fr && AslRequest(fr, NULL) && fr->fr_File[0]) {
         snprintf(path, sizeof path, "%s", fr->fr_Drawer);
         if (AddPart((STRPTR)path, (STRPTR)fr->fr_File, sizeof path)) {
             amx_async_room_set(A, info_room, "avatar", path, TAG_ROOMSET);
             info_busy++;
-            info_set_status("Lade das Bild hoch ...");
+            info_set_status(tr(MSG_UPLOADING_THE_PICTURE));
             info_reload(1, 0);
         }
     }
@@ -2581,9 +2605,9 @@ static void info_moderate(const char *action)
     name = local(p->name);
     if (!strcmp(action, "power")) level = role_levels[xget(cyc_irole, MUIA_Cycle_Active)];
     else if (strcmp(action, "unban")
-             && MUI_Request(app, win_info, 0, (STRPTR)"Amatrix", (STRPTR)"_Ja|*_Nein",
-                            !strcmp(action, "kick") ? (STRPTR)"%s aus dem Raum werfen?"
-                                                    : (STRPTR)"%s sperren? (Kann nicht wieder beitreten.)",
+             && MUI_Request(app, win_info, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_YES_NO),
+                            !strcmp(action, "kick") ? (STRPTR)tr(MSG_REMOVE_FROM_ROOM_Q)
+                                                    : (STRPTR)tr(MSG_BAN_CANNOT_JOIN_AGAIN),
                             (ULONG)(name ? name : "")) != 1) {
         free(name);
         return;
@@ -2592,7 +2616,7 @@ static void info_moderate(const char *action)
     amx_log("moderate %s %s (level %d)", action, p->user_id, level);
     amx_async_moderate(A, info_room, p->user_id, action, NULL, level, TAG_MODERATE);
     info_busy++;
-    info_set_status("Bitte warten ...");
+    info_set_status(tr(MSG_PLEASE_WAIT));
     info_reload(0, 1);
 }
 
@@ -2603,7 +2627,7 @@ static void info_done(const AmxMsg *m)
     if (info_busy) info_busy--;
     if (m->status) {
         char b[300];
-        snprintf(b, sizeof b, "\33bNicht geklappt:\33n %.240s", m->error ? m->error : "");
+        snprintf(b, sizeof b, tr(MSG_THAT_DID_NOT_WORK), m->error ? m->error : "");
         info_set_status(b);
     } else if (!info_busy) info_set_status("Gespeichert.");
 }
@@ -2637,7 +2661,7 @@ static void open_profile(void)
     snprintf(id, sizeof id, "\33b%s", t ? t : "");
     free(t);
     set(txt_pid, MUIA_Text_Contents, id);
-    prof_set_status("Lade ...");
+    prof_set_status(tr(MSG_LOADING));
     set(win_prof, MUIA_Window_Open, TRUE);
     amx_async_profile(A, TAG_PROFILE);
 }
@@ -2651,7 +2675,7 @@ static void prof_got(const AmxMsg *m)
     t = local(prof_name ? prof_name : "");
     set(str_pname, MUIA_String_Contents, t);
     free(t);
-    if (!prof_busy) prof_set_status(prof_av ? "" : "Noch kein Bild.");
+    if (!prof_busy) prof_set_status(prof_av ? "" : tr(MSG_NO_PICTURE_YET));
     if (prof_av) amx_async_avatar(A, prof_av, AV, TAG_PROFAV);
     else set(txt_pimg, MUIA_Text_Contents, "");
 }
@@ -2672,9 +2696,9 @@ static void prof_save(void)
     if (t && *t && strcmp(t, prof_name ? prof_name : "")) {
         amx_async_set_profile(A, "name", t, TAG_SETPROF);
         prof_busy++;
-        prof_set_status("Speichere ...");
+        prof_set_status(tr(MSG_SAVING));
         amx_async_profile(A, TAG_PROFILE);
-    } else prof_set_status("Nichts geändert.");
+    } else prof_set_status(tr(MSG_NOTHING_CHANGED));
     free(t);
 }
 
@@ -2689,7 +2713,7 @@ static void prof_picture(const char *given)
         if (!AslBase) return;
         fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
                  ASLFR_Window, (ULONG)xget(win_prof, MUIA_Window_Window),
-                 ASLFR_TitleText, (ULONG)"Profilbild (PNG, JPEG, GIF)",
+                 ASLFR_TitleText, (ULONG)tr(MSG_PROFILE_PICTURE_PNG_JPEG_GIF),
                  ASLFR_InitialDrawer, (ULONG)(send_dir[0] ? send_dir : "RAM:"), ASLFR_RejectIcons, TRUE, TAG_DONE);
         if (fr && AslRequest(fr, NULL) && fr->fr_File[0]) {
             snprintf(path, sizeof path, "%s", fr->fr_Drawer);
@@ -2701,7 +2725,7 @@ static void prof_picture(const char *given)
     }
     amx_async_set_profile(A, "avatar", path, TAG_SETPROF);
     prof_busy++;
-    prof_set_status("Lade das Bild hoch ...");
+    prof_set_status(tr(MSG_UPLOADING_THE_PICTURE));
     amx_async_profile(A, TAG_PROFILE);
 }
 
@@ -2710,7 +2734,7 @@ static void prof_done(const AmxMsg *m)
     if (prof_busy) prof_busy--;
     if (m->status) {
         char b[300];
-        snprintf(b, sizeof b, "\33bNicht geklappt:\33n %.240s", m->error ? m->error : "");
+        snprintf(b, sizeof b, tr(MSG_THAT_DID_NOT_WORK), m->error ? m->error : "");
         prof_set_status(b);
     } else if (!prof_busy) prof_set_status("Gespeichert.");
 }
@@ -2734,7 +2758,7 @@ HOOKPROTONHNO(sess_disp_func, LONG, struct NList_DisplayMessage *m)
     const AmxDevice *d = m->entry;
     char *t;
     if (!d) {
-        m->strings[0] = "Name"; m->strings[1] = "Sitzung"; m->strings[2] = "Zuletzt aktiv"; m->strings[3] = "Status";
+        m->strings[0] = tr(MSG_NAME); m->strings[1] = tr(MSG_SESSION); m->strings[2] = tr(MSG_LAST_ACTIVE); m->strings[3] = tr(MSG_STATUS);
         return 0;
     }
     t = local(d->name ? d->name : "");
@@ -2744,11 +2768,11 @@ HOOKPROTONHNO(sess_disp_func, LONG, struct NList_DisplayMessage *m)
     if (d->last_seen_ts > 0) {
         time_t tt = (time_t)(d->last_seen_ts / 1000);
         struct tm *tm = localtime(&tt);
-        if (tm) strftime(b2, sizeof b2, "%d.%m.%Y %H:%M", tm);
+        if (tm) strftime(b2, sizeof b2, tr(MSG_FMT_DATETIME), tm);
         else b2[0] = 0;
     } else snprintf(b2, sizeof b2, "-");
-    snprintf(b3, sizeof b3, "%s", d->current ? "diese" : d->verified > 0 ? "verifiziert"
-                                 : d->verified == 0 ? "nicht verifiziert" : "ohne Schlüssel");
+    snprintf(b3, sizeof b3, "%s", d->current ? tr(MSG_THIS_ONE) : d->verified > 0 ? tr(MSG_VERIFIED)
+                                 : d->verified == 0 ? tr(MSG_NOT_VERIFIED) : tr(MSG_WITHOUT_KEYS));
     m->strings[0] = b0; m->strings[1] = b1; m->strings[2] = b2; m->strings[3] = b3;
     return 0;
 }
@@ -2780,7 +2804,7 @@ static void open_sessions(void)
     set(win_sess, MUIA_Window_Open, TRUE);
     set(b_srename, MUIA_Disabled, TRUE);
     set(b_sdelete, MUIA_Disabled, TRUE);
-    sess_set_status("Lade ...");
+    sess_set_status(tr(MSG_LOADING));
     amx_async_devices(A, TAG_DEVICES);
 }
 
@@ -2803,7 +2827,7 @@ static void sess_got(const AmxMsg *m)
     set(lst_sess, MUIA_NList_Quiet, FALSE);
     if (!sess_busy) {
         char b[80];
-        snprintf(b, sizeof b, "%d Sitzung%s", n_sess, n_sess == 1 ? "" : "en");
+        snprintf(b, sizeof b, tr(n_sess == 1 ? MSG_N_SESSION : MSG_N_SESSIONS), n_sess);
         sess_set_status(b);
     }
 }
@@ -2817,7 +2841,7 @@ static void sess_rename(void)
     amx_async_device_rename(A, d->device_id, t ? t : "", TAG_DEVCHANGE);
     free(t);
     sess_busy++;
-    sess_set_status("Speichere ...");
+    sess_set_status(tr(MSG_SAVING));
     amx_async_devices(A, TAG_DEVICES);
 }
 
@@ -2826,14 +2850,14 @@ static void sess_delete(void)
     AmxDevice *d = sess_selected();
     char *pw = (char *)xget(str_spass, MUIA_String_Contents), *name;
     if (!d || d->current) return;
-    if (!pw || !*pw) { sess_set_status("Zum Abmelden bitte dein Passwort eingeben."); return; }
+    if (!pw || !*pw) { sess_set_status(tr(MSG_PLEASE_ENTER_YOUR_PASSWORD_TO)); return; }
     name = local(d->name ? d->name : d->device_id);
-    if (MUI_Request(app, win_sess, 0, (STRPTR)"Amatrix", (STRPTR)"_Abmelden|*_Abbrechen",
-                    (STRPTR)"Die Sitzung \"%s\" abmelden?\nDort ist man danach nicht mehr angemeldet.",
+    if (MUI_Request(app, win_sess, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_LOG_OUT_CANCEL),
+                    (STRPTR)tr(MSG_LOG_OUT_THE_SESSION_IT),
                     (ULONG)(name ? name : "")) == 1) {
         amx_async_device_delete(A, d->device_id, pw, TAG_DEVCHANGE);
         sess_busy++;
-        sess_set_status("Melde ab ...");
+        sess_set_status(tr(MSG_LOGGING_OUT));
         amx_async_devices(A, TAG_DEVICES);
     }
     free(name);
@@ -2845,7 +2869,7 @@ static void sess_done(const AmxMsg *m)
     if (sess_busy) sess_busy--;
     if (m->status) {
         char b[300];
-        snprintf(b, sizeof b, "\33bNicht geklappt:\33n %.240s", m->error ? m->error : "");
+        snprintf(b, sizeof b, tr(MSG_THAT_DID_NOT_WORK), m->error ? m->error : "");
         sess_set_status(b);
     } else if (!sess_busy) sess_set_status("Erledigt.");
 }
@@ -2854,7 +2878,7 @@ static void sess_done(const AmxMsg *m)
 
 static AmxSearchHit *hits;
 static int n_hits;
-static const char *where_names[] = { "Alle Räume", "Den markierten Raum", NULL };
+static const char *where_names[] = { S_(MSG_ALL_ROOMS), S_(MSG_THE_MARKED_ROOM), NULL };
 static char find_status[200];
 
 HOOKPROTONHNO(hit_disp_func, LONG, struct NList_DisplayMessage *m)
@@ -2863,11 +2887,11 @@ HOOKPROTONHNO(hit_disp_func, LONG, struct NList_DisplayMessage *m)
     const AmxSearchHit *h = m->entry;
     char *t, *u;
     const Room *r;
-    if (!h) { m->strings[0] = "Wann"; m->strings[1] = "Raum"; m->strings[2] = "Nachricht"; return 0; }
+    if (!h) { m->strings[0] = tr(MSG_WHEN); m->strings[1] = tr(MSG_ROOM_2); m->strings[2] = tr(MSG_MESSAGE); return 0; }
     {
         time_t tt = (time_t)(h->timestamp / 1000);
         struct tm *tm = localtime(&tt);
-        if (tm) strftime(b0, sizeof b0, "%d.%m.%y %H:%M", tm); else b0[0] = 0;
+        if (tm) strftime(b0, sizeof b0, tr(MSG_FMT_DATETIME_SHORT), tm); else b0[0] = 0;
     }
     r = room_by_id(h->room_id);
     snprintf(b1, sizeof b1, "%s", r ? r->name : h->room_id);
@@ -2894,10 +2918,10 @@ static void find_go(void)
     if (!t || !*t) { free(t); return; }
     if (xget(cyc_findwhere, MUIA_Cycle_Active) == 1) {
         DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
-        if (!r) { find_set_status("Bitte erst einen Raum in der Liste markieren."); free(t); return; }
+        if (!r) { find_set_status(tr(MSG_PLEASE_MARK_A_ROOM_IN)); free(t); return; }
     }
     amx_async_search(A, r ? r->id : NULL, t, TAG_FIND);
-    find_set_status("Suche ...");
+    find_set_status(tr(MSG_SEARCHING));
     free(t);
 }
 
@@ -2923,8 +2947,8 @@ static void find_got(const AmxMsg *m)
         DoMethod(lst_hits, MUIM_NList_InsertSingle, &hits[i], MUIV_NList_Insert_Bottom);
     }
     set(lst_hits, MUIA_NList_Quiet, FALSE);
-    snprintf(b, sizeof b, "%d Treffer - Doppelklick öffnet den Chat", n_hits);
-    if (!n_hits) snprintf(b, sizeof b, "Nichts gefunden. (Verschlüsselte Räume: nur der gespeicherte Verlauf.)");
+    snprintf(b, sizeof b, tr(MSG_HITS_DOUBLE_CLICK_OPENS_THE), n_hits);
+    if (!n_hits) snprintf(b, sizeof b, tr(MSG_NOTHING_FOUND_ENCRYPTED_ROOMS_ONLY));
     find_set_status(b);
 }
 
@@ -2943,8 +2967,8 @@ static void toggle_tag(const char *tag)
     Room *r = NULL;
     DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
     if (!r || r->invited) {
-        MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                    (STRPTR)"Bitte erst einen Raum in der Liste auswählen.", 0);
+        MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                    (STRPTR)tr(MSG_PLEASE_SELECT_A_ROOM_IN), 0);
         return;
     }
     amx_async_set_tag(A, r->id, tag, !strcmp(tag, "m.favourite") ? !r->favourite : !r->low, TAG_TAG);
@@ -2959,8 +2983,8 @@ static void open_pollnew(void)
     ChatWin *w = current_chat();
     int i;
     if (!w) {
-        MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                    (STRPTR)"Bitte erst das Chatfenster des Raums öffnen.", 0);
+        MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                    (STRPTR)tr(MSG_PLEASE_OPEN_THE_CHAT_WINDOW), 0);
         return;
     }
     free(poll_room);
@@ -2986,8 +3010,8 @@ static void poll_send(void)
         free(u);
     }
     if (!q || !*q || n < 2 || !poll_room) {
-        MUI_Request(app, win_poll, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                    (STRPTR)"Eine Umfrage braucht eine Frage und mindestens zwei Antworten.", 0);
+        MUI_Request(app, win_poll, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                    (STRPTR)tr(MSG_A_POLL_NEEDS_A_QUESTION), 0);
         free(q);
         return;
     }
@@ -3013,11 +3037,11 @@ static void show_summary(const AmxMsg *m)
     if (m->status || !x) { snprintf(pub_info, sizeof pub_info, "\33i%s", m->error ? m->error : ""); }
     else {
         t = local(x->topic ? x->topic : "");
-        snprintf(pub_info, sizeof pub_info, "%s%.150s%s%s, %d Mitglieder%s%s", t && *t ? "\33i" : "", t ? t : "",
-                 t && *t ? "\33n\n" : "", x->is_space ? "Space" : !strcmp(x->join_rule, "public") ? "öffentlich"
-                 : !strcmp(x->join_rule, "knock") ? "auf Anfrage" : "nur mit Einladung", x->members,
-                 x->world_readable ? ", Verlauf ohne Beitritt lesbar" : ", Verlauf erst nach dem Beitritt",
-                 x->joined ? ", du bist drin" : "");
+        snprintf(pub_info, sizeof pub_info, tr(MSG_DIR_INFO), t && *t ? "\33i" : "", t ? t : "",
+                 t && *t ? "\33n\n" : "", x->is_space ? "Space" : !strcmp(x->join_rule, "public") ? tr(MSG_PUBLIC_LC)
+                 : !strcmp(x->join_rule, "knock") ? tr(MSG_ON_REQUEST) : tr(MSG_INVITATION_ONLY_LC), x->members,
+                 x->world_readable ? tr(MSG_HISTORY_READABLE_WITHOUT_JOINING) : tr(MSG_HISTORY_ONLY_AFTER_JOINING),
+                 x->joined ? tr(MSG_YOU_ARE_IN) : "");
         free(t);
     }
     set(txt_pubinfo, MUIA_Text_Contents, pub_info);
@@ -3029,7 +3053,7 @@ HOOKPROTONHNO(pub_active_func, LONG, APTR unused)
     AmxPublicRoom *p = NULL;
     (void)unused;
     DoMethod(lst_pub, MUIM_NList_GetEntry, MUIV_NList_GetEntry_Active, &p);
-    set(txt_pubinfo, MUIA_Text_Contents, p ? "Lade ..." : "");
+    set(txt_pubinfo, MUIA_Text_Contents, p ? tr(MSG_LOADING) : "");
     set(b_preview, MUIA_Disabled, TRUE);
     if (p) amx_async_room_summary(A, p->room_id, TAG_SUMMARY);
     return 0;
@@ -3079,12 +3103,12 @@ HOOKPROTONHNO(spc_disp_func, LONG, struct NList_DisplayMessage *m)
     static char b0[200], b1[16], b2[40];
     const AmxRoomSummary *x = m->entry;
     char *t;
-    if (!x) { m->strings[0] = "Raum"; m->strings[1] = "Mitglieder"; m->strings[2] = ""; return 0; }
+    if (!x) { m->strings[0] = tr(MSG_ROOM_2); m->strings[1] = tr(MSG_MEMBERS_2); m->strings[2] = ""; return 0; }
     t = local(x->name ? x->name : x->alias ? x->alias : x->room_id);
     snprintf(b0, sizeof b0, "%s%s", x->is_space ? "\33b" : "", t ? t : "");
     free(t);
     snprintf(b1, sizeof b1, "%d", x->members);
-    snprintf(b2, sizeof b2, "%s", x == spc ? "(der Space)" : x->joined ? "drin" : x->is_space ? "Space" : "");
+    snprintf(b2, sizeof b2, "%s", x == spc ? tr(MSG_THE_SPACE) : x->joined ? tr(MSG_JOINED) : x->is_space ? tr(MSG_SPACE) : "");
     m->strings[0] = b0; m->strings[1] = b1; m->strings[2] = b2;
     return 0;
 }
@@ -3102,10 +3126,10 @@ static void open_space_window(const char *space)
     const Room *r = room_by_id(space);
     free(spc_id);
     spc_id = strdup(space);
-    snprintf(title, sizeof title, "Space: %s", r ? r->name : space);
+    snprintf(title, sizeof title, tr(MSG_SPACE_2), r ? r->name : space);
     set(win_spc, MUIA_Window_Title, title);
     DoMethod(lst_spc, MUIM_NList_Clear);
-    spc_set_status("Lade ...");
+    spc_set_status(tr(MSG_LOADING));
     set(win_spc, MUIA_Window_Open, TRUE);
     amx_async_space_rooms(A, space, TAG_SPACEROOMS);
 }
@@ -3134,7 +3158,7 @@ static void spc_got(const AmxMsg *m)
         DoMethod(lst_spc, MUIM_NList_InsertSingle, &spc[i], MUIV_NList_Insert_Bottom);
     }
     set(lst_spc, MUIA_NList_Quiet, FALSE);
-    snprintf(b, sizeof b, "%d Räume - Doppelklick: öffnen oder Vorschau", n_spc > 0 ? n_spc - 1 : 0);
+    snprintf(b, sizeof b, tr(MSG_ROOMS_DOUBLE_CLICK_OPEN_OR), n_spc > 0 ? n_spc - 1 : 0);
     spc_set_status(b);
 }
 
@@ -3152,19 +3176,19 @@ static void spc_action(int what)
     if (what == ID_SPC_ADD) {
         Room *r = NULL;
         DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
-        if (!r || r->invited || r->is_space) { spc_set_status("Bitte erst einen Raum in der Raumliste markieren."); return; }
+        if (!r || r->invited || r->is_space) { spc_set_status(tr(MSG_PLEASE_MARK_A_ROOM_IN_2)); return; }
         amx_async_space_add(A, spc_id, r->id, 1, TAG_SPACEADD);
-        spc_set_status("Füge hinzu ...");
+        spc_set_status(tr(MSG_ADDING));
         return;
     }
-    if (!x) { spc_set_status("Bitte erst einen Raum markieren."); return; }
-    if (what == ID_SPC_REMOVE) { amx_async_space_add(A, spc_id, x->room_id, 0, TAG_SPACEADD); spc_set_status("Nehme heraus ..."); }
+    if (!x) { spc_set_status(tr(MSG_PLEASE_MARK_A_ROOM_FIRST)); return; }
+    if (what == ID_SPC_REMOVE) { amx_async_space_add(A, spc_id, x->room_id, 0, TAG_SPACEADD); spc_set_status(tr(MSG_REMOVING)); }
     else if (what == ID_SPC_JOIN) {
         if (x->joined) open_chat(x->room_id);
-        else { amx_async_join(A, x->room_id, TAG_JOIN); spc_set_status("Trete bei ..."); }
+        else { amx_async_join(A, x->room_id, TAG_JOIN); spc_set_status(tr(MSG_JOINING)); }
     } else if (what == ID_SPC_PREVIEW) {
         if (x->joined) open_chat(x->room_id);
-        else if (!x->world_readable) spc_set_status("Den Verlauf gibt es erst nach dem Beitritt.");
+        else if (!x->world_readable) spc_set_status(tr(MSG_THE_HISTORY_IS_ONLY_AVAILABLE));
         else open_preview(x->room_id, x->name);
     }
 }
@@ -3181,13 +3205,13 @@ MakeStaticHook(spc_dclick_hook, spc_dclick_func);
 /* ---- report a message to the server's admins */
 static void report_msg(ChatWin *w, ChatMsg *m)
 {
-    static const char *const why[] = { "Spam", "Beleidigend", "Anderes" };
-    LONG k = MUI_Request(app, w->win, 0, (STRPTR)"Nachricht melden",
-                         (STRPTR)"_Spam|_Beleidigend|_Anderes|*_Abbrechen",
-                         (STRPTR)"Diese Nachricht den Admins deines Servers melden?\nWarum?", 0);
+    const char *const why[] = { tr(MSG_SPAM), tr(MSG_OFFENSIVE), tr(MSG_OTHER) };
+    LONG k = MUI_Request(app, w->win, 0, (STRPTR)tr(MSG_REPORT_MESSAGE),
+                         (STRPTR)tr(MSG_SPAM_OFFENSIVE_OTHER_CANCEL),
+                         (STRPTR)tr(MSG_REPORT_THIS_MESSAGE_TO_THE), 0);
     if (k < 1 || k > 3) return;
     amx_async_report(A, w->room_id, m->eid, why[k - 1], TAG_REPORT);
-    snprintf(w->err, sizeof w->err, "Melde ...");
+    snprintf(w->err, sizeof w->err, tr(MSG_REPORTING));
     update_status(w);
 }
 
@@ -3392,10 +3416,10 @@ static void readers_line(ChatWin *w, const char *eid)
         free(loc);
         cnt++;
     }
-    if (cnt > 5) snprintf(names + strlen(names), sizeof names - strlen(names), " und %d weitere", cnt - 5);
+    if (cnt > 5) snprintf(names + strlen(names), sizeof names - strlen(names), tr(MSG_AND_MORE), cnt - 5);
     if (have) remove_entry(w, have);
     if (!cnt || !last) return;
-    snprintf(text, sizeof text, "      \33i\33P[808080]gelesen von %s", names);
+    snprintf(text, sizeof text, tr(MSG_808080_READ_BY), names);
     if (!(l = new_line(eid, text, strlen(text), 0))) return;
     l->readers = 1;
     remember_line(w, l);
@@ -3548,12 +3572,12 @@ static void refresh_poll(ChatWin *w, Poll *p)
                      : EMO_RADIO_OFF, CLICK_POLL | ((long)pi << 8) | j, win ? "\33b" : "", p->texts[j], num);
         } else {
             int own = p->creator && my_user && !strcmp(p->creator, my_user);
-            snprintf(text, sizeof text, "      \33i%d %s%s%s", voters, voters == 1 ? "Stimme" : "Stimmen",
-                     p->ended ? " - beendet" : p->disclosed ? "" : " (Ergebnis am Ende)",
-                     p->max > 1 ? (p->ended ? "" : ", mehrere wählbar") : "");
+            snprintf(text, sizeof text, "      \33i%d %s%s%s", voters, voters == 1 ? tr(MSG_VOTE) : tr(MSG_VOTES),
+                     p->ended ? tr(MSG_ENDED) : p->disclosed ? "" : tr(MSG_RESULT_AT_THE_END),
+                     p->max > 1 ? (p->ended ? "" : tr(MSG_SEVERAL_CHOICES)) : "");
             if (own && !p->ended) {
                 size_t t = strlen(text);
-                snprintf(text + t, sizeof text - t, "  \33n\33o[%d@%ld] beenden", EMO_STOP, CLICK_POLL | ((long)pi << 8) | 255);
+                snprintf(text + t, sizeof text - t, tr(MSG_END), EMO_STOP, CLICK_POLL | ((long)pi << 8) | 255);
             }
         }
         if (!(l = new_line(p->eid, text, strlen(text), 0))) return;
@@ -3650,8 +3674,8 @@ static void poll_click(ChatWin *w, int pi, int ai)
     AmxEvent e;
     if (!p || p->ended || !my_user) return;
     if (ai == 255) {
-        if (MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)"_Beenden|*_Abbrechen",
-                        (STRPTR)"Die Umfrage beenden? Danach zählt keine Stimme mehr.", 0) == 1)
+        if (MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_END_CANCEL),
+                        (STRPTR)tr(MSG_END_THE_POLL_NO_MORE), 0) == 1)
             amx_async_poll_end(A, w->room_id, p->eid, TAG_POLLVOTE);
         return;
     }
@@ -3715,8 +3739,8 @@ MakeStaticHook(chip_hook, chip_func);
 static Object *win_pick, *pick_btn[N_EMO];
 static ChatWin *pick_w;
 static char *pick_eid;
-static const char *const emo_help[N_EMO] = { "Daumen hoch", "Daumen runter", "Herz", "Lächeln", "Lachen",
-                                             "Nachdenklich", "Augen", "Feiern", "Rakete", "", "", "", "" };
+static const char *emo_help[N_EMO] = { S_(MSG_THUMBS_UP), S_(MSG_THUMBS_DOWN), S_(MSG_HEART), S_(MSG_SMILE), S_(MSG_LAUGH),
+                                             S_(MSG_THINKING), S_(MSG_EYES), S_(MSG_CELEBRATE), S_(MSG_ROCKET), "", "", "", "" };
 
 static void open_picker(ChatWin *w)
 {
@@ -3755,7 +3779,7 @@ static Object *make_picker(void)
     Object *g = HGroup, MUIA_Group_Spacing, 2, End;
     int i;
     win_pick = WindowObject,
-        MUIA_Window_Title, "Reaktion",
+        MUIA_Window_Title, tr(MSG_REACTION),
         MUIA_Window_LeftEdge, MUIV_Window_LeftEdge_Moused,
         MUIA_Window_TopEdge, MUIV_Window_TopEdge_Moused,
         MUIA_Window_SizeGadget, FALSE,
@@ -3808,7 +3832,7 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
     w->draft_pending = !thread_root && draft_of(room_id) ? 1 : 0;
     if (thread_root) {
         char t[200];
-        snprintf(t, sizeof t, "Thread - %s", r ? r->name : room_id);
+        snprintf(t, sizeof t, tr(MSG_THREAD), r ? r->name : room_id);
         w->title = strdup(t);
         w->thread_root = strdup(thread_root);
         h = hash(thread_root);
@@ -3816,7 +3840,7 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
         if (!r) {                                    /* not joined: a preview */
             char t[300];
             w->preview = 1;
-            snprintf(t, sizeof t, "Vorschau: %s", preview_title ? preview_title : room_id);
+            snprintf(t, sizeof t, tr(MSG_PREVIEW), preview_title ? preview_title : room_id);
             w->title = strdup(t);
         } else
             w->title = strdup(r->name);
@@ -3878,14 +3902,14 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
                 MUIA_Background, MUII_TextBack,
                 MUIA_InputMode, MUIV_InputMode_RelVerify,
                 MUIA_Text_SetMin, FALSE,
-                MUIA_ShortHelp, "Klick: zur angepinnten Nachricht",
+                MUIA_ShortHelp, tr(MSG_CLICK_GO_TO_THE_PINNED),
             End,
             Child, w->tombbar = TextObject,
                 MUIA_ShowMe, FALSE,
                 TextFrame,
                 MUIA_Background, MUII_TextBack,
                 MUIA_InputMode, MUIV_InputMode_RelVerify,
-                MUIA_Text_Contents, "\33c\33bDieser Raum wurde durch einen neuen ersetzt.\33n Klick: dorthin",
+                MUIA_Text_Contents, tr(MSG_THIS_ROOM_WAS_REPLACED_BY),
             End,
             Child, w->modegrp = HGroup,
                 MUIA_ShowMe, FALSE,
@@ -3893,7 +3917,7 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
                  * screen - MUI would close it */
                 Child, w->modetext = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE,
                     MUIA_Weight, 100, End,
-                Child, w->modex = SimpleButton("_Abbrechen"),
+                Child, w->modex = SimpleButton(tr(MSG_CANCEL)),
             End,
             Child, w->sugg = HGroup,
                 MUIA_ShowMe, FALSE,
@@ -3994,7 +4018,7 @@ static void open_chat_ex(const char *room_id, const char *thread_root)
         Object *o[] = { w->input, w->invite, w->leave, w->infob, w->reactb, w->replyb, w->editb, w->delb, w->attachb };
         unsigned k;
         for (k = 0; k < sizeof o / sizeof o[0]; k++) if (o[k]) set(o[k], MUIA_Disabled, TRUE);
-        snprintf(w->err, sizeof w->err, "Vorschau - du bist noch nicht im Raum");
+        snprintf(w->err, sizeof w->err, tr(MSG_PREVIEW_YOU_ARE_NOT_IN));
     }
     update_pinbar(w);                                    /* pins and "replaced by" known already */
     update_status(w);
@@ -4087,17 +4111,17 @@ static char *format_event(const AmxEvent *e)
         else if (!strcmp(mt, "m.notice"))
             snprintf(out, n, "%s\33b%s:\33n \33i%s", tbuf, name, body);
         else if (!strcmp(mt, "m.location"))
-            snprintf(out, n, "%s\33b%s:\33n Standort: %s", tbuf, name, body);
+            snprintf(out, n, tr(MSG_LOCATION), tbuf, name, body);
         else if (!strcmp(mt, "m.poll"))
-            snprintf(out, n, "%s\33b%s:\33n Umfrage: \33b%s", tbuf, name, body);
+            snprintf(out, n, tr(MSG_POLL), tbuf, name, body);
         else if (!strcmp(mt, "m.audio") && e->media && amx_media_info(e->media, 0, "voice", vbuf, sizeof vbuf)) {
             long ms = amx_media_info(e->media, 0, "duration", vbuf, sizeof vbuf) ? atol(vbuf) : 0;
-            if (ms > 0) snprintf(out, n, "%s\33b%s:\33n [Sprachnachricht %ld:%02ld]", tbuf, name, ms / 60000, ms / 1000 % 60);
-            else snprintf(out, n, "%s\33b%s:\33n [Sprachnachricht]", tbuf, name);
+            if (ms > 0) snprintf(out, n, tr(MSG_VOICE_MESSAGE), tbuf, name, ms / 60000, ms / 1000 % 60);
+            else snprintf(out, n, tr(MSG_VOICE_MESSAGE_2), tbuf, name);
         } else if (!strcmp(mt, "m.image") || !strcmp(mt, "m.file") || !strcmp(mt, "m.video") || !strcmp(mt, "m.audio"))
             snprintf(out, n, "%s\33b%s:\33n [%s: %s]", tbuf, name,
-                     !strcmp(mt, "m.image") ? "Bild" : !strcmp(mt, "m.video") ? "Video" :
-                     !strcmp(mt, "m.audio") ? "Audio" : "Datei", body);
+                     !strcmp(mt, "m.image") ? tr(MSG_PICTURE) : !strcmp(mt, "m.video") ? "Video" :
+                     !strcmp(mt, "m.audio") ? "Audio" : tr(MSG_FILE), body);
         else
             snprintf(out, n, "%s\33b%s:\33n %s", tbuf, name, body);
         free(body);
@@ -4107,11 +4131,11 @@ static char *format_event(const AmxEvent *e)
         n = strlen(name) + 96 + (e->reason ? strlen(e->reason) : 0);
         out = malloc(n);
         if (e->reason && !strcmp(e->reason, "UNKNOWN_MESSAGE_INDEX"))   /* key only from a later message on */
-            snprintf(out, n, "%s\33b%s:\33n \33i(verschlüsselt, Schlüssel gilt erst ab einer späteren Nachricht)", tbuf, name);
+            snprintf(out, n, tr(MSG_ENCRYPTED_THE_KEY_ONLY_STARTS), tbuf, name);
         else if (!e->reason || !strcmp(e->reason, "no key"))
-            snprintf(out, n, "%s\33b%s:\33n \33i(verschlüsselt, kein Schlüssel auf diesem Gerät)", tbuf, name);
+            snprintf(out, n, tr(MSG_ENCRYPTED_NO_KEY_ON_THIS), tbuf, name);
         else
-            snprintf(out, n, "%s\33b%s:\33n \33i(verschlüsselt, nicht lesbar: %s)", tbuf, name, e->reason);
+            snprintf(out, n, tr(MSG_ENCRYPTED_NOT_READABLE), tbuf, name, e->reason);
         break;
     case AMX_EV_MEMBERSHIP: {
         const char *what = e->body ? e->body : "";
@@ -4119,8 +4143,8 @@ static char *format_event(const AmxEvent *e)
         n = strlen(who) + 80;
         out = malloc(n);
         snprintf(out, n, "%s\33i%s %s", tbuf, who,
-                 !strcmp(what, "join") ? "ist im Raum" : !strcmp(what, "leave") ? "hat den Raum verlassen" :
-                 !strcmp(what, "invite") ? "wurde eingeladen" : !strcmp(what, "ban") ? "wurde gesperrt" : what);
+                 !strcmp(what, "join") ? tr(MSG_IS_IN_THE_ROOM) : !strcmp(what, "leave") ? tr(MSG_LEFT_THE_ROOM) :
+                 !strcmp(what, "invite") ? tr(MSG_WAS_INVITED) : !strcmp(what, "ban") ? tr(MSG_WAS_BANNED) : what);
         free(who);
         break;
     }
@@ -4384,7 +4408,7 @@ static int add_media(ChatWin *w, const AmxEvent *e, int idx)
     m->media = strdup(e->media);
     m->idx = idx;
     m->type = strdup(amx_media_info(e->media, idx, "type", b, sizeof b) ? b : "m.file");
-    m->name = strdup(amx_media_info(e->media, idx, "name", b, sizeof b) ? b : "Datei");
+    m->name = strdup(amx_media_info(e->media, idx, "name", b, sizeof b) ? b : tr(MSG_FILE));
     if (!m->eid || !m->media || !m->type || !m->name) return -1;
     return w->n_media++;
 }
@@ -4499,8 +4523,8 @@ static int open_link(ChatWin *w, int li, int quiet)
         CloseLibrary(OpenURLBase);
     }
     if (!ok && !quiet)
-        MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                    (STRPTR)"Der Link konnte nicht geöffnet werden\n(openurl.library installiert?):\n\n%s",
+        MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                    (STRPTR)tr(MSG_THE_LINK_COULD_NOT_BE),
                     (ULONG)w->links[li]);
     return ok != 0;
 }
@@ -4594,7 +4618,7 @@ static void open_media(ChatWin *w, int mi)
         if (*q == ':' || *q == '/' || *q == '"' || (unsigned char)*q < 32) *q = '_';
     if (!(m->saving = strdup(path))) return;
     m->open_after = 1;
-    snprintf(w->err, sizeof w->err, "Lade %s ...", m->name);
+    snprintf(w->err, sizeof w->err, tr(MSG_LOADING_2), m->name);
     update_status(w);
     amx_async_media_save(A, m->media, m->idx, path, TAG_SAVE);
 }
@@ -4616,7 +4640,7 @@ static void save_media(ChatWin *w, int mi, const char *to)
         set(app, MUIA_Application_Sleep, TRUE);
         fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
                  ASLFR_Window, (ULONG)xget(w->win, MUIA_Window_Window),
-                 ASLFR_TitleText, (ULONG)"Datei speichern",
+                 ASLFR_TitleText, (ULONG)tr(MSG_SAVE_FILE),
                  ASLFR_InitialFile, (ULONG)m->name, ASLFR_InitialDrawer, (ULONG)(save_dir[0] ? save_dir : "RAM:"),
                  ASLFR_DoSaveMode, TRUE, TAG_DONE);
         if (fr && AslRequest(fr, NULL) && fr->fr_File[0]) {
@@ -4631,7 +4655,7 @@ static void save_media(ChatWin *w, int mi, const char *to)
     }
     if (!(m->saving = strdup(path))) return;
     m->open_after = 0;
-    snprintf(w->err, sizeof w->err, "Speichere %s ...", m->name);
+    snprintf(w->err, sizeof w->err, tr(MSG_SAVING_2), m->name);
     update_status(w);
     amx_async_media_save(A, m->media, m->idx, path, TAG_SAVE);
 }
@@ -4648,9 +4672,9 @@ static void media_saved(const AmxMsg *m)
             free(x->saving);
             x->saving = NULL;
             w->err[0] = 0;
-            if (m->status) snprintf(w->err, sizeof w->err, "Laden fehlgeschlagen: %.280s", m->error ? m->error : "");
+            if (m->status) snprintf(w->err, sizeof w->err, tr(MSG_LOADING_FAILED), m->error ? m->error : "");
             else if (x->open_after) { x->path = strdup(m->result); open_file_or_opus(m->result); }
-            else snprintf(w->err, sizeof w->err, "Gespeichert: %.140s", m->result);
+            else snprintf(w->err, sizeof w->err, tr(MSG_SAVED), m->result);
             update_status(w);
             return;
         }
@@ -4822,15 +4846,15 @@ static char *quote_line(ChatWin *w, const char *eid)
     ChatMsg *m = find_msg(w, eid);
     char *name, *body, *out, *q;
     size_t n;
-    if (!m) return strdup("\33i  \xbb (eine ältere Nachricht)");
+    if (!m) return strdup(tr(MSG_AN_OLDER_MESSAGE));
     name = local(m->name ? m->name : "");
-    body = local_emoji(m->redacted ? "(gel\xc3\xb6scht)" : m->body);              /* UTF-8 */
+    body = m->redacted ? strdup(tr(MSG_DELETED)) : local_emoji(m->body);          /* UTF-8 -> local */
     for (q = body; *q; q++) if (*q == '\n') *q = ' ';
     n = strlen(name) + 80 + 1;
     out = malloc(n + strlen(body));
     if (out) {
         if (strlen(body) > 60) { body[57] = 0; strcat(body, "..."); }
-        snprintf(out, n + strlen(body), "\33i  \xbb %s: %s", name, body);
+        snprintf(out, n + strlen(body), tr(MSG_X), name, body);
     }
     free(name); free(body);
     return out;
@@ -4841,7 +4865,9 @@ static char *message_text(ChatWin *w, const AmxEvent *e, int edited, int redacte
 {
     char *text, *quote, *out;
     AmxEvent x = *e;
-    if (redacted) { x.msgtype = "m.notice"; x.body = "(Nachricht gel\xc3\xb6scht)"; x.media = NULL; x.formatted = NULL; }   /* UTF-8 */
+    static char *deleted_utf8;                      /* format_event wants UTF-8 */
+    if (redacted && !deleted_utf8) deleted_utf8 = amx_from_local(tr(MSG_MESSAGE_DELETED));
+    if (redacted) { x.msgtype = "m.notice"; x.body = deleted_utf8 ? deleted_utf8 : "-"; x.media = NULL; x.formatted = NULL; }
     if (!(text = format_event(&x))) return NULL;
     if (!redacted) text = decorate(w, &x, text);
     if (opt_compact && text && e->type == AMX_EV_MESSAGE && e->sender && e->timestamp > 0) {
@@ -4856,7 +4882,7 @@ static char *message_text(ChatWin *w, const AmxEvent *e, int edited, int redacte
     }
     if (edited && !redacted && text) {
         char *t = malloc(strlen(text) + 20);
-        if (t) { sprintf(t, "%s \33i(bearbeitet)", text); free(text); text = t; }
+        if (t) { sprintf(t, tr(MSG_EDITED), text); free(text); text = t; }
     }
     if (!redacted && text && e->own && e->event_id) {          /* read by someone: a check mark */
         ChatMsg *m = find_msg(w, e->event_id);
@@ -5013,15 +5039,15 @@ static long day_of(double ms)
 
 static void insert_sep(ChatWin *w, double ms, LONG pos)
 {
-    static const char *const wd[] = { "Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag" };
-    static const char *const mo[] = { "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
-                                      "September", "Oktober", "November", "Dezember" };
+    const char *const wd[] = { tr(MSG_SUNDAY), tr(MSG_MONDAY), tr(MSG_TUESDAY), tr(MSG_WEDNESDAY), tr(MSG_THURSDAY), tr(MSG_FRIDAY), tr(MSG_SATURDAY) };
+    const char *const mo[] = { tr(MSG_JANUARY), tr(MSG_FEBRUARY), tr(MSG_MARCH), tr(MSG_APRIL), tr(MSG_MAY), tr(MSG_JUNE), tr(MSG_JULY), tr(MSG_AUGUST),
+                                      tr(MSG_SEPTEMBER), tr(MSG_OCTOBER), tr(MSG_NOVEMBER), tr(MSG_DECEMBER) };
     time_t t = (time_t)(ms / 1000);
     struct tm *tm = localtime(&t);
     char text[96];
     Line *l;
     if (!tm) return;
-    snprintf(text, sizeof text, "\33c\33i- %s, %d. %s %d -", wd[tm->tm_wday], tm->tm_mday, mo[tm->tm_mon],
+    snprintf(text, sizeof text, tr(MSG_DATE_LINE), wd[tm->tm_wday], tm->tm_mday, mo[tm->tm_mon],
              tm->tm_year + 1900);
     if (!(l = new_line(NULL, text, strlen(text), 0))) return;
     l->sep = 1;
@@ -5124,7 +5150,7 @@ static void copy_msg(ChatWin *w, ChatMsg *m)
     char *l;
     if (!m || m->redacted || !m->body) return;
     l = local(m->body);
-    snprintf(w->err, sizeof w->err, clip_write(l) ? "Text kopiert" : "Kopieren hat nicht geklappt");
+    snprintf(w->err, sizeof w->err, clip_write(l) ? tr(MSG_TEXT_COPIED) : tr(MSG_COPYING_DID_NOT_WORK));
     free(l);
     update_status(w);
 }
@@ -5155,7 +5181,7 @@ static void start_reply(ChatWin *w, ChatMsg *m)
     char *q = quote_line(w, m->eid), b[300];
     clear_mode(w);
     w->reply_eid = strdup(m->eid);
-    snprintf(b, sizeof b, "Antwort auf%s", q ? q + 5 : "");          /* without "\33i  " */
+    snprintf(b, sizeof b, tr(MSG_REPLY_TO), q ? q + 5 : "");          /* without "\33i  " */
     set(w->modetext, MUIA_Text_Contents, b);
     free(q);
     set(w->modegrp, MUIA_ShowMe, TRUE);
@@ -5168,7 +5194,7 @@ static void start_edit(ChatWin *w, ChatMsg *m)
     char *l = local(m->body);
     clear_mode(w);
     w->edit_eid = strdup(m->eid);
-    set(w->modetext, MUIA_Text_Contents, "Nachricht bearbeiten (Return speichert)");
+    set(w->modetext, MUIA_Text_Contents, tr(MSG_EDIT_MESSAGE_RETURN_SAVES));
     set(w->modegrp, MUIA_ShowMe, TRUE);
     set(w->input, MUIA_String_Contents, l);
     free(l);
@@ -5177,8 +5203,8 @@ static void start_edit(ChatWin *w, ChatMsg *m)
 
 static void delete_msg(ChatWin *w, ChatMsg *m, int ask)
 {
-    if (ask && MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)"*_Löschen|_Abbrechen",
-                           (STRPTR)"Diese Nachricht für alle löschen?", 0) != 1)
+    if (ask && MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_DELETE_CANCEL),
+                           (STRPTR)tr(MSG_DELETE_THIS_MESSAGE_FOR_EVERYONE), 0) != 1)
         return;
     amx_async_redact(A, w->room_id, m->eid, TAG_REACT);
 }
@@ -5239,8 +5265,8 @@ static void refresh_thread_line(ChatWin *w, ChatMsg *m)
         else last = k;
     }
     if (last < 0) return;
-    snprintf(text, sizeof text, "      \33o[%d@%ld] \33iThread: %d %s", EMO_THREAD, CLICK_THREAD | (long)(m - w->msgs),
-             m->thread_count, m->thread_count == 1 ? "Antwort" : "Antworten");
+    snprintf(text, sizeof text, tr(MSG_THREAD_2), EMO_THREAD, CLICK_THREAD | (long)(m - w->msgs),
+             m->thread_count, m->thread_count == 1 ? tr(MSG_REPLY) : tr(MSG_REPLIES));
     if (tline) {
         char *t = strdup(text);
         if (!t) return;
@@ -5401,13 +5427,13 @@ static void chat_event_in(ChatWin *w, const AmxEvent *e)
     if (e->type == AMX_EV_MEMBERSHIP && e->body && !strcmp(e->body, "knock") && e->state_key) {
         if (!opt_joins) {
             char *n = local(e->sender_name ? e->sender_name : e->state_key);
-            snprintf(w->err, sizeof w->err, "%s klopft an - im Raum-Fenster (i) einlassen", n ? n : "");
+            snprintf(w->err, sizeof w->err, tr(MSG_IS_KNOCKING_LET_THEM_IN), n ? n : "");
             free(n);
             update_status(w);
             return;
         }
         char *n = local(e->sender_name ? e->sender_name : e->state_key);
-        snprintf(w->err, sizeof w->err, "%s klopft an - im Raum-Fenster (i) einlassen", n ? n : "");
+        snprintf(w->err, sizeof w->err, tr(MSG_IS_KNOCKING_LET_THEM_IN), n ? n : "");
         free(n);
         update_status(w);
     }
@@ -5512,8 +5538,8 @@ static void jump_step(ChatWin *w)
         DoMethod(w->list, MUIM_NList_Jump, k);
         set(w->list, MUIA_NList_First, k);
     }
-    snprintf(w->err, sizeof w->err, oldest > w->jump_ts ? "So weit zurück geht der Verlauf nicht (oder ist zu lang)."
-                                                        : best ? "" : "Danach gibt es keine Nachrichten.");
+    snprintf(w->err, sizeof w->err, oldest > w->jump_ts ? tr(MSG_THE_HISTORY_DOES_NOT_GO)
+                                                        : best ? "" : tr(MSG_THERE_ARE_NO_MESSAGES_AFTER));
     w->jump_ts = 0;
     update_status(w);
 }
@@ -5525,16 +5551,16 @@ static void jump_to_date(ChatWin *w, const char *date)
     time_t t;
     if ((sscanf(date, "%d.%d.%d", &d, &mo, &y) != 3 && sscanf(date, "%d-%d-%d", &y, &mo, &d) != 3)
         || mo < 1 || mo > 12 || d < 1 || d > 31) {
-        chat_say(w, "Datum bitte als TT.MM.JJJJ.");
+        chat_say(w, tr(MSG_PLEASE_GIVE_THE_DATE_AS));
         return;
     }
     if (y < 100) y += 2000;
     memset(&tm, 0, sizeof tm);
     tm.tm_mday = d; tm.tm_mon = mo - 1; tm.tm_year = y - 1900; tm.tm_isdst = -1;
-    if ((t = mktime(&tm)) == (time_t)-1) { chat_say(w, "Das Datum geht nicht."); return; }
+    if ((t = mktime(&tm)) == (time_t)-1) { chat_say(w, tr(MSG_THAT_DATE_DOES_NOT_WORK)); return; }
     w->jump_ts = (double)t * 1000.0;
     w->jump_pages = 0;
-    chat_say(w, "Suche den Tag ...");
+    chat_say(w, tr(MSG_LOOKING_FOR_THE_DAY));
     if (!w->loading) jump_step(w);
 }
 
@@ -5551,13 +5577,13 @@ static void mark_first_unread(ChatWin *w)
     int i, n = 0;
     LONG k;
     Line *sep;
-    static const char text[] = "\33c\33b--- neue Nachrichten ---";
+    const char *text = tr(MSG_NEW_MESSAGES);
     if (!(l = malloc(sizeof *l * (w->n_msgs + 1)))) return;
     for (i = 0; i < w->n_msgs; i++) if (!w->msgs[i].own && w->msgs[i].ts > 0) l[n++] = &w->msgs[i];
     w->unread_done = 1;
     if (!n) { free(l); return; }
     if (n < w->unread_open && !w->at_start)       /* more unread than loaded: the marker goes on top */
-        chat_say(w, "Weitere ungelesene Nachrichten: Pfeil nach oben lädt sie.");
+        chat_say(w, tr(MSG_MORE_UNREAD_MESSAGES_THE_UP));
     qsort(l, n, sizeof *l, by_ts_desc);
     k = line_of(w, l[(w->unread_open < n ? w->unread_open : n) - 1]);
     free(l);
@@ -5599,7 +5625,7 @@ static void write_export(ChatWin *w, const char *path)
     html = pl > 5 && (!strcmp(path + pl - 5, ".html") || !strcmp(path + pl - 4, ".htm"));
     if (!f || !(l = malloc(sizeof *l * (w->n_msgs + 1)))) {
         if (f) fclose(f);
-        chat_say(w, "Die Datei lässt sich nicht schreiben.");
+        chat_say(w, tr(MSG_THE_FILE_CANNOT_BE_WRITTEN));
         return;
     }
     for (i = 0; i < w->n_msgs; i++) if (!w->msgs[i].redacted && w->msgs[i].body) l[n++] = &w->msgs[i];
@@ -5618,7 +5644,7 @@ static void write_export(ChatWin *w, const char *path)
         time_t tt = (time_t)(l[i]->ts / 1000);
         struct tm *tm = localtime(&tt);
         const char *name = l[i]->name ? l[i]->name : l[i]->sender;      /* UTF-8 */
-        if (tm) strftime(when, sizeof when, "%d.%m.%Y %H:%M", tm); else when[0] = 0;
+        if (tm) strftime(when, sizeof when, tr(MSG_FMT_DATETIME), tm); else when[0] = 0;
         if (html) {
             fprintf(f, "<p><span class=\"t\">%s</span> <span class=\"n\">", when);
             html_put(f, name);
@@ -5636,7 +5662,7 @@ static void write_export(ChatWin *w, const char *path)
     free(l);
     {
         char b[200];
-        snprintf(b, sizeof b, "%d Nachrichten exportiert.", n);
+        snprintf(b, sizeof b, tr(MSG_MESSAGES_EXPORTED), n);
         chat_say(w, b);
     }
 }
@@ -5655,7 +5681,7 @@ static void export_chat(ChatWin *w, const char *path, int all)
     free(w->export_path);
     w->export_path = strdup(path);
     w->jump_pages = 0;
-    chat_say(w, "Lade den ganzen Verlauf ...");
+    chat_say(w, tr(MSG_LOADING_THE_WHOLE_HISTORY));
     if (!w->loading) export_step(w);
 }
 
@@ -5677,7 +5703,7 @@ static void history_done(const AmxMsg *m)
     }
     w->loading = 0;
     w->loading_older = 0;
-    if (m->status) snprintf(w->err, sizeof w->err, "Verlauf: %.290s", m->error ? m->error : "Fehler");
+    if (m->status) snprintf(w->err, sizeof w->err, tr(MSG_HISTORY), m->error ? m->error : tr(MSG_ERROR));
     update_status(w);
     w->at_start = m->status == 0 && m->at_start;
     set(w->older, MUIA_Disabled, w->at_start);
@@ -5709,7 +5735,7 @@ static void do_login(const char *server, const char *user, const char *password)
     A = amx_async_new(server, dir);
     if (A && !opt_receipts) amx_async_private_receipts(A, 1);
     if (A && !opt_hcache) amx_async_history_cache(A, 0);
-    if (!A) { set_status("Netzprozess konnte nicht starten", NULL, NULL); return; }
+    if (!A) { set_status(tr(MSG_THE_NETWORK_PROCESS_COULD_NOT), NULL, NULL); return; }
     {
         char v[16];
         if (GetVar((STRPTR)"AMX_VERBOSE", (STRPTR)v, sizeof v, 0) > 0) amx_async_set_verbose(A, atoi(v));
@@ -5725,7 +5751,7 @@ static void do_login(const char *server, const char *user, const char *password)
             store_protected = 1;
             free(pending_password);
             pending_password = xstrdup(password);
-            set_status("Passwort für die Amatrix-Daten nötig", NULL, NULL);
+            set_status(tr(MSG_PASSWORD_FOR_THE_AMATRIX_DATA), NULL, NULL);
             set(txt_unlock, MUIA_Text_Contents, "");
             set(b_unlock, MUIA_Disabled, FALSE);
             set(win_unlock, MUIA_Window_Open, TRUE);
@@ -5733,7 +5759,7 @@ static void do_login(const char *server, const char *user, const char *password)
             return;
         }
     }
-    set_status("Anmelden als %s ...", user, NULL);
+    set_status(tr(MSG_LOGGING_IN_AS), user, NULL);
     amx_async_login(A, user, password ? password : "", TAG_LOGIN);
 }
 
@@ -5746,7 +5772,7 @@ static void unlock_go(const char *typed)
     memset(u, 0, strlen(u));
     free(u);
     set(str_unlock, MUIA_String_Contents, "");
-    set(txt_unlock, MUIA_Text_Contents, "Wird geprüft ...");
+    set(txt_unlock, MUIA_Text_Contents, tr(MSG_CHECKING));
     set(b_unlock, MUIA_Disabled, TRUE);
 }
 
@@ -5756,7 +5782,7 @@ static void storepass_go(int remove_it, const char *typed)
     char *p2 = (char *)(typed ? typed : (const char *)xget(str_sp2, MUIA_String_Contents)), *u;
     if (!A || !my_user) return;
     if (!remove_it) {
-        if (!p1 || strlen(p1) < 4) { set(txt_sp, MUIA_Text_Contents, "Bitte mindestens 4 Zeichen."); return; }
+        if (!p1 || strlen(p1) < 4) { set(txt_sp, MUIA_Text_Contents, tr(MSG_AT_LEAST_4_CHARACTERS_PLEASE)); return; }
         if (strcmp(p1, p2)) { set(txt_sp, MUIA_Text_Contents, "Die beiden Eingaben sind verschieden."); return; }
     }
     store_protected_removing = remove_it;
@@ -5766,15 +5792,15 @@ static void storepass_go(int remove_it, const char *typed)
     free(u);
     set(str_sp1, MUIA_String_Contents, "");
     set(str_sp2, MUIA_String_Contents, "");
-    set(txt_sp, MUIA_Text_Contents, "Daten werden umgeschlüsselt ...");
+    set(txt_sp, MUIA_Text_Contents, tr(MSG_RE_ENCRYPTING_THE_DATA));
 }
 
 static void login_from_window(void)
 {
     char *s = (char *)xget(str_server, MUIA_String_Contents), *u = (char *)xget(str_user, MUIA_String_Contents);
     char *p = (char *)xget(str_pass, MUIA_String_Contents);
-    if (!s || !*s || !u || !*u) { set(txt_login, MUIA_Text_Contents, "Server und Benutzer angeben."); return; }
-    set(txt_login, MUIA_Text_Contents, "Anmelden ...");
+    if (!s || !*s || !u || !*u) { set(txt_login, MUIA_Text_Contents, tr(MSG_ENTER_SERVER_AND_USER)); return; }
+    set(txt_login, MUIA_Text_Contents, tr(MSG_LOGGING_IN));
     do_login(s, u, p);
 }
 
@@ -5818,7 +5844,7 @@ static void new_chat(const char *who)
     opt.is_direct = 1;
     opt.encrypted = 1;
     amx_async_create_room(A, &opt, TAG_NEWCHAT);
-    set_status("Chat mit %s wird angelegt ...", uid, NULL);
+    set_status(tr(MSG_CREATING_CHAT_WITH), uid, NULL);
     free(uid);
 }
 
@@ -5832,7 +5858,7 @@ static void new_room(const char *name, int enc, int pub_)
     opt.encrypted = enc && !opt.is_space;       /* a space has no messages */
     opt.is_public = pub_;
     amx_async_create_room(A, &opt, TAG_NEWROOM);
-    set_status("Raum wird angelegt ...", NULL, NULL);
+    set_status(tr(MSG_CREATING_ROOM), NULL, NULL);
     free(u);
 }
 
@@ -5845,9 +5871,9 @@ static void recovery_go(const char *typed)
     memset(u, 0, strlen(u));
     free(u);
     set(str_recovery, MUIA_String_Contents, "");
-    set(txt_recovery, MUIA_Text_Contents, "Wird geprüft ... (eine Passphrase kann einige Minuten dauern)");
+    set(txt_recovery, MUIA_Text_Contents, tr(MSG_CHECKING_A_PASSPHRASE_CAN_TAKE));
     set(b_recovery, MUIA_Disabled, TRUE);
-    set_status("Sicherheitsschlüssel wird geprüft ...", NULL, NULL);
+    set_status(tr(MSG_CHECKING_THE_SECURITY_KEY), NULL, NULL);
 }
 
 static void invite_go(void)
@@ -5861,7 +5887,7 @@ static void invite_go(void)
         ChatWin *w = chat_by_room(invite_room);
         if (w) { w->inviting++; w->err[0] = 0; update_status(w); }
     }
-    set_status("%s wird eingeladen ...", uid, NULL);
+    set_status(tr(MSG_INVITING_2), uid, NULL);
     free(uid);
     set(win_invite, MUIA_Window_Open, FALSE);
 }
@@ -5881,9 +5907,9 @@ static void room_double_click(void)
     DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
     if (!r) return;
     if (r->invited) {
-        LONG k = MUI_Request(app, win_main, 0, (STRPTR)"Einladung",
-                             (STRPTR)"*_Annehmen|A_blehnen|Ablehnen + _blockieren|_Später",
-                             (STRPTR)"%s lädt dich ein:\n\n\33b%s", (ULONG)(r->inviter ? r->inviter : "Jemand"),
+        LONG k = MUI_Request(app, win_main, 0, (STRPTR)tr(MSG_INVITATION),
+                             (STRPTR)tr(MSG_ACCEPT_DECLINE_DECLINE_BLOCK_LATER),
+                             (STRPTR)tr(MSG_INVITES_YOU), (ULONG)(r->inviter ? r->inviter : tr(MSG_SOMEONE)),
                              (ULONG)r->name);
         if (k == 1) accept_invite(r, 1);
         else if (k == 2) accept_invite(r, 0);
@@ -5902,7 +5928,7 @@ HOOKPROTONHNO(pub_disp_func, LONG, struct NList_DisplayMessage *m)
     static char b0[200], b1[16], b2[200];
     const AmxPublicRoom *p = m->entry;
     char *t;
-    if (!p) { m->strings[0] = "Name"; m->strings[1] = "Mitglieder"; m->strings[2] = "Adresse"; return 0; }
+    if (!p) { m->strings[0] = tr(MSG_NAME); m->strings[1] = tr(MSG_MEMBERS_2); m->strings[2] = tr(MSG_ADDRESS); return 0; }
     t = local(p->name ? p->name : p->room_id); snprintf(b0, sizeof b0, "%s", t); free(t);
     snprintf(b1, sizeof b1, "%d", p->members);
     t = local(p->alias ? p->alias : p->room_id); snprintf(b2, sizeof b2, "%s", t); free(t);
@@ -5919,7 +5945,7 @@ static void join_selected(void)
     if (p) amx_async_join(A, p->room_id, TAG_JOIN);
     else if (typed && (*typed == '#' || *typed == '!')) amx_async_join(A, typed, TAG_JOIN);
     else return;
-    set_status("Raum wird betreten ...", NULL, NULL);
+    set_status(tr(MSG_JOINING_ROOM), NULL, NULL);
 }
 
 /* ------------------------------------------------------------ net messages */
@@ -5970,7 +5996,7 @@ static void update_pinbar(ChatWin *w)
     w->pin_shown = strdup(eid);
     if ((m = find_msg(w, eid)) != NULL) remember_pin_text(eid, m->body);
     if (!pin_text_of(eid)) amx_async_fetch_event(A, w->room_id, eid, TAG_FETCH);
-    snprintf(text, sizeof text, "\33bAngepinnt%s:\33n %s", n > 1 ? " (neueste)" : "",
+    snprintf(text, sizeof text, tr(MSG_PINNED), n > 1 ? tr(MSG_NEWEST) : "",
              pin_text_of(eid) ? pin_text_of(eid) : "...");
     set(w->pinbar, MUIA_Text_Contents, text);
     set(w->pinbar, MUIA_ShowMe, TRUE);
@@ -5987,7 +6013,7 @@ static void go_replacement(ChatWin *w)
         free(pending_open);
         pending_open = strdup(r->replacement);
         amx_async_join(A, r->replacement, TAG_JOIN);
-        chat_say(w, "Trete dem neuen Raum bei ...");
+        chat_say(w, tr(MSG_JOINING_THE_NEW_ROOM));
     }
 }
 
@@ -6006,7 +6032,7 @@ HOOKPROTONH(pinbar_func, LONG, Object *obj, ULONG *param)
     LONG k = m ? line_of(w, m) : -1;
     (void)obj;
     if (k >= 0) { DoMethod(w->list, MUIM_NList_Jump, k); set(w->list, MUIA_NList_Active, k); }
-    else chat_say(w, "Die angepinnte Nachricht ist älter als der geladene Verlauf (Pfeil nach oben lädt mehr).");
+    else chat_say(w, tr(MSG_THE_PINNED_MESSAGE_IS_OLDER));
     return 0;
 }
 MakeStaticHook(pinbar_hook, pinbar_func);
@@ -6037,7 +6063,7 @@ static void open_forward(ChatWin *w, ChatMsg *m)
 HOOKPROTONHNO(fwd_disp_func, LONG, struct NList_DisplayMessage *m)
 {
     const Room *r = m->entry;
-    m->strings[0] = r ? r->name : (char *)"Raum";
+    m->strings[0] = r ? r->name : (char *)tr(MSG_ROOM_2);
     return 0;
 }
 MakeStaticHook(fwd_disp_hook, fwd_disp_func);
@@ -6056,7 +6082,7 @@ static void start_quote(ChatWin *w, ChatMsg *m)
     char *q = quote_line(w, m->eid), b[300];
     clear_mode(w);
     w->quote = strdup(m->body ? m->body : "");
-    snprintf(b, sizeof b, "Zitat:%s", q ? q + 5 : "");
+    snprintf(b, sizeof b, tr(MSG_QUOTE), q ? q + 5 : "");
     set(w->modetext, MUIA_Text_Contents, b);
     free(q);
     set(w->modegrp, MUIA_ShowMe, TRUE);
@@ -6068,7 +6094,7 @@ static void copy_link(ChatWin *w, ChatMsg *m)
     char *l = malloc(strlen(w->room_id) + strlen(m->eid) + 40);
     if (!l) return;
     sprintf(l, "https://matrix.to/#/%s/%s", w->room_id, m->eid);
-    snprintf(w->err, sizeof w->err, clip_write(l) ? "Link kopiert" : "Kopieren hat nicht geklappt");
+    snprintf(w->err, sizeof w->err, clip_write(l) ? tr(MSG_LINK_COPIED) : tr(MSG_COPYING_DID_NOT_WORK));
     free(l);
     update_status(w);
 }
@@ -6104,7 +6130,7 @@ static void hist_add(double ts, const char *body)
     struct tm *tm = localtime(&tt);
     int i;
     if (n_hist >= 40) return;
-    if (tm) strftime(when, sizeof when, "%d.%m. %H:%M", tm); else when[0] = 0;
+    if (tm) strftime(when, sizeof when, tr(MSG_FMT_DAYTIME), tm); else when[0] = 0;
     t = local(body ? body : "");
     row = malloc(strlen(t ? t : "") + 32);
     if (!row) { free(t); return; }
@@ -6176,7 +6202,7 @@ static void pw_go(void)
 {
     char *o = (char *)xget(str_pwold, MUIA_String_Contents), *n1 = (char *)xget(str_pwnew, MUIA_String_Contents),
          *n2 = (char *)xget(str_pwnew2, MUIA_String_Contents), *uo, *un;
-    if (!n1 || !n2 || strcmp(n1, n2)) { set(txt_acct, MUIA_Text_Contents, "Die neuen Passwörter sind nicht gleich."); return; }
+    if (!n1 || !n2 || strcmp(n1, n2)) { set(txt_acct, MUIA_Text_Contents, tr(MSG_PASSWORDS_DIFFER)); return; }
     uo = amx_from_local(o ? o : "");
     un = amx_from_local(n1);
     amx_async_change_password(A, uo, un, TAG_PASSWORD);
@@ -6186,7 +6212,7 @@ static void pw_go(void)
     set(str_pwold, MUIA_String_Contents, "");
     set(str_pwnew, MUIA_String_Contents, "");
     set(str_pwnew2, MUIA_String_Contents, "");
-    set(txt_acct, MUIA_Text_Contents, "Bitte warten ...");
+    set(txt_acct, MUIA_Text_Contents, tr(MSG_PLEASE_WAIT));
 }
 
 static void handle_result(const AmxMsg *m)
@@ -6195,7 +6221,7 @@ static void handle_result(const AmxMsg *m)
     switch (m->tag) {
     case TAG_LOGIN:
         if (m->status) {
-            set_status("Anmeldung fehlgeschlagen", NULL, NULL);
+            set_status(tr(MSG_LOGIN_FAILED), NULL, NULL);
             show_login(m->error);
             return;
         }
@@ -6204,7 +6230,7 @@ static void handle_result(const AmxMsg *m)
         verified = m->verified;
         save_prefs();
         set(win_login, MUIA_Window_Open, FALSE);
-        set_status("Verbinde als %s ...", my_user, NULL);
+        set_status(tr(MSG_CONNECTING_AS), my_user, NULL);
         break;
     case TAG_LOGOUT:
         store_protected = 0;
@@ -6212,12 +6238,12 @@ static void handle_result(const AmxMsg *m)
         verified = 0;
         while (chats) close_chat(chats);
         show_login("Abgemeldet.");
-        set_status("Abgemeldet", NULL, NULL);
+        set_status(tr(MSG_LOGGED_OUT), NULL, NULL);
         break;
     case TAG_NEWCHAT: case TAG_NEWROOM: case TAG_JOIN:
         if (m->status) {
-            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK", (STRPTR)"%s",
-                        (ULONG)(m->error ? m->error : "Fehler"));
+            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK), (STRPTR)"%s",
+                        (ULONG)(m->error ? m->error : tr(MSG_ERROR)));
             set_online();
             return;
         }
@@ -6230,28 +6256,28 @@ static void handle_result(const AmxMsg *m)
         set(b_unlock, MUIA_Disabled, FALSE);
         if (m->status) {
             set(txt_unlock, MUIA_Text_Contents, m->error && strstr(m->error, "wrong")
-                ? "Falsches Passwort." : (m->error ? m->error : "Fehler"));
+                ? tr(MSG_WRONG_PASSWORD) : (m->error ? m->error : tr(MSG_ERROR)));
             break;
         }
         set(win_unlock, MUIA_Window_Open, FALSE);
-        set_status("Anmelden als %s ...", cfg_user, NULL);
+        set_status(tr(MSG_LOGGING_IN_AS), cfg_user, NULL);
         amx_async_login(A, cfg_user, pending_password ? pending_password : "", TAG_LOGIN);
         if (pending_password) { memset(pending_password, 0, strlen(pending_password)); free(pending_password); }
         pending_password = NULL;
         break;
     case TAG_STOREPASS:
-        if (m->status) { set(txt_sp, MUIA_Text_Contents, m->error ? m->error : "Fehler"); break; }
+        if (m->status) { set(txt_sp, MUIA_Text_Contents, m->error ? m->error : tr(MSG_ERROR)); break; }
         store_protected = !store_protected_removing;
         set(txt_sp, MUIA_Text_Contents, store_protected
-            ? "\33bDie Amatrix-Daten sind jetzt mit dem Passwort geschützt.\33n\nBeim Start fragt Amatrix danach."
-            : "\33bDer Passwortschutz ist entfernt.\33n");
+            ? tr(MSG_THE_AMATRIX_DATA_IS_NOW)
+            : tr(MSG_THE_PASSWORD_PROTECTION_IS_REMOVED));
         break;
     case TAG_RECOVERY: {
         ChatWin *w;
         set(b_recovery, MUIA_Disabled, FALSE);
         if (m->status) {
             set(txt_recovery, MUIA_Text_Contents, m->error && strstr(m->error, "wrong")
-                ? "Falscher Schlüssel bzw. falsche Passphrase." : (m->error ? m->error : "Fehler"));
+                ? tr(MSG_WRONG_KEY_OR_PASSPHRASE) : (m->error ? m->error : tr(MSG_ERROR)));
             set_online();
             break;
         }
@@ -6259,10 +6285,10 @@ static void handle_result(const AmxMsg *m)
         {   /* result in the window (a requester would block the program) */
             static char res[300];
             snprintf(res, sizeof res, "\33b%s\33n\n%s",
-                     m->verified ? "Dieses Gerät ist jetzt verifiziert."
-                                 : "Verifizieren war nicht möglich (Cross-Signing nicht eingerichtet?).",
-                     m->backup ? "Alte Nachrichten werden beim Öffnen eines Raums entschlüsselt."
-                               : "Auf dem Server gibt es keine Schlüsselsicherung.");
+                     m->verified ? tr(MSG_THIS_DEVICE_IS_VERIFIED_NOW)
+                                 : tr(MSG_VERIFYING_WAS_NOT_POSSIBLE_CROSS),
+                     m->backup ? tr(MSG_OLD_MESSAGES_ARE_DECRYPTED_WHEN)
+                               : tr(MSG_THERE_IS_NO_KEY_BACKUP));
             set(txt_recovery, MUIA_Text_Contents, res);
         }
         set_online();
@@ -6275,11 +6301,11 @@ static void handle_result(const AmxMsg *m)
         ChatWin *w = room ? chat_by_room(room) : NULL;
         if (w) {
             if (w->inviting) w->inviting--;
-            if (m->status) snprintf(w->err, sizeof w->err, "Einladen fehlgeschlagen: %.120s", m->error ? m->error : "");
+            if (m->status) snprintf(w->err, sizeof w->err, tr(MSG_INVITING_FAILED), m->error ? m->error : "");
             update_status(w);
         } else if (m->status)
-            MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                        (STRPTR)"Einladen hat nicht geklappt:\n%s", (ULONG)(m->error ? m->error : ""));
+            MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                        (STRPTR)tr(MSG_INVITING_DID_NOT_WORK), (ULONG)(m->error ? m->error : ""));
         free(room);
         set_online();
         break;
@@ -6291,11 +6317,11 @@ static void handle_result(const AmxMsg *m)
         else w = room ? chat_by_room(room) : NULL;
         if (w) {
             if (w->sending) w->sending--;
-            if (m->status) snprintf(w->err, sizeof w->err, "Senden fehlgeschlagen: %.120s", m->error ? m->error : "");
+            if (m->status) snprintf(w->err, sizeof w->err, tr(MSG_SENDING_FAILED), m->error ? m->error : "");
             update_status(w);
         } else if (m->status)
-            MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                        (STRPTR)"Nachricht nicht gesendet:\n%s", (ULONG)(m->error ? m->error : ""));
+            MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                        (STRPTR)tr(MSG_MESSAGE_NOT_SENT), (ULONG)(m->error ? m->error : ""));
         free(room);
         break;
     }
@@ -6306,18 +6332,18 @@ static void handle_result(const AmxMsg *m)
         else w = room ? chat_by_room(room) : NULL;
         if (w) {
             if (w->uploading) w->uploading--;
-            if (m->status) snprintf(w->err, sizeof w->err, "Datei nicht gesendet: %.280s", m->error ? m->error : "");
+            if (m->status) snprintf(w->err, sizeof w->err, tr(MSG_FILE_NOT_SENT), m->error ? m->error : "");
             update_status(w);
         } else if (m->status)
-            MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                        (STRPTR)"Datei nicht gesendet:\n%s", (ULONG)(m->error ? m->error : ""));
+            MUI_Request(app, NULL, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                        (STRPTR)tr(MSG_FILE_NOT_SENT_2), (ULONG)(m->error ? m->error : ""));
         free(room);
         break;
     }
     case TAG_LEAVE:
         if (m->status)
-            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                        (STRPTR)"Verlassen hat nicht geklappt:\n%s", (ULONG)(m->error ? m->error : ""));
+            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                        (STRPTR)tr(MSG_LEAVING_DID_NOT_WORK), (ULONG)(m->error ? m->error : ""));
         set_online();
         break;
     case TAG_THREAD: {
@@ -6326,7 +6352,7 @@ static void handle_result(const AmxMsg *m)
             if (w->thread_root && m->result && !strcmp(w->thread_root, m->result)) {
                 w->loading = 0;
                 w->loading_older = 0;
-                if (m->status) snprintf(w->err, sizeof w->err, "Thread: %.140s", m->error ? m->error : "Fehler");
+                if (m->status) snprintf(w->err, sizeof w->err, tr(MSG_THREAD_3), m->error ? m->error : tr(MSG_ERROR));
                 w->at_start = m->status == 0 && m->at_start;
                 set(w->older, MUIA_Disabled, w->at_start);
                 update_status(w);
@@ -6380,14 +6406,14 @@ static void handle_result(const AmxMsg *m)
     case TAG_SPACEADD:
         if (m->status) {
             char b[300];
-            snprintf(b, sizeof b, "\33bNicht geklappt:\33n %.240s", m->error ? m->error : "");
+            snprintf(b, sizeof b, tr(MSG_THAT_DID_NOT_WORK), m->error ? m->error : "");
             spc_set_status(b);
         } else if (spc_id) amx_async_space_rooms(A, spc_id, TAG_SPACEROOMS);
         break;
     case TAG_REPORT: {
         ChatWin *w = current_chat();
         if (w) {
-            snprintf(w->err, sizeof w->err, m->status ? "Melden hat nicht geklappt: %.250s" : "Gemeldet.",
+            snprintf(w->err, sizeof w->err, m->status ? tr(MSG_REPORTING_DID_NOT_WORK) : "Gemeldet.",
                      m->error ? m->error : "");
             update_status(w);
         }
@@ -6407,8 +6433,8 @@ static void handle_result(const AmxMsg *m)
     case TAG_PASSWORD:
     case TAG_DEACT: {
         static char b[300];
-        if (m->status) snprintf(b, sizeof b, "\33bNicht geklappt:\33n %.240s", m->error ? m->error : "");
-        else snprintf(b, sizeof b, m->tag == TAG_PASSWORD ? "Passwort geändert." : "Konto deaktiviert.");
+        if (m->status) snprintf(b, sizeof b, tr(MSG_THAT_DID_NOT_WORK), m->error ? m->error : "");
+        else snprintf(b, sizeof b, m->tag == TAG_PASSWORD ? tr(MSG_PASSWORD_CHANGED) : tr(MSG_ACCOUNT_DEACTIVATED));
         set(txt_acct, MUIA_Text_Contents, b);
         if (!m->status && m->tag == TAG_DEACT) { set(win_acct, MUIA_Window_Open, FALSE); amx_async_logout(A, TAG_LOGOUT); }
         break;
@@ -6420,7 +6446,7 @@ static void handle_result(const AmxMsg *m)
     case TAG_FWD: {
         ChatWin *w = current_chat();
         if (w) {
-            if (m->status) snprintf(w->err, sizeof w->err, "Nicht geklappt: %.280s", m->error ? m->error : "");
+            if (m->status) snprintf(w->err, sizeof w->err, tr(MSG_THAT_DID_NOT_WORK_2), m->error ? m->error : "");
             else snprintf(w->err, sizeof w->err, m->tag == TAG_FWD ? "Weitergeleitet." : "Erledigt.");
             update_status(w);
         }
@@ -6430,10 +6456,10 @@ static void handle_result(const AmxMsg *m)
     case TAG_WHOIS: {
         ChatWin *w = current_chat();
         if (!w) break;
-        if (m->status) snprintf(w->err, sizeof w->err, "Nicht geklappt: %.280s", m->error ? m->error : "");
+        if (m->status) snprintf(w->err, sizeof w->err, tr(MSG_THAT_DID_NOT_WORK_2), m->error ? m->error : "");
         else if (m->tag == TAG_WHOIS) {
-            char *n = local(m->result ? m->result : "(kein Name)");
-            snprintf(w->err, sizeof w->err, "%s%s", n ? n : "", m->result2 ? " - mit Bild" : "");
+            char *n = local(m->result ? m->result : tr(MSG_NO_NAME));
+            snprintf(w->err, sizeof w->err, "%s%s", n ? n : "", m->result2 ? tr(MSG_WITH_PICTURE) : "");
             free(n);
         } else snprintf(w->err, sizeof w->err, "Erledigt.");
         update_status(w);
@@ -6443,24 +6469,24 @@ static void handle_result(const AmxMsg *m)
         ChatWin *w = current_chat();
         char *n = local(m->status ? "" : (m->result ? m->result : ""));
         if (m->status)
-            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Profil", (STRPTR)"*_OK",
-                        (STRPTR)"Profil nicht geladen:\n%s", (ULONG)(m->error ? m->error : ""));
+            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)tr(MSG_PROFILE), (STRPTR)tr(MSG_OK),
+                        (STRPTR)tr(MSG_PROFILE_NOT_LOADED), (ULONG)(m->error ? m->error : ""));
         else
-            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Profil", (STRPTR)"*_OK",
-                        (STRPTR)"\33c\33b%s\33n\n%s\n%s", (ULONG)(n && *n ? n : "(kein Name)"),
-                        (ULONG)(person_id ? person_id : ""), (ULONG)(m->result2 ? "mit Profilbild" : "ohne Profilbild"));
+            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)tr(MSG_PROFILE), (STRPTR)tr(MSG_OK),
+                        (STRPTR)"\33c\33b%s\33n\n%s\n%s", (ULONG)(n && *n ? n : tr(MSG_NO_NAME)),
+                        (ULONG)(person_id ? person_id : ""), (ULONG)(m->result2 ? tr(MSG_WITH_PROFILE_PICTURE) : tr(MSG_WITHOUT_PROFILE_PICTURE)));
         free(n);
         break;
     }
     case TAG_POLLVOTE:
         if (m->status) {
             ChatWin *w = m->result ? chat_by_room(m->result) : NULL;
-            if (w) { snprintf(w->err, sizeof w->err, "Umfrage: %.280s", m->error ? m->error : ""); update_status(w); }
+            if (w) { snprintf(w->err, sizeof w->err, tr(MSG_POLL_2), m->error ? m->error : ""); update_status(w); }
         }
         break;
     case TAG_TAG:
         if (m->status)
-            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK", (STRPTR)"Hat nicht geklappt:\n%s",
+            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK), (STRPTR)tr(MSG_THAT_DID_NOT_WORK_3),
                         (ULONG)(m->error ? m->error : ""));
         break;
     case TAG_DEVCHANGE:
@@ -6522,8 +6548,8 @@ static void handle_net(void)
         case AMX_MSG_ROOMS:  update_rooms(m); break;
         case AMX_MSG_RESULT: handle_result(m); break;
         case AMX_MSG_STATE:
-            if (m->online) set_online();
-            else set_status("Offline: %s", m->error, NULL);
+            if (m->online) { set_online(); first_sync_done = 1; }
+            else set_status(tr(MSG_OFFLINE), m->error, NULL);
             break;
         }
         amx_async_msg_free(m);
@@ -6681,10 +6707,10 @@ HOOKPROTONH(rx_roomline_func, LONG, Object *obj, ULONG *arg)
     (void)obj;
     if (!r) return 5;
     second_line(r, b, sizeof b);                    /* as the list shows it: draft, unread, muted */
-    if (!r->invited && draft_of(r->id)) snprintf(b, sizeof b, "Entwurf: %.150s", draft_of(r->id));
+    if (!r->invited && draft_of(r->id)) snprintf(b, sizeof b, tr(MSG_DRAFT_2), draft_of(r->id));
     if (r->unread) snprintf(b + strlen(b), sizeof b - strlen(b), " (%d%s)", r->unread, r->highlights ? " @" : "");
-    if (r->replacement) snprintf(b + strlen(b), sizeof b - strlen(b), " (ersetzt)");
-    else if (is_muted(r->id)) snprintf(b + strlen(b), sizeof b - strlen(b), " (stumm)");
+    if (r->replacement) snprintf(b + strlen(b), sizeof b - strlen(b), tr(MSG_REPLACED_2));
+    else if (is_muted(r->id)) snprintf(b + strlen(b), sizeof b - strlen(b), tr(MSG_MUTED_2));
     rexx_result(b);
     return 0;
 }
@@ -7458,7 +7484,8 @@ HOOKPROTONH(rx_readers_func, LONG, Object *obj, ULONG *arg)
         char *t;
         DoMethod(w->list, MUIM_NList_GetEntry, k, &l);
         if (!l || !l->readers || !l->text) continue;
-        t = strstr(l->text, "gelesen");
+        t = strchr(l->text, ']');                    /* after the colour code */
+        if (t) t++;
         if (b[0]) strncat(b, "|", sizeof b - strlen(b) - 1);
         strncat(b, t ? t : l->text, sizeof b - strlen(b) - 1);
     }
@@ -7975,57 +8002,57 @@ static struct MUI_Command rexx_cmds[] = {
 
 static struct NewMenu menu[] = {
     { NM_TITLE, (STRPTR)"Amatrix", NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Über Amatrix ...", (STRPTR)"?", 0, 0, (APTR)ID_ABOUT },
-    { NM_ITEM,  (STRPTR)"Ikonifizieren", (STRPTR)"I", 0, 0, (APTR)ID_ICONIFY },
+    { NM_ITEM,  (STRPTR)S_(MSG_ABOUT_AMATRIX), (STRPTR)"?", 0, 0, (APTR)ID_ABOUT },
+    { NM_ITEM,  (STRPTR)S_(MSG_ICONIFY), (STRPTR)"I", 0, 0, (APTR)ID_ICONIFY },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Abmelden", NULL, 0, 0, (APTR)ID_LOGOUT },
-    { NM_ITEM,  (STRPTR)"Beenden", (STRPTR)"Q", 0, 0, (APTR)MUIV_Application_ReturnID_Quit },
-    { NM_TITLE, (STRPTR)"Raum", NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Neuer Chat ...", (STRPTR)"N", 0, 0, (APTR)ID_NEWCHAT },
-    { NM_ITEM,  (STRPTR)"Neuer Raum ...", (STRPTR)"A", 0, 0, (APTR)ID_NEWROOM },
-    { NM_ITEM,  (STRPTR)"Raum betreten ...", (STRPTR)"R", 0, 0, (APTR)ID_JOINWIN },
-    { NM_ITEM,  (STRPTR)"Space durchstöbern ...", NULL, 0, 0, (APTR)ID_SPACEWIN },
+    { NM_ITEM,  (STRPTR)S_(MSG_LOG_OUT), NULL, 0, 0, (APTR)ID_LOGOUT },
+    { NM_ITEM,  (STRPTR)S_(MSG_QUIT), (STRPTR)"Q", 0, 0, (APTR)MUIV_Application_ReturnID_Quit },
+    { NM_TITLE, (STRPTR)S_(MSG_ROOM_2), NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)S_(MSG_NEW_CHAT), (STRPTR)"N", 0, 0, (APTR)ID_NEWCHAT },
+    { NM_ITEM,  (STRPTR)S_(MSG_NEW_ROOM), (STRPTR)"A", 0, 0, (APTR)ID_NEWROOM },
+    { NM_ITEM,  (STRPTR)S_(MSG_JOIN_ROOM), (STRPTR)"R", 0, 0, (APTR)ID_JOINWIN },
+    { NM_ITEM,  (STRPTR)S_(MSG_BROWSE_SPACE), NULL, 0, 0, (APTR)ID_SPACEWIN },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Mitglieder und Einstellungen ...", (STRPTR)"T", 0, 0, (APTR)ID_INFO },
-    { NM_ITEM,  (STRPTR)"Stummschalten", (STRPTR)"M", 0, 0, (APTR)ID_MUTE },
-    { NM_ITEM,  (STRPTR)"Favorit an/aus", (STRPTR)"F", 0, 0, (APTR)ID_FAV },
-    { NM_ITEM,  (STRPTR)"Niedrige Priorität an/aus", NULL, 0, 0, (APTR)ID_LOWPRIO },
+    { NM_ITEM,  (STRPTR)S_(MSG_MEMBERS_AND_SETTINGS), (STRPTR)"T", 0, 0, (APTR)ID_INFO },
+    { NM_ITEM,  (STRPTR)S_(MSG_MUTE), (STRPTR)"M", 0, 0, (APTR)ID_MUTE },
+    { NM_ITEM,  (STRPTR)S_(MSG_FAVOURITE_ON_OFF), (STRPTR)"F", 0, 0, (APTR)ID_FAV },
+    { NM_ITEM,  (STRPTR)S_(MSG_LOW_PRIORITY_ON_OFF), NULL, 0, 0, (APTR)ID_LOWPRIO },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Nachrichten suchen ...", (STRPTR)"D", 0, 0, (APTR)ID_FIND },
-    { NM_ITEM,  (STRPTR)"Umfrage erstellen ...", (STRPTR)"U", 0, 0, (APTR)ID_POLLNEW },
-    { NM_ITEM,  (STRPTR)"Chat exportieren ...", NULL, 0, 0, (APTR)ID_EXPORT },
+    { NM_ITEM,  (STRPTR)S_(MSG_SEARCH_MESSAGES), (STRPTR)"D", 0, 0, (APTR)ID_FIND },
+    { NM_ITEM,  (STRPTR)S_(MSG_CREATE_POLL), (STRPTR)"U", 0, 0, (APTR)ID_POLLNEW },
+    { NM_ITEM,  (STRPTR)S_(MSG_EXPORT_CHAT), NULL, 0, 0, (APTR)ID_EXPORT },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Raum verlassen ...", (STRPTR)"L", 0, 0, (APTR)ID_LEAVE },
-    { NM_TITLE, (STRPTR)"Nachricht", NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Zitieren", (STRPTR)"Z", 0, 0, (APTR)ID_QUOTE },
-    { NM_ITEM,  (STRPTR)"Weiterleiten ...", (STRPTR)"W", 0, 0, (APTR)ID_FWD },
-    { NM_ITEM,  (STRPTR)"Kopieren", (STRPTR)"K", 0, 0, (APTR)ID_COPY },
-    { NM_ITEM,  (STRPTR)"Link zur Nachricht kopieren", NULL, 0, 0, (APTR)ID_COPYLINK },
-    { NM_ITEM,  (STRPTR)"Anpinnen an/aus", (STRPTR)"P", 0, 0, (APTR)ID_PIN },
-    { NM_ITEM,  (STRPTR)"Bearbeitungsverlauf ...", NULL, 0, 0, (APTR)ID_EDITHIST },
+    { NM_ITEM,  (STRPTR)S_(MSG_LEAVE_ROOM), (STRPTR)"L", 0, 0, (APTR)ID_LEAVE },
+    { NM_TITLE, (STRPTR)S_(MSG_MESSAGE), NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)S_(MSG_QUOTE_2), (STRPTR)"Z", 0, 0, (APTR)ID_QUOTE },
+    { NM_ITEM,  (STRPTR)S_(MSG_FORWARD), (STRPTR)"W", 0, 0, (APTR)ID_FWD },
+    { NM_ITEM,  (STRPTR)S_(MSG_COPY), (STRPTR)"K", 0, 0, (APTR)ID_COPY },
+    { NM_ITEM,  (STRPTR)S_(MSG_COPY_LINK_TO_MESSAGE), NULL, 0, 0, (APTR)ID_COPYLINK },
+    { NM_ITEM,  (STRPTR)S_(MSG_PIN_ON_OFF), (STRPTR)"P", 0, 0, (APTR)ID_PIN },
+    { NM_ITEM,  (STRPTR)S_(MSG_EDIT_HISTORY), NULL, 0, 0, (APTR)ID_EDITHIST },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Melden ...", NULL, 0, 0, (APTR)ID_REPORT },
-    { NM_TITLE, (STRPTR)"Person", NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Direktnachricht", (STRPTR)"B", 0, 0, (APTR)ID_P_DM },
-    { NM_ITEM,  (STRPTR)"Profil anzeigen ...", NULL, 0, 0, (APTR)ID_P_INFO },
-    { NM_ITEM,  (STRPTR)"Erwähnen", (STRPTR)"H", 0, 0, (APTR)ID_P_MENTION },
-    { NM_ITEM,  (STRPTR)"Benutzer-ID kopieren", NULL, 0, 0, (APTR)ID_P_COPYID },
+    { NM_ITEM,  (STRPTR)S_(MSG_REPORT), NULL, 0, 0, (APTR)ID_REPORT },
+    { NM_TITLE, (STRPTR)S_(MSG_PERSON), NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)S_(MSG_DIRECT_MESSAGE), (STRPTR)"B", 0, 0, (APTR)ID_P_DM },
+    { NM_ITEM,  (STRPTR)S_(MSG_SHOW_PROFILE), NULL, 0, 0, (APTR)ID_P_INFO },
+    { NM_ITEM,  (STRPTR)S_(MSG_MENTION), (STRPTR)"H", 0, 0, (APTR)ID_P_MENTION },
+    { NM_ITEM,  (STRPTR)S_(MSG_COPY_USER_ID), NULL, 0, 0, (APTR)ID_P_COPYID },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Ignorieren ...", NULL, 0, 0, (APTR)ID_P_IGNORE },
-    { NM_ITEM,  (STRPTR)"Nicht mehr ignorieren", NULL, 0, 0, (APTR)ID_P_UNIGNORE },
+    { NM_ITEM,  (STRPTR)S_(MSG_IGNORE), NULL, 0, 0, (APTR)ID_P_IGNORE },
+    { NM_ITEM,  (STRPTR)S_(MSG_STOP_IGNORING), NULL, 0, 0, (APTR)ID_P_UNIGNORE },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Aus dem Raum werfen ...", NULL, 0, 0, (APTR)ID_P_KICK },
-    { NM_ITEM,  (STRPTR)"Im Raum sperren ...", NULL, 0, 0, (APTR)ID_P_BAN },
-    { NM_TITLE, (STRPTR)"Konto", NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Eigenes Profil ...", (STRPTR)"O", 0, 0, (APTR)ID_PROFILE },
-    { NM_ITEM,  (STRPTR)"Sitzungen ...", (STRPTR)"G", 0, 0, (APTR)ID_SESS },
-    { NM_ITEM,  (STRPTR)"Passwort und Konto ...", NULL, 0, 0, (APTR)ID_ACCOUNT },
+    { NM_ITEM,  (STRPTR)S_(MSG_REMOVE_FROM_ROOM), NULL, 0, 0, (APTR)ID_P_KICK },
+    { NM_ITEM,  (STRPTR)S_(MSG_BAN_FROM_ROOM), NULL, 0, 0, (APTR)ID_P_BAN },
+    { NM_TITLE, (STRPTR)S_(MSG_ACCOUNT), NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)S_(MSG_MY_PROFILE), (STRPTR)"O", 0, 0, (APTR)ID_PROFILE },
+    { NM_ITEM,  (STRPTR)S_(MSG_SESSIONS), (STRPTR)"G", 0, 0, (APTR)ID_SESS },
+    { NM_ITEM,  (STRPTR)S_(MSG_PASSWORD_AND_ACCOUNT), NULL, 0, 0, (APTR)ID_ACCOUNT },
     { NM_ITEM,  NM_BARLABEL,                 NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Sicherheitsschlüssel eingeben ...", (STRPTR)"S", 0, 0, (APTR)ID_RECOVERY },
-    { NM_ITEM,  (STRPTR)"Passwort für Amatrix-Daten ...", NULL, 0, 0, (APTR)ID_STOREPASS },
-    { NM_TITLE, (STRPTR)"Einstellungen", NULL, 0, 0, NULL },
-    { NM_ITEM,  (STRPTR)"Einstellungen ...", (STRPTR)"E", 0, 0, (APTR)ID_SETTINGS },
-    { NM_ITEM,  (STRPTR)"MUI-Einstellungen ...", NULL, 0, 0, (APTR)ID_MUIPREFS },
+    { NM_ITEM,  (STRPTR)S_(MSG_ENTER_SECURITY_KEY), (STRPTR)"S", 0, 0, (APTR)ID_RECOVERY },
+    { NM_ITEM,  (STRPTR)S_(MSG_PASSWORD_FOR_AMATRIX_DATA), NULL, 0, 0, (APTR)ID_STOREPASS },
+    { NM_TITLE, (STRPTR)S_(MSG_SETTINGS), NULL, 0, 0, NULL },
+    { NM_ITEM,  (STRPTR)S_(MSG_SETTINGS_2), (STRPTR)"E", 0, 0, (APTR)ID_SETTINGS },
+    { NM_ITEM,  (STRPTR)S_(MSG_MUI_SETTINGS), NULL, 0, 0, (APTR)ID_MUIPREFS },
     { NM_END,   NULL, NULL, 0, 0, NULL }
 };
 
@@ -8051,7 +8078,7 @@ static Object *build_app(void)
         MUIA_Application_Version, version,
         MUIA_Application_Copyright, "Oliver Urbann",
         MUIA_Application_Author, "Oliver Urbann",
-        MUIA_Application_Description, "Matrix-Client",
+        MUIA_Application_Description, tr(MSG_MATRIX_CLIENT),
         MUIA_Application_Base, "AMATRIX",
         MUIA_Application_Commands, rexx_cmds,
         MUIA_Application_DiskObject, dob_app,
@@ -8067,7 +8094,7 @@ static Object *build_app(void)
             WindowContents, VGroup,
                 Child, grp_space = HGroup, MUIA_ShowMe, FALSE, End,
                 Child, str_filter = StringObject, StringFrame, MUIA_CycleChain, TRUE,
-                    MUIA_ShortHelp, "Räume nach Namen filtern", End,
+                    MUIA_ShortHelp, tr(MSG_FILTER_ROOMS_BY_NAME), End,
                 Child, lv_rooms = ListviewObject,
                     MUIA_Listview_List, lst_rooms = ListObject,
                         InputListFrame,
@@ -8080,8 +8107,8 @@ static Object *build_app(void)
                     MUIA_CycleChain, TRUE,
                 End,
                 Child, HGroup,
-                    Child, b_chat = SimpleButton("Neuer _Chat"),
-                    Child, b_room = SimpleButton("Neuer _Raum"),
+                    Child, b_chat = SimpleButton(tr(MSG_NEW_CHAT_2)),
+                    Child, b_room = SimpleButton(tr(MSG_NEW_ROOM_2)),
                 End,
                 Child, txt_status = TextObject,
                     MUIA_Text_Contents, "",
@@ -8092,58 +8119,58 @@ static Object *build_app(void)
         End,
 
         SubWindow, win_login = WindowObject,
-            MUIA_Window_Title, "Amatrix - Anmelden",
+            MUIA_Window_Title, tr(MSG_AMATRIX_LOG_IN),
             MUIA_Window_ID, MAKE_ID('A','M','X','L'),
             WindowContents, VGroup,
                 Child, ColGroup(2),
-                    Child, Label2("Server:"),
+                    Child, Label2(tr(MSG_SERVER)),
                     Child, str_server = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
-                    Child, Label2("Benutzer:"),
+                    Child, Label2(tr(MSG_USER)),
                     Child, str_user = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
-                    Child, Label2("Passwort:"),
+                    Child, Label2(tr(MSG_PASSWORD)),
                     Child, str_pass = StringObject, StringFrame, MUIA_String_Secret, TRUE,
                                       MUIA_CycleChain, TRUE, End,
                 End,
                 Child, txt_login = TextObject, MUIA_Text_Contents, "", End,
-                Child, b_login = SimpleButton("_Anmelden"),
+                Child, b_login = SimpleButton(tr(MSG_LOG_IN)),
             End,
         End,
 
         SubWindow, win_newchat = WindowObject,
-            MUIA_Window_Title, "Neuer Chat",
+            MUIA_Window_Title, tr(MSG_NEW_CHAT_3),
             MUIA_Window_ID, MAKE_ID('A','M','X','C'),
             WindowContents, VGroup,
-                Child, TextObject, MUIA_Text_Contents, "Mit wem? (z.B. @name:server)", End,
+                Child, TextObject, MUIA_Text_Contents, tr(MSG_WITH_WHOM_E_G_NAME), End,
                 Child, str_chatuser = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
-                Child, b_go_chat = SimpleButton("Chat _starten"),
+                Child, b_go_chat = SimpleButton(tr(MSG_START_CHAT)),
             End,
         End,
 
         SubWindow, win_newroom = WindowObject,
-            MUIA_Window_Title, "Neuer Raum",
+            MUIA_Window_Title, tr(MSG_NEW_ROOM_3),
             MUIA_Window_ID, MAKE_ID('A','M','X','R'),
             WindowContents, VGroup,
                 Child, ColGroup(2),
-                    Child, Label2("Name:"),
+                    Child, Label2(tr(MSG_NAME_2)),
                     Child, str_roomname = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
-                    Child, Label1("Verschlüsselt:"),
+                    Child, Label1(tr(MSG_ENCRYPTED)),
                     Child, HGroup, Child, chk_enc = CheckMark(TRUE), Child, HSpace(0), End,
-                    Child, Label1("Im Verzeichnis:"),
+                    Child, Label1(tr(MSG_IN_THE_DIRECTORY)),
                     Child, HGroup, Child, chk_pub = CheckMark(FALSE), Child, HSpace(0), End,
-                    Child, Label1("Als Space:"),
+                    Child, Label1(tr(MSG_AS_A_SPACE)),
                     Child, HGroup, Child, chk_space = CheckMark(FALSE), Child, HSpace(0), End,
                 End,
-                Child, b_go_room = SimpleButton("Raum _anlegen"),
+                Child, b_go_room = SimpleButton(tr(MSG_CRE_ATE_ROOM)),
             End,
         End,
 
         SubWindow, win_join = WindowObject,
-            MUIA_Window_Title, "Raum betreten",
+            MUIA_Window_Title, tr(MSG_JOIN_ROOM_2),
             MUIA_Window_ID, MAKE_ID('A','M','X','J'),
             WindowContents, VGroup,
                 Child, HGroup,
                     Child, str_search = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
-                    Child, b_search = SimpleButton("_Suchen"),
+                    Child, b_search = SimpleButton(tr(MSG_SEARCH)),
                 End,
                 Child, NListviewObject,
                     MUIA_NListview_NList, lst_pub = NListObject,
@@ -8154,26 +8181,26 @@ static Object *build_app(void)
                 End,
                 Child, txt_pubinfo = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE, End,
                 Child, HGroup,
-                    Child, b_preview = SimpleButton("_Vorschau"),
-                    Child, b_join = SimpleButton("_Betreten"),
+                    Child, b_preview = SimpleButton(tr(MSG_PREVIEW_2)),
+                    Child, b_join = SimpleButton(tr(MSG_JOIN)),
                 End,
             End,
         End,
         SubWindow, win_unlock = WindowObject,
-            MUIA_Window_Title, "Amatrix - Passwort",
+            MUIA_Window_Title, tr(MSG_AMATRIX_PASSWORD),
             MUIA_Window_ID, MAKE_ID('A','M','X','U'),
             WindowContents, VGroup,
                 Child, TextObject, MUIA_Text_Contents,
-                    "Die Amatrix-Daten (Anmeldung, Schlüssel) sind\nmit einem Passwort geschützt.", End,
+                    tr(MSG_THE_AMATRIX_DATA_LOGIN_KEYS), End,
                 Child, str_unlock = StringObject, StringFrame, MUIA_String_Secret, TRUE,
                                     MUIA_CycleChain, TRUE, End,
                 Child, txt_unlock = TextObject, MUIA_Text_Contents, "", End,
-                Child, b_unlock = SimpleButton("_Entsperren"),
+                Child, b_unlock = SimpleButton(tr(MSG_UNLOCK)),
             End,
         End,
 
         SubWindow, win_prof = WindowObject,
-            MUIA_Window_Title, "Eigenes Profil",
+            MUIA_Window_Title, tr(MSG_MY_PROFILE_2),
             MUIA_Window_ID, MAKE_ID('A','M','X','O'),
             WindowContents, VGroup,
                 Child, HGroup,
@@ -8182,31 +8209,31 @@ static Object *build_app(void)
                     Child, txt_pid = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE, End,
                 End,
                 Child, ColGroup(2),
-                    Child, Label2("Name"),
+                    Child, Label2(tr(MSG_NAME)),
                     Child, str_pname = StringObject, StringFrame, MUIA_String_MaxLen, 250, MUIA_CycleChain, TRUE, End,
                 End,
                 Child, HGroup,
-                    Child, b_ppic = SimpleButton("_Bild ändern ..."),
-                    Child, b_psave = SimpleButton("_Speichern"),
+                    Child, b_ppic = SimpleButton(tr(MSG_CHANGE_PICTURE)),
+                    Child, b_psave = SimpleButton(tr(MSG_SAVE)),
                 End,
                 Child, txt_pstatus = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE, End,
             End,
         End,
 
         SubWindow, win_fwd = WindowObject,
-            MUIA_Window_Title, "Weiterleiten an ...",
+            MUIA_Window_Title, tr(MSG_FORWARD_TO),
             MUIA_Window_ID, MAKE_ID('A','M','X','W'),
             WindowContents, VGroup,
                 Child, ListviewObject,
                     MUIA_Listview_List, lst_fwd = ListObject, InputListFrame,
                         MUIA_List_DisplayHook, &fwd_disp_hook, End,
                 End,
-                Child, b_fwd = SimpleButton("_Weiterleiten"),
+                Child, b_fwd = SimpleButton(tr(MSG_FORWARD_2)),
             End,
         End,
 
         SubWindow, win_hist = WindowObject,
-            MUIA_Window_Title, "Bearbeitungsverlauf",
+            MUIA_Window_Title, tr(MSG_EDIT_HISTORY_2),
             MUIA_Window_ID, MAKE_ID('A','M','X','H'),
             WindowContents, VGroup,
                 Child, ListviewObject,
@@ -8216,65 +8243,65 @@ static Object *build_app(void)
         End,
 
         SubWindow, win_acct = WindowObject,
-            MUIA_Window_Title, "Konto",
+            MUIA_Window_Title, tr(MSG_ACCOUNT),
             MUIA_Window_ID, MAKE_ID('A','M','X','K'),
             WindowContents, VGroup,
-                Child, VGroup, GroupFrameT("Passwort ändern"),
+                Child, VGroup, GroupFrameT(tr(MSG_CHANGE_PASSWORD)),
                     Child, ColGroup(2),
-                        Child, Label2("Altes Passwort"),
+                        Child, Label2(tr(MSG_OLD_PASSWORD)),
                         Child, str_pwold = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
-                        Child, Label2("Neues Passwort"),
+                        Child, Label2(tr(MSG_NEW_PASSWORD)),
                         Child, str_pwnew = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
-                        Child, Label2("Noch einmal"),
+                        Child, Label2(tr(MSG_AGAIN)),
                         Child, str_pwnew2 = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
                     End,
-                    Child, b_pwgo = SimpleButton("_Passwort ändern"),
+                    Child, b_pwgo = SimpleButton(tr(MSG_CHANGE_PASSWORD_2)),
                 End,
-                Child, VGroup, GroupFrameT("Konto deaktivieren"),
+                Child, VGroup, GroupFrameT(tr(MSG_DEACTIVATE_ACCOUNT)),
                     Child, TextObject, MUIA_Text_Contents,
-                        "\33bEndgültig:\33n das Konto ist danach nicht mehr nutzbar,\nder Name wird nie wieder vergeben.", End,
+                        tr(MSG_FINAL_THE_ACCOUNT_CAN_NO), End,
                     Child, ColGroup(2),
-                        Child, Label2("Passwort"),
+                        Child, Label2(tr(MSG_PASSWORD_2)),
                         Child, str_dpw = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
-                        Child, Label1("Meine Nachrichten löschen lassen"),
+                        Child, Label1(tr(MSG_HAVE_MY_MESSAGES_ERASED)),
                         Child, HGroup, Child, chk_derase = CheckMark(FALSE), Child, HSpace(0), End,
                     End,
-                    Child, b_dgo = SimpleButton("Konto _deaktivieren ..."),
+                    Child, b_dgo = SimpleButton(tr(MSG_DEACTIVATE_ACCOUNT_2)),
                 End,
                 Child, txt_acct = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE, End,
             End,
         End,
 
         SubWindow, win_poll = WindowObject,
-            MUIA_Window_Title, "Umfrage erstellen",
+            MUIA_Window_Title, tr(MSG_CREATE_POLL_2),
             MUIA_Window_ID, MAKE_ID('A','M','X','U'),
             WindowContents, VGroup,
                 Child, ColGroup(2),
-                    Child, Label2("Frage"),
+                    Child, Label2(tr(MSG_QUESTION)),
                     Child, str_pollq = StringObject, StringFrame, MUIA_String_MaxLen, 300, MUIA_CycleChain, TRUE, End,
-                    Child, Label2("Antwort 1"),
+                    Child, Label2(tr(MSG_ANSWER_1)),
                     Child, str_polla[0] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
-                    Child, Label2("Antwort 2"),
+                    Child, Label2(tr(MSG_ANSWER_2)),
                     Child, str_polla[1] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
-                    Child, Label2("Antwort 3"),
+                    Child, Label2(tr(MSG_ANSWER_3)),
                     Child, str_polla[2] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
-                    Child, Label2("Antwort 4"),
+                    Child, Label2(tr(MSG_ANSWER_4)),
                     Child, str_polla[3] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
-                    Child, Label2("Antwort 5"),
+                    Child, Label2(tr(MSG_ANSWER_5)),
                     Child, str_polla[4] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
-                    Child, Label2("Antwort 6"),
+                    Child, Label2(tr(MSG_ANSWER_6)),
                     Child, str_polla[5] = StringObject, StringFrame, MUIA_String_MaxLen, 200, MUIA_CycleChain, TRUE, End,
-                    Child, Label1("Mehrere wählbar"),
+                    Child, Label1(tr(MSG_SEVERAL_CHOICES_2)),
                     Child, HGroup, Child, chk_pollmulti = CheckMark(FALSE), Child, HSpace(0), End,
-                    Child, Label1("Ergebnis erst am Ende"),
+                    Child, Label1(tr(MSG_RESULT_ONLY_AT_THE_END)),
                     Child, HGroup, Child, chk_pollhide = CheckMark(FALSE), Child, HSpace(0), End,
                 End,
-                Child, b_pollsend = SimpleButton("_Senden"),
+                Child, b_pollsend = SimpleButton(tr(MSG_SEND)),
             End,
         End,
 
         SubWindow, win_spc = WindowObject,
-            MUIA_Window_Title, "Space",
+            MUIA_Window_Title, tr(MSG_SPACE),
             MUIA_Window_ID, MAKE_ID('A','M','X','S'),
             WindowContents, VGroup,
                 Child, NListviewObject,
@@ -8285,25 +8312,25 @@ static Object *build_app(void)
                     End,
                 End,
                 Child, HGroup,
-                    Child, b_spcjoin = SimpleButton("_Beitreten/Öffnen"),
-                    Child, b_spcprev = SimpleButton("_Vorschau"),
+                    Child, b_spcjoin = SimpleButton(tr(MSG_JOIN_OPEN)),
+                    Child, b_spcprev = SimpleButton(tr(MSG_PREVIEW_2)),
                 End,
                 Child, HGroup,
-                    Child, b_spcadd = SimpleButton("Markierten Raum _hinzufügen"),
-                    Child, b_spcrem = SimpleButton("_Herausnehmen"),
+                    Child, b_spcadd = SimpleButton(tr(MSG_ADD_MARKED_ROOM)),
+                    Child, b_spcrem = SimpleButton(tr(MSG_REMOVE)),
                 End,
                 Child, txt_spc = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE, End,
             End,
         End,
 
         SubWindow, win_find = WindowObject,
-            MUIA_Window_Title, "Nachrichten suchen",
+            MUIA_Window_Title, tr(MSG_SEARCH_MESSAGES_2),
             MUIA_Window_ID, MAKE_ID('A','M','X','F'),
             WindowContents, VGroup,
                 Child, HGroup,
                     Child, str_find = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
                     Child, cyc_findwhere = CycleObject, MUIA_Cycle_Entries, where_names, End,
-                    Child, b_find = SimpleButton("_Suchen"),
+                    Child, b_find = SimpleButton(tr(MSG_SEARCH)),
                 End,
                 Child, NListviewObject,
                     MUIA_NListview_NList, lst_hits = NListObject,
@@ -8317,7 +8344,7 @@ static Object *build_app(void)
         End,
 
         SubWindow, win_sess = WindowObject,
-            MUIA_Window_Title, "Sitzungen",
+            MUIA_Window_Title, tr(MSG_SESSIONS_2),
             MUIA_Window_ID, MAKE_ID('A','M','X','D'),
             WindowContents, VGroup,
                 Child, NListviewObject,
@@ -8328,44 +8355,44 @@ static Object *build_app(void)
                     End,
                 End,
                 Child, ColGroup(3),
-                    Child, Label2("Name"),
+                    Child, Label2(tr(MSG_NAME)),
                     Child, str_sname = StringObject, StringFrame, MUIA_String_MaxLen, 100, MUIA_CycleChain, TRUE, End,
-                    Child, b_srename = SimpleButton("_Umbenennen"),
-                    Child, Label2("Passwort"),
+                    Child, b_srename = SimpleButton(tr(MSG_RENAME)),
+                    Child, Label2(tr(MSG_PASSWORD_2)),
                     Child, str_spass = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
-                    Child, b_sdelete = SimpleButton("_Abmelden"),
+                    Child, b_sdelete = SimpleButton(tr(MSG_LOG_OUT_2)),
                 End,
                 Child, txt_sstatus = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE, End,
             End,
         End,
 
         SubWindow, win_info = WindowObject,
-            MUIA_Window_Title, "Raum",
+            MUIA_Window_Title, tr(MSG_ROOM_2),
             MUIA_Window_ID, MAKE_ID('A','M','X','I'),
             WindowContents, VGroup,
-                Child, grp_iset = VGroup, GroupFrameT("Einstellungen"),
+                Child, grp_iset = VGroup, GroupFrameT(tr(MSG_SETTINGS)),
                     Child, ColGroup(2),
-                        Child, Label2("Name"),
+                        Child, Label2(tr(MSG_NAME)),
                         Child, str_iname = StringObject, StringFrame, MUIA_String_MaxLen, 250, MUIA_CycleChain, TRUE, End,
-                        Child, Label2("Thema"),
+                        Child, Label2(tr(MSG_TOPIC)),
                         Child, str_itopic = StringObject, StringFrame, MUIA_String_MaxLen, 1000, MUIA_CycleChain, TRUE, End,
-                        Child, Label1("Beitritt"),
+                        Child, Label1(tr(MSG_JOINING_2)),
                         Child, cyc_ijoin = CycleObject, MUIA_Cycle_Entries, join_names, MUIA_CycleChain, TRUE, End,
-                        Child, Label1("Verlauf lesen"),
+                        Child, Label1(tr(MSG_READ_HISTORY)),
                         Child, cyc_ihist = CycleObject, MUIA_Cycle_Entries, hist_names, MUIA_CycleChain, TRUE, End,
-                        Child, Label1("Benachrichtigungen"),
+                        Child, Label1(tr(MSG_NOTIFICATIONS)),
                         Child, cyc_inotify = CycleObject, MUIA_Cycle_Entries, notify_names, MUIA_CycleChain, TRUE,
-                            MUIA_ShortHelp, "Gilt auf allen deinen Geräten (Push-Regeln auf dem Server)", End,
-                        Child, Label1("Verschlüsselt"),
+                            MUIA_ShortHelp, tr(MSG_APPLIES_ON_ALL_YOUR_DEVICES), End,
+                        Child, Label1(tr(MSG_ENCRYPTED_2)),
                         Child, HGroup,
                             Child, chk_ienc = CheckMark(FALSE),
                             Child, HSpace(0),
-                            Child, b_ipic = SimpleButton("_Bild ..."),
+                            Child, b_ipic = SimpleButton(tr(MSG_PICTURE)),
                         End,
                     End,
-                    Child, b_isave = SimpleButton("_Speichern"),
+                    Child, b_isave = SimpleButton(tr(MSG_SAVE)),
                 End,
-                Child, VGroup, GroupFrameT("Mitglieder"),
+                Child, VGroup, GroupFrameT(tr(MSG_MEMBERS_2)),
                     Child, NListviewObject,
                         MUIA_NListview_NList, lst_mem = NListObject,
                             MUIA_NList_DisplayHook2, &mem_disp_hook,
@@ -8374,16 +8401,16 @@ static Object *build_app(void)
                         End,
                     End,
                     Child, HGroup,
-                        Child, b_iinvite = SimpleButton("_Einladen ..."),
-                        Child, b_iadmit = SimpleButton("Ein_lassen"),
-                        Child, b_ikick = SimpleButton("_Rauswerfen"),
-                        Child, b_iban = SimpleButton("S_perren"),
-                        Child, b_iunban = SimpleButton("_Entsperren"),
+                        Child, b_iinvite = SimpleButton(tr(MSG_INVITE)),
+                        Child, b_iadmit = SimpleButton(tr(MSG_LET_IN)),
+                        Child, b_ikick = SimpleButton(tr(MSG_REMOVE_2)),
+                        Child, b_iban = SimpleButton(tr(MSG_BAN)),
+                        Child, b_iunban = SimpleButton(tr(MSG_UNLOCK)),
                     End,
                     Child, HGroup,
-                        Child, Label1("Rolle"),
+                        Child, Label1(tr(MSG_ROLE)),
                         Child, cyc_irole = CycleObject, MUIA_Cycle_Entries, role_names, End,
-                        Child, b_irole = SimpleButton("_Zuweisen"),
+                        Child, b_irole = SimpleButton(tr(MSG_ASSIGN)),
                     End,
                 End,
                 Child, txt_istatus = TextObject, MUIA_Text_Contents, "", MUIA_Text_SetMin, FALSE, End,
@@ -8391,68 +8418,68 @@ static Object *build_app(void)
         End,
 
         SubWindow, win_settings = WindowObject,
-            MUIA_Window_Title, "Amatrix - Einstellungen",
+            MUIA_Window_Title, tr(MSG_AMATRIX_SETTINGS),
             MUIA_Window_ID, MAKE_ID('A','M','X','S'),
             WindowContents, VGroup,
-                Child, VGroup, GroupFrameT("Benachrichtigungen"),
+                Child, VGroup, GroupFrameT(tr(MSG_NOTIFICATIONS)),
                     Child, txt_herald = TextObject, MUIA_Text_Contents, "", End,
                     Child, ColGroup(2),
-                        Child, Label1("Benachrichtigen"),
+                        Child, Label1(tr(MSG_NOTIFY)),
                         Child, HGroup,
                             Child, chk_notify = CheckMark(TRUE),
                             Child, HSpace(0),
                         End,
-                        Child, Label1("bei"),
+                        Child, Label1(tr(MSG_FOR)),
                         Child, cyc_notify = CycleObject, MUIA_Cycle_Entries, notify_modes, End,
                     End,
                     Child, TextObject, MUIA_Text_Contents,
-                        "\33iEinzelne Räume: Menü \"Raum stummschalten\"", End,
+                        tr(MSG_SINGLE_ROOMS_MENU_ROOM_MUTE), End,
                 End,
-                Child, VGroup, GroupFrameT("Chat"),
+                Child, VGroup, GroupFrameT(tr(MSG_CHAT)),
                     Child, ColGroup(2),
-                        Child, Label1("Bildvorschau im Chat"),
+                        Child, Label1(tr(MSG_PICTURE_PREVIEW_IN_THE_CHAT)),
                         Child, HGroup,
                             Child, chk_previews = CheckMark(TRUE),
                             Child, HSpace(0),
                         End,
                     End,
                     Child, TextObject, MUIA_Text_Contents,
-                        "\33iOhne Vorschau öffnet ein Klick auf das Datei-Symbol\nnoch immer das Bild.", End,
+                        tr(MSG_WITHOUT_PREVIEW_A_CLICK_ON), End,
                     Child, ColGroup(2),
-                        Child, Label1("Link-Vorschau"),
+                        Child, Label1(tr(MSG_LINK_PREVIEW)),
                         Child, HGroup,
                             Child, chk_linkprev = CheckMark(TRUE),
                             Child, HSpace(0),
                         End,
-                        Child, Label1("auch in verschlüsselten Räumen"),
+                        Child, Label1(tr(MSG_ALSO_IN_ENCRYPTED_ROOMS)),
                         Child, HGroup,
                             Child, chk_linkprev_enc = CheckMark(FALSE),
                             Child, HSpace(0),
                         End,
                     End,
                     Child, TextObject, MUIA_Text_Contents,
-                        "\33iDie Vorschau holt der Server - er sieht dann den Link.", End,
+                        tr(MSG_THE_SERVER_FETCHES_THE_PREVIEW), End,
                 End,
-                Child, VGroup, GroupFrameT("Privatsphäre"),
+                Child, VGroup, GroupFrameT(tr(MSG_PRIVACY)),
                     Child, ColGroup(2),
-                        Child, Label1("Zeigen, dass ich tippe"),
+                        Child, Label1(tr(MSG_SHOW_THAT_I_AM_TYPING)),
                         Child, HGroup,
                             Child, chk_typing = CheckMark(TRUE),
                             Child, HSpace(0),
                         End,
-                        Child, Label1("Lesebestätigungen senden"),
+                        Child, Label1(tr(MSG_SEND_READ_RECEIPTS)),
                         Child, HGroup,
                             Child, chk_receipts = CheckMark(TRUE),
                             Child, HSpace(0),
                         End,
-                        Child, Label1("Verlauf lokal speichern"),
+                        Child, Label1(tr(MSG_STORE_HISTORY_LOCALLY)),
                         Child, HGroup,
                             Child, chk_hcache = CheckMark(TRUE),
                             Child, HSpace(0),
                         End,
                     End,
                 End,
-                Child, VGroup, GroupFrameT("Stichwörter (wie eine Erwähnung)"),
+                Child, VGroup, GroupFrameT(tr(MSG_KEYWORDS_LIKE_A_MENTION)),
                     Child, ListviewObject, MUIA_Weight, 30,
                         MUIA_Listview_List, lst_kw = ListObject, InputListFrame,
                             MUIA_List_ConstructHook, MUIV_List_ConstructHook_String,
@@ -8460,94 +8487,90 @@ static Object *build_app(void)
                     End,
                     Child, HGroup,
                         Child, str_kw = StringObject, StringFrame, MUIA_String_MaxLen, 60, MUIA_CycleChain, TRUE, End,
-                        Child, b_kwadd = SimpleButton("_Hinzufügen"),
-                        Child, b_kwdel = SimpleButton("_Entfernen"),
+                        Child, b_kwadd = SimpleButton(tr(MSG_ADD)),
+                        Child, b_kwdel = SimpleButton(tr(MSG_R_EMOVE)),
                     End,
                 End,
-                Child, VGroup, GroupFrameT("Ignorierte Nutzer"),
+                Child, VGroup, GroupFrameT(tr(MSG_IGNORED_USERS)),
                     Child, ListviewObject, MUIA_Weight, 30,
                         MUIA_Listview_List, lst_ign = ListObject, InputListFrame, End,
                     End,
-                    Child, b_unign = SimpleButton("Nicht mehr _ignorieren"),
+                    Child, b_unign = SimpleButton(tr(MSG_STOP_IGNORING_2)),
                 End,
-                Child, VGroup, GroupFrameT("Start und Aussehen"),
+                Child, VGroup, GroupFrameT(tr(MSG_STARTUP_AND_LOOK)),
                     Child, ColGroup(2),
-                        Child, Label1("Ikonifiziert starten"),
+                        Child, Label1(tr(MSG_START_ICONIFIED)),
                         Child, HGroup,
                             Child, chk_iconified = CheckMark(FALSE),
                             Child, HSpace(0),
                         End,
-                        Child, Label1("Bilder in der Raumliste"),
+                        Child, Label1(tr(MSG_PICTURES_IN_THE_ROOM_LIST)),
                         Child, HGroup,
                             Child, chk_avatars = CheckMark(TRUE),
                             Child, HSpace(0),
                         End,
-                        Child, Label1("Zeigen, wer was gelesen hat"),
+                        Child, Label1(tr(MSG_SHOW_WHO_HAS_READ_WHAT)),
                         Child, HGroup,
                             Child, chk_readers = CheckMark(TRUE),
                             Child, HSpace(0),
                         End,
-                        Child, Label1("Beitritte und Austritte zeigen"),
+                        Child, Label1(tr(MSG_SHOW_JOINS_AND_LEAVES)),
                         Child, HGroup, Child, chk_joins = CheckMark(TRUE), Child, HSpace(0), End,
-                        Child, Label1("24-Stunden-Uhr"),
+                        Child, Label1(tr(MSG_24_HOUR_CLOCK)),
                         Child, HGroup, Child, chk_24h = CheckMark(TRUE), Child, HSpace(0), End,
-                        Child, Label1("Kompakt (Name nur beim Wechsel)"),
+                        Child, Label1(tr(MSG_COMPACT_NAME_ONLY_ON_CHANGE)),
                         Child, HGroup, Child, chk_compact = CheckMark(FALSE), Child, HSpace(0), End,
                     End,
                     Child, TextObject, MUIA_Text_Contents,
-                        "\33iSchrift und Farben: Menü \"MUI-Einstellungen\".", End,
+                        tr(MSG_FONT_AND_COLOURS_MENU_MUI), End,
                     Child, ColGroup(2),
                     End,
                 End,
-                Child, b_set_ok = SimpleButton("_Speichern"),
+                Child, b_set_ok = SimpleButton(tr(MSG_SAVE)),
             End,
         End,
 
         SubWindow, win_storepass = WindowObject,
-            MUIA_Window_Title, "Passwort für Amatrix-Daten",
+            MUIA_Window_Title, tr(MSG_PASSWORD_FOR_AMATRIX_DATA_2),
             MUIA_Window_ID, MAKE_ID('A','M','X','P'),
             WindowContents, VGroup,
                 Child, TextObject, MUIA_Text_Contents,
-                    "Schützt Anmeldung, Schlüssel und Sitzungen in der\n"
-                    "Schublade neben dem Programm.  Ohne das Passwort sind\n"
-                    "sie nicht zu gebrauchen - es lässt sich nicht wiederherstellen.", End,
+                    tr(MSG_PROTECTS_LOGIN_KEYS_AND_SESSIONS), End,
                 Child, ColGroup(2),
-                    Child, Label2("Passwort:"),
+                    Child, Label2(tr(MSG_PASSWORD)),
                     Child, str_sp1 = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
-                    Child, Label2("Noch einmal:"),
+                    Child, Label2(tr(MSG_AGAIN_2)),
                     Child, str_sp2 = StringObject, StringFrame, MUIA_String_Secret, TRUE, MUIA_CycleChain, TRUE, End,
                 End,
                 Child, txt_sp = TextObject, MUIA_Text_Contents, "", End,
                 Child, HGroup,
-                    Child, b_sp_set = SimpleButton("_Festlegen"),
-                    Child, b_sp_del = SimpleButton("Schutz _entfernen"),
+                    Child, b_sp_set = SimpleButton(tr(MSG_SET)),
+                    Child, b_sp_del = SimpleButton(tr(MSG_REMOVE_PROTECTION)),
                 End,
             End,
         End,
 
         SubWindow, win_recovery = WindowObject,
-            MUIA_Window_Title, "Sicherheitsschlüssel",
+            MUIA_Window_Title, tr(MSG_SECURITY_KEY),
             MUIA_Window_ID, MAKE_ID('A','M','X','K'),
             WindowContents, VGroup,
                 Child, TextObject, MUIA_Text_Contents,
-                    "Der Sicherheitsschlüssel aus Element (z.B. \33bEsTc 9xYz ...\33n)\n"
-                    "oder die Sicherheits-Passphrase.  Damit wird dieses Gerät\n"
-                    "verifiziert, und alte Nachrichten werden lesbar.", End,
+                    tr(MSG_THE_SECURITY_KEY_FROM_ELEMENT), End,
                 Child, str_recovery = StringObject, StringFrame, MUIA_String_MaxLen, 300,
                                       MUIA_CycleChain, TRUE, End,
                 Child, txt_recovery = TextObject, MUIA_Text_Contents, "", End,
-                Child, b_recovery = SimpleButton("_Entsperren"),
+                Child, b_recovery = SimpleButton(tr(MSG_UNLOCK)),
             End,
         End,
 
         SubWindow, win_invite = WindowObject,
-            MUIA_Window_Title, "Einladen",
+            MUIA_Window_Title, tr(MSG_INVITE_2),
             MUIA_Window_ID, MAKE_ID('A','M','X','I'),
             WindowContents, VGroup,
                 Child, txt_inviteroom = TextObject, MUIA_Text_Contents, "", End,
-                Child, TextObject, MUIA_Text_Contents, "Wen? (z.B. @name:server)", End,
+                Child, TextObject, MUIA_Text_Contents, tr(MSG_WHOM_E_G_NAME_SERVER), End,
                 Child, str_inviteuser = StringObject, StringFrame, MUIA_CycleChain, TRUE, End,
-                Child, b_invite = SimpleButton("_Einladen"),
+                Child, b_invite = SimpleButton(tr(MSG_INVITE_3)),
             End,
         End,
     End;
@@ -8675,8 +8698,8 @@ static void person_action(int id)
     ChatMsg *m = person_target(&w);
     char *nm;
     if (!m) {
-        MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                    (STRPTR)"Bitte erst im Chatfenster eine Nachricht\nvon einer anderen Person markieren.", 0);
+        MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                    (STRPTR)tr(MSG_PLEASE_MARK_A_MESSAGE_FROM), 0);
         return;
     }
     nm = local(m->name && *m->name ? m->name : m->sender);
@@ -8705,23 +8728,23 @@ static void person_action(int id)
         break;
     }
     case ID_P_COPYID:
-        snprintf(w->err, sizeof w->err, clip_write(m->sender) ? "Benutzer-ID kopiert" : "Kopieren hat nicht geklappt");
+        snprintf(w->err, sizeof w->err, clip_write(m->sender) ? tr(MSG_USER_ID_COPIED) : tr(MSG_COPYING_DID_NOT_WORK));
         update_status(w);
         break;
     case ID_P_UNIGNORE:
         amx_async_ignore(A, m->sender, 0, TAG_CMD);
         break;
     case ID_P_IGNORE:
-        if (MUI_Request(app, w->win, 0, (STRPTR)"Ignorieren", (STRPTR)"_Ignorieren|*_Abbrechen",
-                        (STRPTR)"\33c\33b%s\33n\nignorieren? Nachrichten und Einladungen\nvon dieser Person werden ausgeblendet.\n(Rückgängig: Person-Menü oder Einstellungen)", (ULONG)nm) == 1)
+        if (MUI_Request(app, w->win, 0, (STRPTR)tr(MSG_IGNORE_2), (STRPTR)tr(MSG_IGNORE_CANCEL),
+                        (STRPTR)tr(MSG_IGNORE_MESSAGES_AND_INVITATIONS_FROM), (ULONG)nm) == 1)
             amx_async_ignore(A, m->sender, 1, TAG_CMD);
         break;
     case ID_P_KICK: case ID_P_BAN:
-        if (MUI_Request(app, w->win, 0, (STRPTR)(id == ID_P_KICK ? "Rauswerfen" : "Sperren"),
-                        (STRPTR)(id == ID_P_KICK ? "_Rauswerfen|*_Abbrechen" : "_Sperren|*_Abbrechen"),
-                        (STRPTR)(id == ID_P_KICK ? "\33c\33b%s\33n\naus diesem Raum werfen?" : "\33c\33b%s\33n\nin diesem Raum sperren?"), (ULONG)nm) == 1) {
+        if (MUI_Request(app, w->win, 0, (STRPTR)(id == ID_P_KICK ? tr(MSG_REMOVE_3) : tr(MSG_BAN_2)),
+                        (STRPTR)(id == ID_P_KICK ? tr(MSG_REMOVE_CANCEL) : tr(MSG_BAN_CANCEL)),
+                        (STRPTR)(id == ID_P_KICK ? tr(MSG_REMOVE_FROM_THIS_ROOM) : tr(MSG_BAN_FROM_THIS_ROOM)), (ULONG)nm) == 1) {
             amx_async_moderate(A, w->room_id, m->sender, id == ID_P_KICK ? "kick" : "ban", "", 0, TAG_CMD);
-            snprintf(w->err, sizeof w->err, "Bitte warten ...");
+            snprintf(w->err, sizeof w->err, tr(MSG_PLEASE_WAIT));
             update_status(w);
         }
         break;
@@ -8836,7 +8859,7 @@ static void handle_id(ULONG id)
         break;
     case ID_STOREPASS:
         if (!my_user) break;
-        set(txt_sp, MUIA_Text_Contents, store_protected ? "Zurzeit mit Passwort geschützt." : "Zurzeit ohne Passwort.");
+        set(txt_sp, MUIA_Text_Contents, store_protected ? tr(MSG_CURRENTLY_PROTECTED_BY_A_PASSWORD) : tr(MSG_CURRENTLY_WITHOUT_A_PASSWORD));
         set(b_sp_del, MUIA_Disabled, !store_protected);
         set(win_storepass, MUIA_Window_Open, TRUE);
         set(win_storepass, MUIA_Window_ActiveObject, str_sp1);
@@ -8856,8 +8879,8 @@ static void handle_id(ULONG id)
         ChatWin *w = current_chat();
         ChatMsg *m = w ? marked_msg(w) : NULL;
         if (!m)
-            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                        (STRPTR)"Bitte erst eine Nachricht im Chatfenster markieren.", 0);
+            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                        (STRPTR)tr(MSG_PLEASE_MARK_A_MESSAGE_IN), 0);
         else copy_msg(w, m);
         break;
     }
@@ -8865,8 +8888,8 @@ static void handle_id(ULONG id)
         Room *r = NULL;
         DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
         if (!r) {
-            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                        (STRPTR)"Bitte erst einen Raum in der Liste auswählen.", 0);
+            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                        (STRPTR)tr(MSG_PLEASE_SELECT_A_ROOM_IN), 0);
             break;
         }
         {   /* on the server, so all devices are quiet; the old local list goes */
@@ -8879,8 +8902,8 @@ static void handle_id(ULONG id)
     }
     case ID_SETTINGS:
         set(txt_herald, MUIA_Text_Contents, herald_here()
-            ? "Benachrichtigungen erscheinen über Herald."
-            : "\33bHerald läuft nicht\33n - ohne Herald (Aminet: util/cdity/Herald)\nzeigt Amatrix keine Benachrichtigungen.");
+            ? tr(MSG_NOTIFICATIONS_APPEAR_VIA_HERALD)
+            : tr(MSG_HERALD_IS_NOT_RUNNING_WITHOUT));
         set(chk_notify, MUIA_Selected, opt_notify);
         set(cyc_notify, MUIA_Cycle_Active, opt_notify_all ? 0 : 1);
         set(chk_previews, MUIA_Selected, opt_previews);
@@ -8903,8 +8926,8 @@ static void handle_id(ULONG id)
         Room *r = NULL;
         DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
         if (r && !r->invited) open_info(r->id);
-        else MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                         (STRPTR)"Bitte erst einen Raum in der Liste auswählen.", 0);
+        else MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                         (STRPTR)tr(MSG_PLEASE_SELECT_A_ROOM_IN), 0);
         break;
     }
     case ID_PROFILE:     open_profile(); break;
@@ -8921,16 +8944,16 @@ static void handle_id(ULONG id)
     case ID_SPACEWIN: {
         LONG sel = n_spaces && cyc_space ? (LONG)xget(cyc_space, MUIA_Cycle_Active) : 0;
         if (sel > 0 && sel <= n_spaces) open_space_window(space_ids[sel - 1]);
-        else MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                         (STRPTR)"Bitte erst oben über der Raumliste einen Space wählen.", 0);
+        else MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                         (STRPTR)tr(MSG_PLEASE_CHOOSE_A_SPACE_ABOVE), 0);
         break;
     }
     case ID_REPORT: {
         ChatWin *w = current_chat();
         ChatMsg *m = w ? marked_msg(w) : NULL;
         if (!m || m->redacted)
-            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                        (STRPTR)"Bitte erst eine Nachricht im Chatfenster markieren.", 0);
+            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                        (STRPTR)tr(MSG_PLEASE_MARK_A_MESSAGE_IN), 0);
         else report_msg(w, m);
         break;
     }
@@ -8943,16 +8966,16 @@ static void handle_id(ULONG id)
     case ID_PW_GO: pw_go(); break;
     case ID_DEACT_GO: {
         char *pw = (char *)xget(str_dpw, MUIA_String_Contents), *u;
-        if (!pw || !*pw) { set(txt_acct, MUIA_Text_Contents, "Bitte dein Passwort eingeben."); break; }
-        if (MUI_Request(app, win_acct, 0, (STRPTR)"Konto deaktivieren", (STRPTR)"_Deaktivieren|*_Abbrechen",
-                        (STRPTR)"\33cDas Konto\n\33b%s\33n\nwirklich endgültig deaktivieren?", (ULONG)(my_user ? my_user : "")) != 1)
+        if (!pw || !*pw) { set(txt_acct, MUIA_Text_Contents, tr(MSG_PLEASE_ENTER_YOUR_PASSWORD)); break; }
+        if (MUI_Request(app, win_acct, 0, (STRPTR)tr(MSG_DEACTIVATE_ACCOUNT), (STRPTR)tr(MSG_DEACTIVATE_CANCEL),
+                        (STRPTR)tr(MSG_REALLY_DEACTIVATE_THE_ACCOUNT_FOR), (ULONG)(my_user ? my_user : "")) != 1)
             break;
         u = amx_from_local(pw);
         amx_async_deactivate(A, u, (int)xget(chk_derase, MUIA_Selected), TAG_DEACT);
         if (u) memset(u, 0, strlen(u));
         free(u);
         set(str_dpw, MUIA_String_Contents, "");
-        set(txt_acct, MUIA_Text_Contents, "Bitte warten ...");
+        set(txt_acct, MUIA_Text_Contents, tr(MSG_PLEASE_WAIT));
         break;
     }
     case ID_EXPORT: {
@@ -8962,15 +8985,15 @@ static void handle_id(ULONG id)
         char path[512];
         LONG all;
         if (!w) {
-            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK", (STRPTR)"Bitte erst ein Chatfenster öffnen.", 0);
+            MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK), (STRPTR)tr(MSG_PLEASE_OPEN_A_CHAT_WINDOW), 0);
             break;
         }
-        all = MUI_Request(app, w->win, 0, (STRPTR)"Chat exportieren", (STRPTR)"_Ganzer Verlauf|_Nur geladene|*_Abbrechen",
-                          (STRPTR)"Was soll in die Datei?\n(Endung .html: als Webseite, sonst Text)", 0);
+        all = MUI_Request(app, w->win, 0, (STRPTR)tr(MSG_EXPORT_CHAT_2), (STRPTR)tr(MSG_WHOLE_HISTORY_ONLY_LOADED_CANCEL),
+                          (STRPTR)tr(MSG_WHAT_SHOULD_GO_INTO_THE), 0);
         if (!all) break;
         if (!(AslBase = OpenLibrary("asl.library", 38))) break;
         fr = (struct FileRequester *)AllocAslRequestTags(ASL_FileRequest,
-                 ASLFR_Window, (ULONG)xget(w->win, MUIA_Window_Window), ASLFR_TitleText, (ULONG)"Chat exportieren",
+                 ASLFR_Window, (ULONG)xget(w->win, MUIA_Window_Window), ASLFR_TitleText, (ULONG)tr(MSG_EXPORT_CHAT_2),
                  ASLFR_DoSaveMode, TRUE, ASLFR_InitialFile, (ULONG)"Chat.txt", TAG_DONE);
         if (fr && AslRequest(fr, NULL) && fr->fr_File[0]) {
             snprintf(path, sizeof path, "%s", fr->fr_Drawer);
@@ -9006,21 +9029,21 @@ static void handle_id(ULONG id)
         ChatWin *w = current_chat();
         ChatMsg *m = w ? marked_msg(w) : NULL;
         if (!m || m->redacted) {
-            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                        (STRPTR)"Bitte erst eine Nachricht im Chatfenster markieren.", 0);
+            MUI_Request(app, w ? w->win : win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                        (STRPTR)tr(MSG_PLEASE_MARK_A_MESSAGE_IN), 0);
             break;
         }
         if (id == ID_FWD) open_forward(w, m);
         else if (id == ID_QUOTE) start_quote(w, m);
         else if (id == ID_COPYLINK) copy_link(w, m);
         else if (id == ID_EDITHIST) {
-            if (!m->edited) chat_say(w, "Diese Nachricht wurde nicht bearbeitet.");
+            if (!m->edited) chat_say(w, tr(MSG_THIS_MESSAGE_WAS_NOT_EDITED));
             else open_edit_history(w, m);
         } else {
             const Room *r = room_by_id(w->room_id);
             int on = !(r && r->pinned && strstr(r->pinned, m->eid));
             amx_async_pin(A, w->room_id, m->eid, on, TAG_PIN);
-            chat_say(w, on ? "Pinne an ..." : "Löse den Pin ...");
+            chat_say(w, on ? tr(MSG_PINNING) : tr(MSG_UNPINNING));
         }
         break;
     }
@@ -9046,7 +9069,7 @@ static void handle_id(ULONG id)
         if (p && info_room) {
             amx_async_invite(A, info_room, p->user_id, TAG_MODERATE);
             info_busy++;
-            info_set_status("Lasse ein ...");
+            info_set_status(tr(MSG_LETTING_IN));
             info_reload(0, 1);
         }
         break;
@@ -9093,27 +9116,52 @@ static void handle_id(ULONG id)
         Room *r = NULL;
         DoMethod(lst_rooms, MUIM_List_GetEntry, MUIV_List_GetEntry_Active, &r);
         if (r) leave_room(r->id, 1);
-        else MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_OK",
-                         (STRPTR)"Bitte erst einen Raum in der Liste auswählen.", 0);
+        else MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
+                         (STRPTR)tr(MSG_PLEASE_SELECT_A_ROOM_IN), 0);
         break;
     }
     case ID_LOGOUT:
-        if (A && my_user && MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)"*_Abmelden|_Nein",
-                                        (STRPTR)"Abmelden? Dieses Gerät und seine Schlüssel\nwerden gelöscht.", 0) == 1)
+        if (A && my_user && MUI_Request(app, win_main, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_LOG_OUT_NO),
+                                        (STRPTR)tr(MSG_LOG_OUT_THIS_DEVICE_AND), 0) == 1)
             amx_async_logout(A, TAG_LOGOUT);
         break;
     case ID_ABOUT:
-        MUI_Request(app, win_main, 0, (STRPTR)"Über Amatrix", (STRPTR)"*_OK",
-                    (STRPTR)"\33cAmatrix 0.1\n\nMatrix mit Ende-zu-Ende-Verschlüsselung\nfür den Amiga.\n\n%s",
-                    (ULONG)(my_user ? my_user : "nicht angemeldet"));
+        MUI_Request(app, win_main, 0, (STRPTR)tr(MSG_ABOUT_AMATRIX_2), (STRPTR)tr(MSG_OK),
+                    (STRPTR)tr(MSG_AMATRIX_0_1_MATRIX_WITH),
+                    (ULONG)(my_user ? my_user : tr(MSG_NOT_LOGGED_IN)));
         break;
     }
+}
+
+/* static tables: S_(id) placeholders -> the texts of the language */
+static void tr_array(const char **a, int n)
+{
+    int i;
+    for (i = 0; n < 0 ? a[i] != NULL : i < n; i++) {
+        ULONG v = (ULONG)a[i];
+        if (v >= 1 && v <= MSG_COUNT) a[i] = tr((LONG)v - 1);
+    }
+}
+
+static void tr_tables(void)
+{
+    struct NewMenu *nm;
+    tr_array(notify_modes, -1);
+    tr_array(join_names, -1);
+    tr_array(hist_names, -1);
+    tr_array(role_names, -1);
+    tr_array(notify_names, -1);
+    tr_array(where_names, -1);
+    tr_array(emo_help, N_EMO);
+    for (nm = menu; nm->nm_Type != NM_END; nm++)
+        if (nm->nm_Label != NM_BARLABEL && (ULONG)nm->nm_Label >= 1 && (ULONG)nm->nm_Label <= MSG_COUNT)
+            nm->nm_Label = (STRPTR)tr((LONG)(ULONG)nm->nm_Label - 1);
 }
 
 int main(int argc, char **argv)
 {
     struct RDArgs *rda = NULL;
-    LONG args[5] = { 0, 0, 0, 0, 0 };
+    LONG args[6] = { 0, 0, 0, 0, 0, 0 };
     ULONG sigs = 0, id;
     int i;
 
@@ -9127,8 +9175,10 @@ int main(int argc, char **argv)
     make_icon(&icon_attach, art_attach);
     make_icon(&icon_info, art_info);
     make_emoji();
+    open_catalog(NULL);
     if (!(MUIMasterBase = OpenLibrary((STRPTR)"muimaster.library", 20))) {
-        printf("Amatrix braucht MUI 5 (muimaster.library V20).\n");
+        printf(tr(MSG_AMATRIX_NEEDS_MUI_5_MUIMASTER));
+        close_catalog();
         return 20;
     }
     if (!NameFromLock(GetProgramDir(), (STRPTR)prog_dir, sizeof prog_dir - 2)) strcpy(prog_dir, "PROGDIR:");
@@ -9142,7 +9192,13 @@ int main(int argc, char **argv)
         snprintf(ip, sizeof ip, "%sIcons/Amatrix-neu", prog_dir);
         dob_new = GetDiskObject((STRPTR)ip);
     }
-    if (argc > 0) rda = ReadArgs((STRPTR)"SERVER/K,USER/K,PASSWORD/K,DEBUG/S,HIDE/S", args, NULL);
+    if (argc > 0) rda = ReadArgs((STRPTR)"SERVER/K,USER/K,PASSWORD/K,DEBUG/S,HIDE/S,LANGUAGE/K", args, NULL);
+    if (args[5]) open_catalog((const char *)args[5]);
+    else if (argc == 0 && dob_app && IconBase) {            /* from Workbench: tooltype LANGUAGE= */
+        STRPTR l = FindToolType((CONST_STRPTR *)dob_app->do_ToolTypes, (STRPTR)"LANGUAGE");
+        if (l && *l) open_catalog((const char *)l);
+    }
+    tr_tables();
     if (args[3]) {
         char lp[300];
         snprintf(lp, sizeof lp, "%sAmatrix.log", prog_dir);
@@ -9158,15 +9214,18 @@ int main(int argc, char **argv)
      * try again for a moment before giving up */
     for (i = 0; i < 3 && !(app = build_app()); i++) Delay(100);
     if (!app) {
-        printf("Amatrix: MUI-Oberfläche konnte nicht erstellt werden (NList, BetterString installiert?)\n");
+        printf(tr(MSG_AMATRIX_THE_MUI_INTERFACE_COULD));
         CloseLibrary(MUIMasterBase);
+        close_catalog();
         return 20;
     }
     set(win_main, MUIA_Window_Open, TRUE);
     if ((opt_iconified || args[4]) && dob_app) set(app, MUIA_Application_Iconified, TRUE);
 
+    if (debug) amx_log("prefs: dir %s server %s user %s (error %ld)", prog_dir, cfg_server ? cfg_server : "-",
+                       cfg_user ? cfg_user : "-", prefs_err);
     if (cfg_server && cfg_user) do_login(cfg_server, cfg_user, (char *)args[2]);
-    else { set_status("Nicht angemeldet", NULL, NULL); show_login(NULL); }
+    else { set_status(tr(MSG_NOT_LOGGED_IN_2), NULL, NULL); show_login(NULL); }
 
     for (;;) {
         ChatWin *w, *nx;
@@ -9183,8 +9242,9 @@ int main(int argc, char **argv)
         }
     }
 
+    while (chats) close_chat(chats);                /* before A goes: they may still use it */
     if (A) amx_async_free(A);
-    while (chats) close_chat(chats);
+    A = NULL;
     set(win_main, MUIA_Window_Open, FALSE);
     MUI_DisposeObject(app);
     for (i = 0; i < n_imgs; i++) { free(imgs[i].img); free(imgs[i].url); }
@@ -9197,5 +9257,6 @@ int main(int argc, char **argv)
     if (dob_new) FreeDiskObject(dob_new);
     if (IconBase) CloseLibrary(IconBase);
     CloseLibrary(MUIMasterBase);
+    close_catalog();
     return 0;
 }

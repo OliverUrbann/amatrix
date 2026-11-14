@@ -28,7 +28,7 @@ Assign AmiSSL: SYS:AmiSSL
 Assign LIBS: AmiSSL:Libs ADD
 {verbose}
 {herald}
-Run >NIL: Extra:Amatrix >SYS:gui-out.txt SERVER={server} USER={user} PASSWORD={password} DEBUG
+Run >NIL: Extra:Amatrix >SYS:gui-out.txt SERVER={server} USER={user} PASSWORD={password} DEBUG LANGUAGE=deutsch
 Lab loop
 If EXISTS Extra:go
   Delete Extra:go QUIET
@@ -181,7 +181,7 @@ async def store_part(ctx, amiga, online, was_verified=False):
         if os.path.exists(pth):
             for line in open(pth, encoding="latin-1").read().splitlines():
                 ctx.diag(f"{f}: {line}")
-    await amiga.rexx_raw(["address command 'Run >NIL: Extra:Amatrix >SYS:gui-out2.txt'"])
+    await amiga.rexx_raw(["address command 'Run >NIL: Extra:Amatrix >SYS:gui-out2.txt DEBUG LANGUAGE=deutsch'"])
     await asyncio.sleep(25)
     await amiga.shot("12-unlock-window")
     rc, st = await amiga.rexx("STATUS")
@@ -232,6 +232,7 @@ async def scenario(ctx, amiga, srv, me):
     check(st, f"client online ({st})")
     if os.environ.get("AMX_GUI_ONLY") == "store":
         await store_part(ctx, amiga, online)
+        await english_part(ctx, amiga, online)
         return
     await amiga.shot("01-online")
 
@@ -1206,6 +1207,7 @@ async def scenario(ctx, amiga, srv, me):
     await notify_part(ctx, amiga, p, dm, me)
 
     await store_part(ctx, amiga, online, bool(info))
+    await english_part(ctx, amiga, online)
 
     rc, _ = await amiga.rexx("NEWCHAT " + ctx.peer_user.user_id)
     check(rc == "0", "new chat with an existing partner opens the existing chat")
@@ -1319,6 +1321,62 @@ async def scenario(ctx, amiga, srv, me):
         check(await amiga.until(gone, 60), "Amiga-Runde is no longer in the room list")
 
 
+async def restart_as(amiga, lang, ctx=None):
+    await amiga.rexx("QUIT", secs=240)
+    pth = os.path.join(amiga.extra, "status-now.txt")
+    end = time.time() + 300                  # a big store takes a while to save
+    while time.time() < end:
+        if os.path.exists(pth):
+            os.remove(pth)
+        await amiga.rexx_raw(["address command 'Status >Extra:status-now.txt'"])
+        if os.path.exists(pth) and "Amatrix" not in open(pth, encoding="latin-1").read():
+            break
+        await asyncio.sleep(3)
+    await asyncio.sleep(5)
+    if ctx:
+        pf = os.path.join(amiga.extra, "Amatrix.prefs")
+        head = open(pf, encoding="latin-1").read().splitlines()[:2] if os.path.exists(pf) else "missing"
+        ctx.diag(f"restart as {lang}: prefs {head}")
+    await amiga.rexx_raw([f"address command 'Run >NIL: Extra:Amatrix >SYS:gui-out-{lang}.txt DEBUG LANGUAGE={lang}'"])
+    await asyncio.sleep(25)
+
+
+async def english_part(ctx, amiga, online):
+    """restart without the German catalog: English texts (the store passphrase is still set);
+    afterwards German again for the rest of the test"""
+    check = ctx.check
+    await restart_as(amiga, "english", ctx)
+
+    async def asks():
+        rc, r = await amiga.rexx("STATUS")
+        return r.startswith("Password for the Amatrix data") and r
+    st = await amiga.until(asks, 120)
+    if not st:
+        rc, st = await amiga.rexx("STATUS")
+    check(st and st.startswith("Password for the Amatrix data"), f"English: the unlock window asks in English ({st!r})")
+    await amiga.shot("13-english-unlock")
+    rc, _ = await amiga.rexx("UNLOCK Tresor 42")
+    st = await amiga.until(online, 300)
+    check(st, f"English: online again ({st})")
+    rc1, _ = await amiga.rexx("MENUON Quote")
+    rc2, _ = await amiga.rexx("MENUON Zitieren")
+    check(rc1 == "0" and rc2 != "0", f"English: the menus are English ({rc1!r}, {rc2!r})")
+    rc, r = await amiga.rexx("ROOMLINE Alice")
+    check("Du:" not in r, f"English: room list without German ({r!r})")
+    rc, _ = await amiga.rexx("OPENCHAT Alice")
+    await asyncio.sleep(15)
+    await amiga.shot("14-english-chat")
+    await restart_as(amiga, "deutsch", ctx)
+
+    async def fragt():
+        rc, r = await amiga.rexx("STATUS")
+        return r.startswith("Passwort") and r
+    await amiga.until(fragt, 120)
+    rc, _ = await amiga.rexx("UNLOCK Tresor 42")
+    st = await amiga.until(online, 300)
+    check(st, f"German again: online ({st})")
+
+
 async def herald(amiga, query):
     """Asks Herald (in the emulator) something; '' if it is not running."""
     res = os.path.join(amiga.extra, "res.txt")
@@ -1395,6 +1453,9 @@ async def main():
         me, other, bob = srv.register("amiga"), srv.register("peer"), srv.register("bob")
         extra = tempfile.mkdtemp(prefix="amx-gui-")
         shutil.copy(os.path.join(TOP, "build", "amiga", "gui", "Amatrix"), os.path.join(extra, "Amatrix"))
+        os.makedirs(os.path.join(extra, "Catalogs", "deutsch"), exist_ok=True)
+        shutil.copy(os.path.join(TOP, "build", "amiga", "catalogs", "deutsch", "amatrix.catalog"),
+                    os.path.join(extra, "Catalogs", "deutsch", "amatrix.catalog"))
         mk = os.path.join(TOP, "tools", "amiga-package", "make-icon.py")   # icons: AppIcon when iconified
         os.makedirs(os.path.join(extra, "Icons"), exist_ok=True)
         subprocess.run([sys.executable, mk, os.path.join(extra, "Amatrix.info"), "65536"], check=False)
@@ -1447,14 +1508,17 @@ async def main():
             for line in open(dbg, encoding="latin-1").read().splitlines():
                 if any(k in line for k in ("open file", "open link", "saved attachment", "started", "moderate",
                                            "room change", "INFOMEMBER", "sending file", "lookup event", "close_chat", "cursor up", "start_edit", "ARexx", "edit button", "older pressed",
-                                           "history_done", "display option", "place hist",
+                                           "history_done", "display option", "place hist", "Herald", "notify?", "notify2", "login", "prefs",
                                            "decode")):
                     log(f"# amatrix log: {line}")
         alive = os.path.exists(os.path.join(extra, "Amatrix"))
         ctx.check(alive, "program still there at the end")
         for line in out.decode(errors="replace").splitlines():
             log(f"# emu: {line}")
-        shutil.rmtree(extra, ignore_errors=True)
+        if not os.environ.get("AMX_KEEP"):
+            shutil.rmtree(extra, ignore_errors=True)
+        else:
+            print("kept", extra)
         shutil.rmtree(workdir, ignore_errors=True)
     bad = [n for ok, n in ctx.results if not ok]
     print(f"GUI test: {len(ctx.results) - len(bad)}/{len(ctx.results)} checks ok in {time.time() - t0:.0f}s; "

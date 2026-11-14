@@ -50,6 +50,7 @@ private Synapse started by the tests.
 | `tools/` | `amx-cli` (command-line test client), `amxdiag` (network/AmiSSL diagnosis), `amiga-package/` (test package for a real Amiga) |
 | `tests/` | feature tests and their runner, see [tests/README.md](tests/README.md) |
 | `libolm-amiga/` | libolm on AmigaOS: patches, unit tests, `olmbench`, see [its README](libolm-amiga/README.md) |
+| `catalogs/` | languages of the GUI: `amatrix.cd` (English, built in), `<language>.ct` (translations), see below |
 | `third_party/` | libolm 3.2.16 (patched), cJSON, AmiSSL 5.27 SDK, stb_image |
 | `docs/` | [feature list](docs/matrix-library-features.md), [proof of concept](docs/proof-of-concept.md) |
 | `results/` | logs of the tests on the real Vampire and earlier emulator runs |
@@ -69,6 +70,27 @@ tools/amiga-package/make-package.sh    # build/amiga/amatrix-test.lha
 
 On the Amiga the programs need a TCP/IP stack (bsdsocket.library), AmiSSL 5.x
 and a 68020 or better with FPU.
+
+## Languages
+
+The GUI's texts are English in the program and come from a locale.library
+catalog for other languages: `Catalogs/<language>/amatrix.catalog` next to
+the program (or in `LOCALE:Catalogs/`).  Amatrix follows the languages in
+the Locale prefs; `Amatrix LANGUAGE=english` (or `deutsch`, ...) overrides
+them.
+
+- `catalogs/amatrix.cd` - every text with its ID, in English
+- `catalogs/deutsch.ct` - the German translation
+- `tools/catalog.py` - makes `gui/amatrix_strings.h` and the `.catalog`
+  files (no FlexCat needed; the files use FlexCat's `.cd`/`.ct` layout)
+
+A new language: copy `deutsch.ct` to `<language>.ct` (the Amiga name, e.g.
+`francais`), set `## language`, translate the line under each ID, then
+`make TARGET=amiga gui` builds `build/amiga/catalogs/<language>/amatrix.catalog`
+and the package takes it along.  `tools/catalog.py check catalogs/amatrix.cd
+catalogs/<language>.ct` refuses a translation whose `%s`/`%d` differ from
+the original.  New texts in the program: add them at the end of
+`amatrix.cd` (IDs never change) and use `tr(MSG_...)`.
 
 ## Tests
 

@@ -1,0 +1,1444 @@
+; Amatrix catalog description: the built-in (English) strings.
+; Escapes as in C: \n, \33 (ESC, MUI text codes), \", \xNN.
+; New strings go at the end; IDs must not change once released.
+; tools/catalog.py makes gui/amatrix_strings.h and the .catalog files from this.
+#language english
+#version 1
+;
+MSG_LOAD_20_OLDER_MESSAGES (0//)
+Load 20 older messages
+;
+MSG_START_OF_THE_CHAT_NO (1//)
+Start of the chat - no older messages
+;
+MSG_INVITE_SOMEONE_TO_THIS_ROOM (2//)
+Invite someone to this room
+;
+MSG_LEAVE_THIS_ROOM (3//)
+Leave this room
+;
+MSG_REPLY_TO_THE_MARKED_MESSAGE (4//)
+Reply to the marked message
+;
+MSG_EDIT_YOUR_MARKED_MESSAGE (5//)
+Edit your marked message
+;
+MSG_DELETE_YOUR_MARKED_MESSAGE (6//)
+Delete your marked message
+;
+MSG_SEND_A_PICTURE_OR_FILE (7//)
+Send a picture or file\n(or drop icons on the window)
+;
+MSG_MEMBERS_AND_ROOM_SETTINGS (8//)
+Members and room settings
+;
+MSG_REACT_TO_THE_MARKED_MESSAGE (9//)
+React to the marked message\n(nothing marked: to the newest)
+;
+MSG_ALL_MESSAGES (10//)
+all messages
+;
+MSG_DIRECT_MESSAGES_AND_MENTIONS (11//)
+direct messages and mentions
+;
+MSG_ONLINE_VERIFIED (12//)
+Online - %s (verified)
+;
+MSG_ONLINE (13//)
+Online - %s
+;
+MSG_LOADING_OLDER_MESSAGES (14//)
+Loading older messages ...
+;
+MSG_LOADING_HISTORY (15//)
+Loading history ...
+;
+MSG_UPLOADING_FILES (16//)
+Uploading %d files ...
+;
+MSG_UPLOADING_FILE (17//)
+Uploading file ...
+;
+MSG_SENDING_MESSAGES (18//)
+Sending %d messages ...
+;
+MSG_SENDING (19//)
+Sending ...
+;
+MSG_INVITING (20//)
+Inviting ...
+;
+MSG_ARE_TYPING (21//)
+are typing
+;
+MSG_IS_TYPING (22//)
+is typing
+;
+MSG_END_TO_END_ENCRYPTED (23//)
+end-to-end encrypted
+;
+MSG_NOT_ENCRYPTED (24//)
+not encrypted
+;
+MSG_INVITATION_FROM (25//)
+Invitation from %s
+;
+MSG_YOU (26//)
+You: %s
+;
+MSG_DRAFT (27//)
+\33bDraft:\33n\33i %.150s
+;
+MSG_REPLACED (28//)
+\33n\33i (replaced)
+;
+MSG_MUTED (29//)
+\33n\33i (muted)
+;
+MSG_ALL_ROOMS (30//)
+All rooms
+;
+MSG_SHOW_ONLY_THE_ROOMS_OF (31//)
+Show only the rooms of a space
+;
+MSG_ME_TEXT_ACTION_NAME_TEXT (32//)
+/me text         - action (\"* name text\")\n/shrug [text]    - shrug in front\n/spoiler text    - as a spoiler (hidden)\n/plain text      - send without formatting\n/html text       - text is HTML\n/nick name       - your display name\n/myroomnick name - name in this room only\n/topic text      - topic of the room\n/roomname name   - name of the room\n/invite @user    - invite\n/join #room:server - join a room\n/knock #room:server - ask to be let in\n/upgraderoom [version] - new room version (admins)\n/part            - leave the room\n/ignore @user, /unignore @user\n/whois @user     - who is that?\n/op @user [level], /deop @user\n/kick @user [reason], /ban @user [reason], /unban @user\n/jumptodate DD.MM.YYYY - jump to a date\n//text           - text starting with /
+;
+MSG_PLEASE_ADD_A_TEXT (33//)
+Please add a text.
+;
+MSG_PLEASE_ADD_A_NAME (34//)
+Please add a name.
+;
+MSG_PLEASE_WAIT (35//)
+Please wait ...
+;
+MSG_PLEASE_ADD_A_USER_NAME (36//)
+Please add a user (@name:server).
+;
+MSG_PLEASE_ADD_A_ROOM_NAME (37//)
+Please add a room (#name:server).
+;
+MSG_UPGRADE_CANCEL (38//)
+_Upgrade|*_Cancel
+;
+MSG_UPGRADE_THE_ROOM_TO_A (39//)
+Upgrade the room to a new room version?\nThe server creates a new room for it;\neveryone has to move there.
+;
+MSG_UPGRADING (40//)
+Upgrading ...
+;
+MSG_KNOCKING (41//)
+Knocking ...
+;
+MSG_AMATRIX_COMMANDS (42//)
+Amatrix - Commands
+;
+MSG_OK (43//)
+*_OK
+;
+MSG_UNKNOWN_COMMAND_HELP_SHOWS_THEM (44//)
+Unknown command /%s - /help shows them all.
+;
+MSG_SEND_A_PICTURE_OR_FILE_2 (45//)
+Send a picture or file
+;
+MSG_INVITE_TO (46//)
+Invite to \33b%s
+;
+MSG_DECLINE_CANCEL (47//)
+*_Decline|_Cancel
+;
+MSG_DECLINE_THE_INVITATION_TO (48//)
+Decline the invitation to \33b%s\33n?
+;
+MSG_LEAVE_CANCEL (49//)
+*_Leave|_Cancel
+;
+MSG_REALLY_LEAVE_YOU_WILL_GET (50//)
+Really leave \33b%s\33n?\n\nYou will get no more messages from this room.\nThe way back is a new invitation\n(public rooms: \"Join room\").
+;
+MSG_LEAVING (51//)
+Leaving %s ...
+;
+MSG_INVITATION_ONLY (52//)
+Invitation only
+;
+MSG_PUBLIC (53//)
+Public
+;
+MSG_ON_REQUEST_KNOCK (54//)
+On request (knock)
+;
+MSG_MEMBERS_WHOLE_HISTORY (55//)
+Members: whole history
+;
+MSG_MEMBERS_SINCE_THEIR_INVITATION (56//)
+Members: since their invitation
+;
+MSG_MEMBERS_SINCE_THEY_JOINED (57//)
+Members: since they joined
+;
+MSG_ANYONE_EVEN_WITHOUT_JOINING (58//)
+Anyone (even without joining)
+;
+MSG_MEMBER (59//)
+Member
+;
+MSG_MODERATOR (60//)
+Moderator
+;
+MSG_ADMIN (61//)
+Admin
+;
+MSG_DEFAULT (62//)
+Default
+;
+MSG_ALL_MESSAGES_2 (63//)
+All messages
+;
+MSG_ONLY_MENTIONS_AND_KEYWORDS (64//)
+Only mentions and keywords
+;
+MSG_OFF_MUTED (65//)
+Off (muted)
+;
+MSG_FOUNDER (66//)
+Founder
+;
+MSG_MEMBER_2 (67//)
+Member+
+;
+MSG_NAME (68//)
+Name
+;
+MSG_ROLE (69//)
+Role
+;
+MSG_MATRIX_ID (70//)
+Matrix ID
+;
+MSG_SAVING (71//)
+Saving ...
+;
+MSG_ROOM (72//)
+Room: %s
+;
+MSG_LOADING (73//)
+Loading ...
+;
+MSG_ONLY_ADMINS_AND_MODERATORS_MAY (74//)
+Only admins and moderators may change things here.
+;
+MSG_TURN_ON_CANCEL (75//)
+_Turn on|*_Cancel
+;
+MSG_ENCRYPTION_CANNOT_BE_TURNED_OFF (76//)
+Encryption cannot be turned off again afterwards.\nTurn it on?
+;
+MSG_NOTHING_CHANGED (77//)
+Nothing changed.
+;
+MSG_PICTURE_FOR_THE_ROOM_PNG (78//)
+Picture for the room (PNG, JPEG, GIF)
+;
+MSG_UPLOADING_THE_PICTURE (79//)
+Uploading the picture ...
+;
+MSG_YES_NO (80//)
+_Yes|*_No
+;
+MSG_BAN_CANNOT_JOIN_AGAIN (81//)
+Ban %s? (Cannot join again.)
+;
+MSG_THAT_DID_NOT_WORK (82//)
+\33bThat did not work:\33n %.240s
+;
+MSG_NO_PICTURE_YET (83//)
+No picture yet.
+;
+MSG_PROFILE_PICTURE_PNG_JPEG_GIF (84//)
+Profile picture (PNG, JPEG, GIF)
+;
+MSG_SESSION (85//)
+Session
+;
+MSG_LAST_ACTIVE (86//)
+Last active
+;
+MSG_STATUS (87//)
+Status
+;
+MSG_THIS_ONE (88//)
+this one
+;
+MSG_VERIFIED (89//)
+verified
+;
+MSG_NOT_VERIFIED (90//)
+not verified
+;
+MSG_WITHOUT_KEYS (91//)
+without keys
+;
+MSG_PLEASE_ENTER_YOUR_PASSWORD_TO (92//)
+Please enter your password to log out.
+;
+MSG_LOG_OUT_CANCEL (93//)
+_Log out|*_Cancel
+;
+MSG_LOG_OUT_THE_SESSION_IT (94//)
+Log out the session \"%s\"?\nIt will no longer be logged in.
+;
+MSG_LOGGING_OUT (95//)
+Logging out ...
+;
+MSG_THE_MARKED_ROOM (96//)
+The marked room
+;
+MSG_WHEN (97//)
+When
+;
+MSG_ROOM_2 (98//)
+Room
+;
+MSG_MESSAGE (99//)
+Message
+;
+MSG_PLEASE_MARK_A_ROOM_IN (100//)
+Please mark a room in the list first.
+;
+MSG_SEARCHING (101//)
+Searching ...
+;
+MSG_HITS_DOUBLE_CLICK_OPENS_THE (102//)
+%d hits - double-click opens the chat
+;
+MSG_NOTHING_FOUND_ENCRYPTED_ROOMS_ONLY (103//)
+Nothing found. (Encrypted rooms: only the stored history.)
+;
+MSG_PLEASE_SELECT_A_ROOM_IN (104//)
+Please select a room in the list first.
+;
+MSG_PLEASE_OPEN_THE_CHAT_WINDOW (105//)
+Please open the chat window of the room first.
+;
+MSG_A_POLL_NEEDS_A_QUESTION (106//)
+A poll needs a question and at least two answers.
+;
+MSG_DIR_INFO (107//)
+%s%.150s%s%s, %d members%s%s
+;
+MSG_HISTORY_READABLE_WITHOUT_JOINING (108//)
+, history readable without joining
+;
+MSG_HISTORY_ONLY_AFTER_JOINING (109//)
+, history only after joining
+;
+MSG_YOU_ARE_IN (110//)
+, you are in
+;
+MSG_MEMBERS_2 (111//)
+Members
+;
+MSG_THE_SPACE (112//)
+(the space)
+;
+MSG_JOINED (113//)
+joined
+;
+MSG_SPACE (114//)
+Space
+;
+MSG_SPACE_2 (115//)
+Space: %s
+;
+MSG_ROOMS_DOUBLE_CLICK_OPEN_OR (116//)
+%d rooms - double-click: open or preview
+;
+MSG_PLEASE_MARK_A_ROOM_IN_2 (117//)
+Please mark a room in the room list first.
+;
+MSG_ADDING (118//)
+Adding ...
+;
+MSG_PLEASE_MARK_A_ROOM_FIRST (119//)
+Please mark a room first.
+;
+MSG_REMOVING (120//)
+Removing ...
+;
+MSG_JOINING (121//)
+Joining ...
+;
+MSG_THE_HISTORY_IS_ONLY_AVAILABLE (122//)
+The history is only available after joining.
+;
+MSG_SPAM (123//)
+Spam
+;
+MSG_OFFENSIVE (124//)
+Offensive
+;
+MSG_OTHER (125//)
+Other
+;
+MSG_REPORT_MESSAGE (126//)
+Report message
+;
+MSG_SPAM_OFFENSIVE_OTHER_CANCEL (127//)
+_Spam|_Offensive|_Other|*_Cancel
+;
+MSG_REPORT_THIS_MESSAGE_TO_THE (128//)
+Report this message to the admins of your server?\nWhy?
+;
+MSG_REPORTING (129//)
+Reporting ...
+;
+MSG_AND_MORE (130//)
+ and %d more
+;
+MSG_808080_READ_BY (131//)
+      \33i\33P[808080]read by %s
+;
+MSG_VOTE (132//)
+vote
+;
+MSG_VOTES (133//)
+votes
+;
+MSG_ENDED (134//)
+ - ended
+;
+MSG_RESULT_AT_THE_END (135//)
+ (result at the end)
+;
+MSG_SEVERAL_CHOICES (136//)
+, several choices
+;
+MSG_END (137//)
+  \33n\33o[%d@%ld] end
+;
+MSG_END_CANCEL (138//)
+_End|*_Cancel
+;
+MSG_END_THE_POLL_NO_MORE (139//)
+End the poll? No more votes count after that.
+;
+MSG_THUMBS_UP (140//)
+Thumbs up
+;
+MSG_THUMBS_DOWN (141//)
+Thumbs down
+;
+MSG_HEART (142//)
+Heart
+;
+MSG_SMILE (143//)
+Smile
+;
+MSG_LAUGH (144//)
+Laugh
+;
+MSG_THINKING (145//)
+Thinking
+;
+MSG_EYES (146//)
+Eyes
+;
+MSG_CELEBRATE (147//)
+Celebrate
+;
+MSG_ROCKET (148//)
+Rocket
+;
+MSG_REACTION (149//)
+Reaction
+;
+MSG_THREAD (150//)
+Thread - %s
+;
+MSG_PREVIEW (151//)
+Preview: %s
+;
+MSG_CLICK_GO_TO_THE_PINNED (152//)
+Click: go to the pinned message
+;
+MSG_THIS_ROOM_WAS_REPLACED_BY (153//)
+\33c\33bThis room was replaced by a new one.\33n Click: go there
+;
+MSG_CANCEL (154//)
+_Cancel
+;
+MSG_PREVIEW_YOU_ARE_NOT_IN (155//)
+Preview - you are not in the room yet
+;
+MSG_LOCATION (156//)
+%s\33b%s:\33n Location: %s
+;
+MSG_POLL (157//)
+%s\33b%s:\33n Poll: \33b%s
+;
+MSG_VOICE_MESSAGE (158//)
+%s\33b%s:\33n [Voice message %ld:%02ld]
+;
+MSG_VOICE_MESSAGE_2 (159//)
+%s\33b%s:\33n [Voice message]
+;
+MSG_ENCRYPTED_THE_KEY_ONLY_STARTS (160//)
+%s\33b%s:\33n \33i(encrypted, the key only starts with a later message)
+;
+MSG_ENCRYPTED_NO_KEY_ON_THIS (161//)
+%s\33b%s:\33n \33i(encrypted, no key on this device)
+;
+MSG_ENCRYPTED_NOT_READABLE (162//)
+%s\33b%s:\33n \33i(encrypted, not readable: %s)
+;
+MSG_FILE (163//)
+File
+;
+MSG_THE_LINK_COULD_NOT_BE (164//)
+The link could not be opened\n(openurl.library installed?):\n\n%s
+;
+MSG_LOADING_2 (165//)
+Loading %s ...
+;
+MSG_SAVE_FILE (166//)
+Save file
+;
+MSG_SAVING_2 (167//)
+Saving %s ...
+;
+MSG_LOADING_FAILED (168//)
+Loading failed: %.280s
+;
+MSG_SAVED (169//)
+Saved: %.140s
+;
+MSG_AN_OLDER_MESSAGE (170//)
+\33i  \xbb (an older message)
+;
+MSG_X (171//)
+\33i  \xbb %s: %s
+;
+MSG_EDITED (172//)
+%s \33i(edited)
+;
+MSG_SUNDAY (173//)
+Sunday
+;
+MSG_MONDAY (174//)
+Monday
+;
+MSG_TUESDAY (175//)
+Tuesday
+;
+MSG_WEDNESDAY (176//)
+Wednesday
+;
+MSG_THURSDAY (177//)
+Thursday
+;
+MSG_FRIDAY (178//)
+Friday
+;
+MSG_SATURDAY (179//)
+Saturday
+;
+MSG_JANUARY (180//)
+January
+;
+MSG_FEBRUARY (181//)
+February
+;
+MSG_MARCH (182//)
+March
+;
+MSG_APRIL (183//)
+April
+;
+MSG_MAY (184//)
+May
+;
+MSG_JUNE (185//)
+June
+;
+MSG_JULY (186//)
+July
+;
+MSG_AUGUST (187//)
+August
+;
+MSG_SEPTEMBER (188//)
+September
+;
+MSG_OCTOBER (189//)
+October
+;
+MSG_NOVEMBER (190//)
+November
+;
+MSG_DECEMBER (191//)
+December
+;
+MSG_TEXT_COPIED (192//)
+Text copied
+;
+MSG_COPYING_DID_NOT_WORK (193//)
+Copying did not work
+;
+MSG_REPLY_TO (194//)
+Reply to%s
+;
+MSG_EDIT_MESSAGE_RETURN_SAVES (195//)
+Edit message (Return saves)
+;
+MSG_DELETE_CANCEL (196//)
+*_Delete|_Cancel
+;
+MSG_DELETE_THIS_MESSAGE_FOR_EVERYONE (197//)
+Delete this message for everyone?
+;
+MSG_THREAD_2 (198//)
+      \33o[%d@%ld] \33iThread: %d %s
+;
+MSG_REPLY (199//)
+reply
+;
+MSG_REPLIES (200//)
+replies
+;
+MSG_IS_KNOCKING_LET_THEM_IN (201//)
+%s is knocking - let them in in the room window (i)
+;
+MSG_THE_HISTORY_DOES_NOT_GO (202//)
+The history does not go back that far (or is too long).
+;
+MSG_THERE_ARE_NO_MESSAGES_AFTER (203//)
+There are no messages after that.
+;
+MSG_PLEASE_GIVE_THE_DATE_AS (204//)
+Please give the date as DD.MM.YYYY.
+;
+MSG_THAT_DATE_DOES_NOT_WORK (205//)
+That date does not work.
+;
+MSG_LOOKING_FOR_THE_DAY (206//)
+Looking for the day ...
+;
+MSG_NEW_MESSAGES (207//)
+\33c\33b--- new messages ---
+;
+MSG_MORE_UNREAD_MESSAGES_THE_UP (208//)
+More unread messages: the up arrow loads them.
+;
+MSG_THE_FILE_CANNOT_BE_WRITTEN (209//)
+The file cannot be written.
+;
+MSG_MESSAGES_EXPORTED (210//)
+%d messages exported.
+;
+MSG_LOADING_THE_WHOLE_HISTORY (211//)
+Loading the whole history ...
+;
+MSG_HISTORY (212//)
+History: %.290s
+;
+MSG_ERROR (213//)
+Error
+;
+MSG_THE_NETWORK_PROCESS_COULD_NOT (214//)
+The network process could not start
+;
+MSG_PASSWORD_FOR_THE_AMATRIX_DATA (215//)
+Password for the Amatrix data needed
+;
+MSG_LOGGING_IN_AS (216//)
+Logging in as %s ...
+;
+MSG_CHECKING (217//)
+Checking ...
+;
+MSG_AT_LEAST_4_CHARACTERS_PLEASE (218//)
+At least 4 characters, please.
+;
+MSG_RE_ENCRYPTING_THE_DATA (219//)
+Re-encrypting the data ...
+;
+MSG_ENTER_SERVER_AND_USER (220//)
+Enter server and user.
+;
+MSG_LOGGING_IN (221//)
+Logging in ...
+;
+MSG_CREATING_CHAT_WITH (222//)
+Creating chat with %s ...
+;
+MSG_CREATING_ROOM (223//)
+Creating room ...
+;
+MSG_CHECKING_A_PASSPHRASE_CAN_TAKE (224//)
+Checking ... (a passphrase can take a few minutes)
+;
+MSG_CHECKING_THE_SECURITY_KEY (225//)
+Checking the security key ...
+;
+MSG_INVITING_2 (226//)
+Inviting %s ...
+;
+MSG_INVITATION (227//)
+Invitation
+;
+MSG_ACCEPT_DECLINE_DECLINE_BLOCK_LATER (228//)
+*_Accept|_Decline|Decline + _block|_Later
+;
+MSG_INVITES_YOU (229//)
+%s invites you:\n\n\33b%s
+;
+MSG_SOMEONE (230//)
+Someone
+;
+MSG_ADDRESS (231//)
+Address
+;
+MSG_JOINING_ROOM (232//)
+Joining room ...
+;
+MSG_PINNED (233//)
+\33bPinned%s:\33n %s
+;
+MSG_NEWEST (234//)
+ (newest)
+;
+MSG_JOINING_THE_NEW_ROOM (235//)
+Joining the new room ...
+;
+MSG_THE_PINNED_MESSAGE_IS_OLDER (236//)
+The pinned message is older than the loaded history (the up arrow loads more).
+;
+MSG_QUOTE (237//)
+Quote:%s
+;
+MSG_LINK_COPIED (238//)
+Link copied
+;
+MSG_LOGIN_FAILED (239//)
+Login failed
+;
+MSG_CONNECTING_AS (240//)
+Connecting as %s ...
+;
+MSG_LOGGED_OUT (241//)
+Logged out
+;
+MSG_WRONG_PASSWORD (242//)
+Wrong password.
+;
+MSG_THE_AMATRIX_DATA_IS_NOW (243//)
+\33bThe Amatrix data is now protected by the password.\33n\nAmatrix asks for it at startup.
+;
+MSG_THE_PASSWORD_PROTECTION_IS_REMOVED (244//)
+\33bThe password protection is removed.\33n
+;
+MSG_WRONG_KEY_OR_PASSPHRASE (245//)
+Wrong key or passphrase.
+;
+MSG_THIS_DEVICE_IS_VERIFIED_NOW (246//)
+This device is verified now.
+;
+MSG_VERIFYING_WAS_NOT_POSSIBLE_CROSS (247//)
+Verifying was not possible (cross-signing not set up?).
+;
+MSG_OLD_MESSAGES_ARE_DECRYPTED_WHEN (248//)
+Old messages are decrypted when a room is opened.
+;
+MSG_THERE_IS_NO_KEY_BACKUP (249//)
+There is no key backup on the server.
+;
+MSG_INVITING_FAILED (250//)
+Inviting failed: %.120s
+;
+MSG_INVITING_DID_NOT_WORK (251//)
+Inviting did not work:\n%s
+;
+MSG_SENDING_FAILED (252//)
+Sending failed: %.120s
+;
+MSG_MESSAGE_NOT_SENT (253//)
+Message not sent:\n%s
+;
+MSG_FILE_NOT_SENT (254//)
+File not sent: %.280s
+;
+MSG_FILE_NOT_SENT_2 (255//)
+File not sent:\n%s
+;
+MSG_LEAVING_DID_NOT_WORK (256//)
+Leaving did not work:\n%s
+;
+MSG_THREAD_3 (257//)
+Thread: %.140s
+;
+MSG_REPORTING_DID_NOT_WORK (258//)
+Reporting did not work: %.250s
+;
+MSG_PASSWORD_CHANGED (259//)
+Password changed.
+;
+MSG_ACCOUNT_DEACTIVATED (260//)
+Account deactivated.
+;
+MSG_THAT_DID_NOT_WORK_2 (261//)
+That did not work: %.280s
+;
+MSG_NO_NAME (262//)
+(no name)
+;
+MSG_WITH_PICTURE (263//)
+ - with picture
+;
+MSG_PROFILE (264//)
+Profile
+;
+MSG_PROFILE_NOT_LOADED (265//)
+Profile not loaded:\n%s
+;
+MSG_WITH_PROFILE_PICTURE (266//)
+with profile picture
+;
+MSG_WITHOUT_PROFILE_PICTURE (267//)
+without profile picture
+;
+MSG_POLL_2 (268//)
+Poll: %.280s
+;
+MSG_THAT_DID_NOT_WORK_3 (269//)
+That did not work:\n%s
+;
+MSG_OFFLINE (270//)
+Offline: %s
+;
+MSG_DRAFT_2 (271//)
+Draft: %.150s
+;
+MSG_REPLACED_2 (272//)
+ (replaced)
+;
+MSG_MUTED_2 (273//)
+ (muted)
+;
+MSG_ABOUT_AMATRIX (274//)
+About Amatrix ...
+;
+MSG_ICONIFY (275//)
+Iconify
+;
+MSG_LOG_OUT (276//)
+Log out
+;
+MSG_QUIT (277//)
+Quit
+;
+MSG_NEW_CHAT (278//)
+New chat ...
+;
+MSG_NEW_ROOM (279//)
+New room ...
+;
+MSG_JOIN_ROOM (280//)
+Join room ...
+;
+MSG_BROWSE_SPACE (281//)
+Browse space ...
+;
+MSG_MEMBERS_AND_SETTINGS (282//)
+Members and settings ...
+;
+MSG_MUTE (283//)
+Mute
+;
+MSG_FAVOURITE_ON_OFF (284//)
+Favourite on/off
+;
+MSG_LOW_PRIORITY_ON_OFF (285//)
+Low priority on/off
+;
+MSG_SEARCH_MESSAGES (286//)
+Search messages ...
+;
+MSG_CREATE_POLL (287//)
+Create poll ...
+;
+MSG_EXPORT_CHAT (288//)
+Export chat ...
+;
+MSG_LEAVE_ROOM (289//)
+Leave room ...
+;
+MSG_QUOTE_2 (290//)
+Quote
+;
+MSG_FORWARD (291//)
+Forward ...
+;
+MSG_COPY (292//)
+Copy
+;
+MSG_COPY_LINK_TO_MESSAGE (293//)
+Copy link to message
+;
+MSG_PIN_ON_OFF (294//)
+Pin on/off
+;
+MSG_EDIT_HISTORY (295//)
+Edit history ...
+;
+MSG_REPORT (296//)
+Report ...
+;
+MSG_PERSON (297//)
+Person
+;
+MSG_DIRECT_MESSAGE (298//)
+Direct message
+;
+MSG_SHOW_PROFILE (299//)
+Show profile ...
+;
+MSG_MENTION (300//)
+Mention
+;
+MSG_COPY_USER_ID (301//)
+Copy user ID
+;
+MSG_IGNORE (302//)
+Ignore ...
+;
+MSG_STOP_IGNORING (303//)
+Stop ignoring
+;
+MSG_REMOVE_FROM_ROOM (304//)
+Remove from room ...
+;
+MSG_BAN_FROM_ROOM (305//)
+Ban from room ...
+;
+MSG_ACCOUNT (306//)
+Account
+;
+MSG_MY_PROFILE (307//)
+My profile ...
+;
+MSG_SESSIONS (308//)
+Sessions ...
+;
+MSG_PASSWORD_AND_ACCOUNT (309//)
+Password and account ...
+;
+MSG_ENTER_SECURITY_KEY (310//)
+Enter security key ...
+;
+MSG_PASSWORD_FOR_AMATRIX_DATA (311//)
+Password for Amatrix data ...
+;
+MSG_SETTINGS (312//)
+Settings
+;
+MSG_SETTINGS_2 (313//)
+Settings ...
+;
+MSG_MUI_SETTINGS (314//)
+MUI settings ...
+;
+MSG_MATRIX_CLIENT (315//)
+Matrix client
+;
+MSG_FILTER_ROOMS_BY_NAME (316//)
+Filter rooms by name
+;
+MSG_NEW_CHAT_2 (317//)
+New _chat
+;
+MSG_NEW_ROOM_2 (318//)
+New _room
+;
+MSG_AMATRIX_LOG_IN (319//)
+Amatrix - Log in
+;
+MSG_SERVER (320//)
+Server:
+;
+MSG_USER (321//)
+User:
+;
+MSG_PASSWORD (322//)
+Password:
+;
+MSG_LOG_IN (323//)
+_Log in
+;
+MSG_NEW_CHAT_3 (324//)
+New chat
+;
+MSG_WITH_WHOM_E_G_NAME (325//)
+With whom? (e.g. @name:server)
+;
+MSG_START_CHAT (326//)
+_Start chat
+;
+MSG_NEW_ROOM_3 (327//)
+New room
+;
+MSG_NAME_2 (328//)
+Name:
+;
+MSG_ENCRYPTED (329//)
+Encrypted:
+;
+MSG_IN_THE_DIRECTORY (330//)
+In the directory:
+;
+MSG_AS_A_SPACE (331//)
+As a space:
+;
+MSG_CRE_ATE_ROOM (332//)
+Cre_ate room
+;
+MSG_JOIN_ROOM_2 (333//)
+Join room
+;
+MSG_SEARCH (334//)
+_Search
+;
+MSG_PREVIEW_2 (335//)
+_Preview
+;
+MSG_JOIN (336//)
+_Join
+;
+MSG_AMATRIX_PASSWORD (337//)
+Amatrix - Password
+;
+MSG_THE_AMATRIX_DATA_LOGIN_KEYS (338//)
+The Amatrix data (login, keys) is\nprotected by a password.
+;
+MSG_UNLOCK (339//)
+_Unlock
+;
+MSG_MY_PROFILE_2 (340//)
+My profile
+;
+MSG_CHANGE_PICTURE (341//)
+Change _picture ...
+;
+MSG_SAVE (342//)
+_Save
+;
+MSG_FORWARD_TO (343//)
+Forward to ...
+;
+MSG_FORWARD_2 (344//)
+_Forward
+;
+MSG_EDIT_HISTORY_2 (345//)
+Edit history
+;
+MSG_CHANGE_PASSWORD (346//)
+Change password
+;
+MSG_OLD_PASSWORD (347//)
+Old password
+;
+MSG_NEW_PASSWORD (348//)
+New password
+;
+MSG_AGAIN (349//)
+Again
+;
+MSG_CHANGE_PASSWORD_2 (350//)
+Change _password
+;
+MSG_DEACTIVATE_ACCOUNT (351//)
+Deactivate account
+;
+MSG_FINAL_THE_ACCOUNT_CAN_NO (352//)
+\33bFinal:\33n the account can no longer be used afterwards,\nthe name is never given out again.
+;
+MSG_PASSWORD_2 (353//)
+Password
+;
+MSG_HAVE_MY_MESSAGES_ERASED (354//)
+Have my messages erased
+;
+MSG_DEACTIVATE_ACCOUNT_2 (355//)
+_Deactivate account ...
+;
+MSG_CREATE_POLL_2 (356//)
+Create poll
+;
+MSG_QUESTION (357//)
+Question
+;
+MSG_ANSWER_1 (358//)
+Answer 1
+;
+MSG_ANSWER_2 (359//)
+Answer 2
+;
+MSG_ANSWER_3 (360//)
+Answer 3
+;
+MSG_ANSWER_4 (361//)
+Answer 4
+;
+MSG_ANSWER_5 (362//)
+Answer 5
+;
+MSG_ANSWER_6 (363//)
+Answer 6
+;
+MSG_SEVERAL_CHOICES_2 (364//)
+Several choices
+;
+MSG_RESULT_ONLY_AT_THE_END (365//)
+Result only at the end
+;
+MSG_SEND (366//)
+_Send
+;
+MSG_JOIN_OPEN (367//)
+_Join/Open
+;
+MSG_ADD_MARKED_ROOM (368//)
+_Add marked room
+;
+MSG_REMOVE (369//)
+_Remove
+;
+MSG_SEARCH_MESSAGES_2 (370//)
+Search messages
+;
+MSG_SESSIONS_2 (371//)
+Sessions
+;
+MSG_RENAME (372//)
+_Rename
+;
+MSG_LOG_OUT_2 (373//)
+_Log out
+;
+MSG_TOPIC (374//)
+Topic
+;
+MSG_JOINING_2 (375//)
+Joining
+;
+MSG_READ_HISTORY (376//)
+Read history
+;
+MSG_NOTIFICATIONS (377//)
+Notifications
+;
+MSG_APPLIES_ON_ALL_YOUR_DEVICES (378//)
+Applies on all your devices (push rules on the server)
+;
+MSG_ENCRYPTED_2 (379//)
+Encrypted
+;
+MSG_PICTURE (380//)
+_Picture ...
+;
+MSG_INVITE (381//)
+_Invite ...
+;
+MSG_LET_IN (382//)
+_Let in
+;
+MSG_REMOVE_2 (383//)
+_Remove
+;
+MSG_BAN (384//)
+_Ban
+;
+MSG_ASSIGN (385//)
+_Assign
+;
+MSG_AMATRIX_SETTINGS (386//)
+Amatrix - Settings
+;
+MSG_NOTIFY (387//)
+Notify
+;
+MSG_FOR (388//)
+for
+;
+MSG_SINGLE_ROOMS_MENU_ROOM_MUTE (389//)
+\33iSingle rooms: menu \"Room/Mute\"
+;
+MSG_CHAT (390//)
+Chat
+;
+MSG_PICTURE_PREVIEW_IN_THE_CHAT (391//)
+Picture preview in the chat
+;
+MSG_WITHOUT_PREVIEW_A_CLICK_ON (392//)
+\33iWithout preview a click on the file symbol\nstill opens the picture.
+;
+MSG_LINK_PREVIEW (393//)
+Link preview
+;
+MSG_ALSO_IN_ENCRYPTED_ROOMS (394//)
+also in encrypted rooms
+;
+MSG_THE_SERVER_FETCHES_THE_PREVIEW (395//)
+\33iThe server fetches the preview - it sees the link then.
+;
+MSG_PRIVACY (396//)
+Privacy
+;
+MSG_SHOW_THAT_I_AM_TYPING (397//)
+Show that I am typing
+;
+MSG_SEND_READ_RECEIPTS (398//)
+Send read receipts
+;
+MSG_STORE_HISTORY_LOCALLY (399//)
+Store history locally
+;
+MSG_KEYWORDS_LIKE_A_MENTION (400//)
+Keywords (like a mention)
+;
+MSG_ADD (401//)
+_Add
+;
+MSG_R_EMOVE (402//)
+R_emove
+;
+MSG_IGNORED_USERS (403//)
+Ignored users
+;
+MSG_STOP_IGNORING_2 (404//)
+Stop _ignoring
+;
+MSG_STARTUP_AND_LOOK (405//)
+Startup and look
+;
+MSG_START_ICONIFIED (406//)
+Start iconified
+;
+MSG_PICTURES_IN_THE_ROOM_LIST (407//)
+Pictures in the room list
+;
+MSG_SHOW_WHO_HAS_READ_WHAT (408//)
+Show who has read what
+;
+MSG_SHOW_JOINS_AND_LEAVES (409//)
+Show joins and leaves
+;
+MSG_24_HOUR_CLOCK (410//)
+24-hour clock
+;
+MSG_COMPACT_NAME_ONLY_ON_CHANGE (411//)
+Compact (name only on change)
+;
+MSG_FONT_AND_COLOURS_MENU_MUI (412//)
+\33iFont and colours: menu \"MUI settings\".
+;
+MSG_PASSWORD_FOR_AMATRIX_DATA_2 (413//)
+Password for Amatrix data
+;
+MSG_PROTECTS_LOGIN_KEYS_AND_SESSIONS (414//)
+Protects login, keys and sessions in the\ndrawer next to the program.  Without the password they\nare useless - it cannot be recovered.
+;
+MSG_AGAIN_2 (415//)
+Again:
+;
+MSG_SET (416//)
+_Set
+;
+MSG_REMOVE_PROTECTION (417//)
+_Remove protection
+;
+MSG_SECURITY_KEY (418//)
+Security key
+;
+MSG_THE_SECURITY_KEY_FROM_ELEMENT (419//)
+The security key from Element (e.g. \33bEsTc 9xYz ...\33n)\nor the security passphrase.  It verifies this device,\nand old messages become readable.
+;
+MSG_INVITE_2 (420//)
+Invite
+;
+MSG_WHOM_E_G_NAME_SERVER (421//)
+Whom? (e.g. @name:server)
+;
+MSG_INVITE_3 (422//)
+_Invite
+;
+MSG_PLEASE_MARK_A_MESSAGE_FROM (423//)
+Please mark a message from another person\nin the chat window first.
+;
+MSG_USER_ID_COPIED (424//)
+User ID copied
+;
+MSG_IGNORE_2 (425//)
+Ignore
+;
+MSG_IGNORE_CANCEL (426//)
+_Ignore|*_Cancel
+;
+MSG_IGNORE_MESSAGES_AND_INVITATIONS_FROM (427//)
+Ignore\n\33c\33b%s\33n?\nMessages and invitations from this\nperson will be hidden.\n(Undo: Person menu or settings)
+;
+MSG_REMOVE_3 (428//)
+Remove
+;
+MSG_BAN_2 (429//)
+Ban
+;
+MSG_REMOVE_CANCEL (430//)
+_Remove|*_Cancel
+;
+MSG_BAN_CANCEL (431//)
+_Ban|*_Cancel
+;
+MSG_REMOVE_FROM_THIS_ROOM (432//)
+Remove\n\33c\33b%s\33n\nfrom this room?
+;
+MSG_BAN_FROM_THIS_ROOM (433//)
+Ban\n\33c\33b%s\33n\nfrom this room?
+;
+MSG_CURRENTLY_PROTECTED_BY_A_PASSWORD (434//)
+Currently protected by a password.
+;
+MSG_CURRENTLY_WITHOUT_A_PASSWORD (435//)
+Currently without a password.
+;
+MSG_PLEASE_MARK_A_MESSAGE_IN (436//)
+Please mark a message in the chat window first.
+;
+MSG_NOTIFICATIONS_APPEAR_VIA_HERALD (437//)
+Notifications appear via Herald.
+;
+MSG_HERALD_IS_NOT_RUNNING_WITHOUT (438//)
+\33bHerald is not running\33n - without Herald (Aminet: util/cdity/Herald)\nAmatrix shows no notifications.
+;
+MSG_PLEASE_CHOOSE_A_SPACE_ABOVE (439//)
+Please choose a space above the room list first.
+;
+MSG_PLEASE_ENTER_YOUR_PASSWORD (440//)
+Please enter your password.
+;
+MSG_DEACTIVATE_CANCEL (441//)
+_Deactivate|*_Cancel
+;
+MSG_REALLY_DEACTIVATE_THE_ACCOUNT_FOR (442//)
+\33cReally deactivate the account\n\33b%s\33n\nfor good?
+;
+MSG_PLEASE_OPEN_A_CHAT_WINDOW (443//)
+Please open a chat window first.
+;
+MSG_EXPORT_CHAT_2 (444//)
+Export chat
+;
+MSG_WHOLE_HISTORY_ONLY_LOADED_CANCEL (445//)
+_Whole history|_Only loaded|*_Cancel
+;
+MSG_WHAT_SHOULD_GO_INTO_THE (446//)
+What should go into the file?\n(ending .html: as a web page, otherwise text)
+;
+MSG_THIS_MESSAGE_WAS_NOT_EDITED (447//)
+This message was not edited.
+;
+MSG_PINNING (448//)
+Pinning ...
+;
+MSG_UNPINNING (449//)
+Unpinning ...
+;
+MSG_LETTING_IN (450//)
+Letting in ...
+;
+MSG_LOG_OUT_NO (451//)
+*_Log out|_No
+;
+MSG_LOG_OUT_THIS_DEVICE_AND (452//)
+Log out? This device and its keys\nwill be deleted.
+;
+MSG_ABOUT_AMATRIX_2 (453//)
+About Amatrix
+;
+MSG_AMATRIX_0_1_MATRIX_WITH (454//)
+\33cAmatrix 0.1\n\nMatrix with end-to-end encryption\nfor the Amiga.\n\n%s
+;
+MSG_NOT_LOGGED_IN (455//)
+not logged in
+;
+MSG_AMATRIX_NEEDS_MUI_5_MUIMASTER (456//)
+Amatrix needs MUI 5 (muimaster.library V20).\n
+;
+MSG_AMATRIX_THE_MUI_INTERFACE_COULD (457//)
+Amatrix: the MUI interface could not be created (NList, BetterString installed?)\n
+;
+MSG_NOT_LOGGED_IN_2 (458//)
+Not logged in
+;
+MSG_DELETED (459//)
+(deleted)
+;
+MSG_MESSAGE_DELETED (460//)
+(message deleted)
+;
+MSG_N_MEMBER (461//)
+%d member
+;
+MSG_N_MEMBERS (462//)
+%d members
+;
+MSG_N_SESSION (463//)
+%d session
+;
+MSG_N_SESSIONS (464//)
+%d sessions
+;
+MSG_DATE_LINE (465//)
+\33c\33i- %s, %d %s %d -
+;
+MSG_FMT_DAY (466//)
+%d %b
+;
+MSG_FMT_DATETIME (467//)
+%d %b %Y %H:%M
+;
+MSG_FMT_DATETIME_SHORT (468//)
+%d %b %y %H:%M
+;
+MSG_FMT_DAYTIME (469//)
+%d %b %H:%M
+;
+MSG_PUBLIC_LC (470//)
+public
+;
+MSG_ON_REQUEST (471//)
+on request
+;
+MSG_INVITATION_ONLY_LC (472//)
+invitation only
+;
+MSG_IS_IN_THE_ROOM (473//)
+is in the room
+;
+MSG_LEFT_THE_ROOM (474//)
+left the room
+;
+MSG_WAS_INVITED (475//)
+was invited
+;
+MSG_WAS_BANNED (476//)
+was banned
+;
+MSG_PASSWORDS_DIFFER (477//)
+The new passwords do not match.
+;
+MSG_REMOVE_FROM_ROOM_Q (478//)
+Remove %s from the room?
+;

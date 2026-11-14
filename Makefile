@@ -101,7 +101,7 @@ $(B)/examples/%: examples/%.c $(B)/libamatrix.a $(B)/libolm.a
 clean:
 	rm -rf build
 
-.PHONY: gui all tests clean richtext-test markdown-test
+.PHONY: gui catalogs all tests clean richtext-test markdown-test
 
 # unit test of the HTML converter of the GUI, on the build machine
 richtext-test:
@@ -119,12 +119,23 @@ GUI_SRC := gui/amatrix.c gui/mui_util.c gui/richtext.c gui/markdown.c
 GUI_CFLAGS = $(CFLAGS) -Wno-attributes -Wno-pointer-sign -finput-charset=UTF-8 -fexec-charset=ISO-8859-1 \
              -I$(MUI_INC) -Icore/include -Igui -I$(CJSON)
 
-gui: $(B)/gui/Amatrix $(B)/gui/muicheck
+gui: $(B)/gui/Amatrix $(B)/gui/muicheck catalogs
+
+# languages: English is built in; catalogs/<language>.ct -> Catalogs/<language>/amatrix.catalog
+CATALOG_LANGS := $(basename $(notdir $(wildcard catalogs/*.ct)))
+catalogs: $(foreach l,$(CATALOG_LANGS),$(B)/catalogs/$(l)/amatrix.catalog)
+
+$(B)/catalogs/%/amatrix.catalog: catalogs/%.ct catalogs/amatrix.cd tools/catalog.py
+	@mkdir -p $(dir $@)
+	python3 tools/catalog.py catalog catalogs/amatrix.cd $< $@
+
+gui/amatrix_strings.h: catalogs/amatrix.cd tools/catalog.py
+	python3 tools/catalog.py header catalogs/amatrix.cd $@
 
 $(MUI_INC)/libraries/mui.h:
 	third_party/fetch-mui.sh
 
-$(B)/gui/Amatrix: $(GUI_SRC) gui/mui_util.h $(MUI_INC)/libraries/mui.h $(B)/libamatrix.a $(B)/libolm.a
+$(B)/gui/Amatrix: $(GUI_SRC) gui/mui_util.h gui/amatrix_strings.h $(MUI_INC)/libraries/mui.h $(B)/libamatrix.a $(B)/libolm.a
 	@mkdir -p $(dir $@)
 	$(CC) $(GUI_CFLAGS) $(GUI_SRC) $(B)/libamatrix.a $(B)/libolm.a $(LIBS) -lamiga -o $@
 	$(STRIP) $@

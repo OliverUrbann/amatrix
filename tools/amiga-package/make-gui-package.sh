@@ -9,6 +9,9 @@ tmp=$(mktemp -d); mkdir "$tmp/Amatrix"
 cp "$top/build/amiga/gui/Amatrix" "$tmp/Amatrix/"
 python3 "$here/make-icon.py" "$tmp/Amatrix/Amatrix.info" 65536
 mkdir -p "$tmp/Amatrix/Icons"
+for c in "$top"/build/amiga/catalogs/*/amatrix.catalog; do          # languages (English is built in)
+    l=$(basename "$(dirname "$c")"); mkdir -p "$tmp/Amatrix/Catalogs/$l"; cp "$c" "$tmp/Amatrix/Catalogs/$l/"
+done
 python3 "$here/make-icon.py" "$tmp/Amatrix/Icons/Amatrix-neu.info" 65536 new   # AppIcon: unread
 iconv -f utf-8 -t latin1 "$here/LiesMich-GUI.utf8.txt" > "$tmp/Amatrix/LiesMich.txt"
 out="$top/build/amiga/amatrix-gui.lha"

@@ -22,6 +22,15 @@ Danach meldet sich Amatrix beim nächsten Start von selbst an (die
 Anmeldung und die Schlüssel liegen in der Schublade "Amatrix-xxxxxxxx"
 neben dem Programm - diese Schublade bitte nicht weitergeben).
 
+Sprache
+-------
+Amatrix spricht Deutsch und Englisch.  Es richtet sich nach den Sprachen in
+den Locale-Voreinstellungen (Deutsch: Catalogs/deutsch/amatrix.catalog
+liegt neben dem Programm, ohne Katalog ist Amatrix englisch).  Eine
+andere Sprache erzwingen: im Icon das Merkmal (Tooltype)
+    LANGUAGE=english
+eintragen, bzw. in der Shell "Amatrix LANGUAGE=english".
+
 Die Menüs
 ---------
 Amatrix:        Über Amatrix, Ikonifizieren, Abmelden, Beenden
