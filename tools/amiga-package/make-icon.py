@@ -180,7 +180,11 @@ def deco_guide(pix, sel):
 
 
 def deco_text(pix, sel):
-    blit(pix, icon_art.mini_logo(), 14 + sel, 5 + sel)
+    blit(pix, icon_art.mini_logo(), 5 + sel, 5 + sel)
+    for k, y in enumerate(range(8, 24, 3)):           # lines of text beside it
+        for x in range(34 + sel, 49 + sel - (5 if k % 3 == 2 else 0)):
+            pix[y + sel][x] = 1
+            pix[y + sel + 1][x] = 2
 
 
 def deco_program(pix, sel, badge=False):
