@@ -5,6 +5,8 @@ Ein kleiner Matrix-Chat im Stil des alten ICQ: links die Liste der Chats
 und Räume mit Bildern, ein Doppelklick öffnet das Chatfenster, Return
 sendet.  Ende-zu-Ende-Verschlüsselung wie bei Element, ohne Proxy.
 
+(English guide: ReadMe.txt)
+
 Voraussetzungen
 ---------------
 - 68020 oder besser (Vampire: bestens)

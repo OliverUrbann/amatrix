@@ -4,6 +4,14 @@ A native Matrix client core for classic AmigaOS (68020+, AmigaOS 3.x /
 ApolloOS), with end-to-end encryption and without a proxy.  Goal: a GUI
 client on top of it; the core may later also become a `matrix.library`.
 
+**Using Amatrix:** the MUI client is packaged as `Amatrix.lha` (with
+`Amatrix.readme` for Aminet).  The guide is
+[ReadMe-GUI.utf8.txt](tools/amiga-package/ReadMe-GUI.utf8.txt) (English) and
+[LiesMich-GUI.utf8.txt](tools/amiga-package/LiesMich-GUI.utf8.txt) (German);
+`tools/amiga-package/make-gui-package.sh` builds the archive and the Aminet
+`.readme` (`Amatrix.readme.txt`; fill in the uploader address first).
+Third-party licences: [third_party/NOTICE.md](third_party/NOTICE.md).
+
 **Status 2026-11-02:** a Vampire V4SA chats end-to-end encrypted with Element
 on matrix.org (receive and send).  The core has been split out into a
 library with an API and is covered by feature tests that run on Linux,

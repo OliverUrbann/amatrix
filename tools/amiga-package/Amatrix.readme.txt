@@ -1,0 +1,62 @@
+Short:        Matrix chat client, E2E encrypted (MUI)
+Uploader:     YOUR@EMAIL (Oliver Urbann)
+Author:       YOUR@EMAIL (Oliver Urbann)
+Type:         comm/misc
+Version:      0.1
+Architecture: m68k-amigaos >= 3.0.0
+Requires:     MUI 5 (NList, BetterString), AmiSSL 5, TCP/IP stack, 68020+
+Distribution: Aminet
+
+Amatrix is a native Matrix client for classic AmigaOS, written in C for
+the 68020 and better (developed and tested on a Vampire V4SA with real
+Kickstart and Workbench 3.9).  It talks to a Matrix server directly:
+no bridge, no proxy.
+
+Matrix is an open protocol for chat (matrix.org); Amatrix works with
+Synapse, Element's servers and others, and chats with Element, FluffyChat
+and so on.  The user interface is MUI in the style of the old ICQ: a list
+of chats and rooms with pictures, a chat window for each room.
+
+Features
+
+- End-to-end encryption (Olm/Megolm) in both directions, key backup and
+  security key, so that encrypted history is readable (libolm, ported)
+- Direct chats, rooms, spaces, invitations, room settings and members
+  with roles, ban/remove, knocking, room upgrades
+- Replies, edits, deletes, threads, reactions, pinned messages, polls,
+  formatted messages (bold, italic, lists, code), Markdown while typing
+- Pictures, files, voice messages: previews in the chat, send by file
+  requester or by dropping Workbench icons into the window
+- Link previews, locations, emojis as small pictures, typing notices and
+  read receipts ("read by ...")
+- Search in all rooms, export a chat as text or HTML, drafts, history
+  kept locally and shown at once at start
+- Notifications through Herald, AppIcon with unread marker when iconified
+- Password for the stored data (AES-256), several sessions, own profile
+- Full ARexx port (AMATRIX.1)
+- English and German (locale.library catalogs); more languages need only
+  a translation file, no programming
+
+Requirements
+
+- 68020 or better; an FPU is recommended
+- MUI 5 with NList.mcc and BetterString.mcc (MUI 5 "contrib")
+- AmiSSL 5.x and a TCP/IP stack with bsdsocket.library
+- Optional: Herald (util/cdity/Herald), openurl.library, opusdec
+
+Installation
+
+Unpack the archive and double click Amatrix.  At the first start enter
+server, user name and password (the password is not stored).  The drawer
+Amatrix-xxxxxxxx that appears next to the program holds your login and
+keys - protect it with a password (menu Account) and do not pass it on.
+See ReadMe.txt (English) or LiesMich.txt (Deutsch) for all functions.
+
+Not included: video and voice calls, device verification by emoji
+comparison (entering the security key verifies the device).
+
+Source code and bug reports: https://github.com/OliverUrbann/Amatrix
+
+History
+
+0.1  First release.
