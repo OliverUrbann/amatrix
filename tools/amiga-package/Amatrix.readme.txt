@@ -78,8 +78,18 @@ Element: Settings > Sessions) Amatrix shows up as a device of its own.
 The very first login takes a little longer, because the device has to
 create its encryption keys.  The status line then reads "Online - @alice:
 matrix.org", and the room list fills.  From the second start on Amatrix
-logs in by itself.  Accounts that can only be used through single sign-on
-(a "Continue with ..." button instead of a password) are not supported.
+logs in by itself.
+
+Only the login with a password is supported.  Accounts that are used
+through single sign-on (a "Continue with Google/GitHub/..." button instead
+of a password field) or through the newer browser login of some servers
+cannot log in, because that needs a web page and a hand-over back to the
+program.  Often there is a way round it: if your account has no password
+yet, set one in Element (Settings > Account > Change password, or on the
+server's own account page; with SSO accounts it is sometimes called "Set
+password").  If the server allows it, you can then log in with user name
+and that password.  Some servers switched password logins off for good;
+there Amatrix cannot be used with that account at the moment.
 
 2. Why you should set a password for the Amatrix data
 
@@ -733,8 +743,19 @@ lungen > Sitzungen) erscheint Amatrix als eigenes Gerät.  Die allererste
 Anmeldung dauert etwas länger, weil das Gerät seine Schlüssel erzeugen
 muss.  Danach steht in der Statuszeile "Online - @alice:matrix.org" und
 die Raumliste füllt sich.  Ab dem zweiten Start meldet sich Amatrix von
-selbst an.  Konten, die nur über Single Sign-on benutzbar sind (ein
-Knopf "Weiter mit ..." statt eines Passworts), werden nicht unterstützt.
+selbst an.
+
+Unterstützt wird nur die Anmeldung mit Passwort.  Konten, die über Single
+Sign-on benutzt werden (ein Knopf "Weiter mit Google/GitHub/..." statt
+eines Passwortfelds) oder über die neuere Browser-Anmeldung mancher
+Server, können sich nicht anmelden, denn dafür braucht es eine Webseite
+und die Übergabe zurück an das Programm.  Oft gibt es einen Ausweg: Hat
+dein Konto noch kein Passwort, vergib in Element eines (Einstellungen >
+Konto > Passwort ändern, oder auf der Konto-Seite des Servers; bei SSO-
+Konten heißt es manchmal "Passwort festlegen").  Erlaubt der Server es,
+kannst du dich dann mit Benutzername und diesem Passwort anmelden.  Manche
+Server haben Passwort-Anmeldungen ganz abgeschaltet; dort lässt sich
+Amatrix mit diesem Konto derzeit nicht benutzen.
 
 2. Warum man ein Passwort für die Amatrix-Daten vergeben sollte
 
