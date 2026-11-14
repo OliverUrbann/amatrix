@@ -140,7 +140,7 @@ def blit(pix, art, x0, y0):
             if pen and 0 <= y0 + y < len(pix) and 0 <= x0 + x < len(pix[0]): pix[y0 + y][x0 + x] = pen
 
 
-def from_template(name, wbtype, tool, decorate):
+def from_template(name, wbtype, tool, decorate, stack=4096):
     """a MagicWB template icon (templates/NAME.info) with our logo drawn in;
     its tool types (the artist's credit) are kept"""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -152,7 +152,7 @@ def from_template(name, wbtype, tool, decorate):
     gadget = struct.pack(">IhhhhHHHIIIIIHI", 0, 0, 0, w, h + 1, 0x0006, 0x0003, 0x0001, 1, 1, 0, 0, 0, 0, 1)
     disk = struct.pack(">HH", 0xE310, 1) + gadget + struct.pack(
         ">BBIIiiIII", wbtype, 0, 1 if tool else 0, 1 if t["tooltypes"] else 0,
-        -0x80000000, -0x80000000, 1 if t["dd"] else 0, 0, 4096)
+        -0x80000000, -0x80000000, 1 if t["dd"] else 0, 0, stack)
     dt = b""
     if tool:
         s = tool.encode("latin-1") + b"\0"
@@ -180,11 +180,18 @@ def deco_guide(pix, sel):
 
 
 def deco_text(pix, sel):
-    blit(pix, icon_art.mini_logo(), 5 + sel, 5 + sel)
-    for k, y in enumerate(range(8, 24, 3)):           # lines of text beside it
-        for x in range(34 + sel, 49 + sel - (5 if k % 3 == 2 else 0)):
-            pix[y + sel][x] = 1
-            pix[y + sel + 1][x] = 2
+    blit(pix, icon_art.mini_logo(), 14 + sel, 5 + sel)
+
+
+def deco_program(pix, sel, badge=False):
+    blit(pix, icon_art.mini_logo(), 14 + sel, 5 + sel)
+    if badge:                                         # unread: a pink disc with "!"
+        cx, cy = 43 + sel, 9 + sel
+        for y in range(-4, 5):
+            for x in range(-4, 5):
+                d = x * x + y * y
+                if d <= 18: pix[cy + y][cx + x] = 1 if d > 11 else 7
+        for y in (-2, -1, 0, 2): pix[cy + y][cx] = 1
 
 
 def main():
@@ -199,7 +206,7 @@ def main():
         data = from_template("Guide", 4, "SYS:Utilities/MultiView", deco_guide)
     else:
         badge = kind == "new"
-        data = build(icon_art.draw(badge=badge), icon_art.selected(badge=badge), 3, stack)
+        data = from_template("Plate", 3, None, lambda pix, sel: deco_program(pix, sel, badge), stack)
     with open(out, "wb") as f:
         f.write(data)
 
