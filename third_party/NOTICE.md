@@ -1,5 +1,8 @@
 # Third-party code
 
+Amatrix itself (everything outside this directory) is MIT licensed, see
+`../LICENSE`.  The code below keeps its own licences.
+
 | Directory | What | Licence |
 |---|---|---|
 | `libolm/` | libolm 3.2.16 (Olm/Megolm), patched for AmigaOS, see `libolm-amiga/` | Apache-2.0 (`libolm/LICENSE`) |

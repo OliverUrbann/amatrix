@@ -286,6 +286,10 @@ Matrix.org Foundation; Element is a trademark of Element.
 Source code, bug reports, how to add a language:
 https://github.com/OliverUrbann/Amatrix
 
+Licence: MIT, Copyright (c) 2026 Oliver Urbann.  Free to use, copy, modify
+and distribute; provided as is, without warranty.  The full text is in the
+source repository (LICENSE).
+
 === Deutsch ===
 
 Amatrix ist ein nativer Matrix-Client für das klassische AmigaOS, in C
@@ -543,6 +547,10 @@ Bekannte Fehler
   ist in Ordnung; nach einem vollständigen Neuzeichnen ist es richtig.
 
 Quellcode und Fehlermeldungen: https://github.com/OliverUrbann/Amatrix
+
+Lizenz: MIT, Copyright (c) 2026 Oliver Urbann.  Frei nutz-, kopier-, änder-
+und weitergebbar; ohne Gewährleistung.  Der volle Text liegt im
+Quellcode-Repository (LICENSE).
 
 History / Verlauf
 

@@ -95,3 +95,9 @@ tests/gui/run_gui.py                     # the MUI client, in FS-UAE
 The runner starts its own private Synapse, registers fresh users and runs
 each feature's C test against an independent E2EE client.  Details in
 [tests/README.md](tests/README.md).
+
+## Licence
+
+Amatrix is released under the [MIT licence](LICENSE).  The third-party code
+in `third_party/` keeps its own licences, see
+[third_party/NOTICE.md](third_party/NOTICE.md).
