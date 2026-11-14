@@ -5,7 +5,8 @@ palette (3 bitplanes), with a second image for the selected state.
     make-icon.py OUT.info [STACK] [new]
 
 "new": the AppIcon for unread messages (a pink badge on the bubble);
-"drawer": a drawer icon; "text": a document icon for ReadMe files.
+"drawer": a drawer icon; "text": a document icon for ReadMe/guide files -
+both in the classic 4-colour style of the Workbench default icons.
 The picture is drawn in icon_art.py.
 
 After the classic planar images an OS 3.5 colour icon follows (IFF FORM
@@ -21,11 +22,11 @@ import icon_art
 DEPTH = 3
 
 
-def planes(art):
+def planes(art, depth=DEPTH):
     w, h = len(art[0]), len(art)
     words = (w + 15) // 16
     out = b""
-    for bit in range(DEPTH):
+    for bit in range(depth):
         for row in art:
             data = bytearray(words * 2)
             for x, pen in enumerate(row):
@@ -35,9 +36,9 @@ def planes(art):
     return w, h, out
 
 
-def image(art):
-    w, h, data = planes(art)
-    head = struct.pack(">hhhhhIBBI", 0, 0, w, h, DEPTH, 1, (1 << DEPTH) - 1, 0, 0)
+def image(art, depth=DEPTH):
+    w, h, data = planes(art, depth)
+    head = struct.pack(">hhhhhIBBI", 0, 0, w, h, depth, 1, (1 << depth) - 1, 0, 0)
     assert len(head) == 20
     return w, h, head + data
 
@@ -70,16 +71,19 @@ def colour_icon(art1, art2):
     return b"FORM" + struct.pack(">I", len(body)) + body
 
 
-def build(art1, art2, wbtype=3, stack=65536, tool=None, drawer=False):
-    """WBTOOL=3, WBDRAWER=2, WBPROJECT=4; tool = DefaultTool of a project"""
-    w, h, img1 = image(art1)
-    _, _, img2 = image(art2)
+def build(art1, art2, wbtype=3, stack=65536, tool=None, drawer=False, classic=False):
+    """WBTOOL=3, WBDRAWER=2, WBPROJECT=4; tool = DefaultTool of a project.
+    classic: 4 colours in the standard palette, no OS 3.5 colour image (looks
+    the same on every Workbench); art2 None: selected = complemented"""
+    depth = 2 if classic else DEPTH
+    w, h, img1 = image(art1, depth)
+    img2 = image(art2, depth)[2] if art2 else b""
     gadget = struct.pack(">IhhhhHHHIIIIIHI",
                          0, 0, 0, w, h + 1,
-                         0x0006,          # GADGIMAGE | GADGHIMAGE: second image when selected
+                         0x0006 if art2 else 0x0004,   # GADGIMAGE (+GADGHIMAGE: own selected image, else complement)
                          0x0003,          # RELVERIFY | GADGIMMEDIATE
                          0x0001,          # BOOLGADGET
-                         1, 1, 0, 0, 0,   # GadgetRender, SelectRender (non-zero = images follow)
+                         1, 1 if art2 else 0, 0, 0, 0,   # GadgetRender, SelectRender (non-zero = images follow)
                          0,
                          1)               # UserData: revision 1 (OS 2 icon)
     assert len(gadget) == 44
@@ -99,7 +103,7 @@ def build(art1, art2, wbtype=3, stack=65536, tool=None, drawer=False):
     if tool:
         s = tool.encode("latin-1") + b"\0"
         dt = struct.pack(">I", len(s)) + s
-    return disk + dd + img1 + img2 + dt + colour_icon(art1, art2)
+    return disk + dd + img1 + img2 + dt + (b"" if classic else colour_icon(art1, art2))
 
 
 def main():
@@ -107,10 +111,11 @@ def main():
     stack = int(sys.argv[2]) if len(sys.argv) > 2 else 65536
     kind = sys.argv[3] if len(sys.argv) > 3 else ""
     if kind == "drawer":
-        data = build(icon_art.drawer(False), icon_art.drawer(True), 2, 4096, drawer=True)
+        data = build(icon_art.std_drawer(False), icon_art.std_drawer(True), 2, 4096, drawer=True,
+                     classic=True)
     elif kind == "text":
-        data = build(icon_art.document(False), icon_art.document(True), 4, 4096,
-                     tool="SYS:Utilities/MultiView")
+        data = build(icon_art.std_document(), None, 4, 4096, tool="SYS:Utilities/MultiView",
+                     classic=True)
     else:
         badge = kind == "new"
         data = build(icon_art.draw(badge=badge), icon_art.selected(badge=badge), 3, stack)

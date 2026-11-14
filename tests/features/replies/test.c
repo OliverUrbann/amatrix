@@ -56,6 +56,8 @@ int main(int argc, char **argv)
     MXT_OK(amx_send_edit(c, room, mine, "Antwort korrigiert", NULL) == 0, "edited our reply");
     m.body = "fertig";
     MXT_OK(mxt_sync_until(c, mxt_have_message, &m, 240), "the rest arrived");
+    e = mxt_find(AMX_EV_MESSAGE, room, a.peer, "aussen");
+    MXT_OK(e && e->reply_to && !strcmp(e->reply_to, orig_id), "reply with the relation only outside the encryption");
     e = by_type_body(AMX_EV_EDIT, "Original bearbeitet", -1);
     MXT_OK(e && e->relates_to && !strcmp(e->relates_to, orig_id), "the peer's edit (AMX_EV_EDIT)");
     e = mxt_find(AMX_EV_MESSAGE, room, a.peer, "gleich weg");

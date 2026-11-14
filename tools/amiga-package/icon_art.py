@@ -117,3 +117,52 @@ def document(selected=False):
     for k, y in enumerate(range(13, h - 7, 4)):       # lines of text
         _rect(c, 5, y, w - 9 - (6 if k % 3 == 2 else 0), y + 1, 4)
     return c
+
+
+# ---- classic 4-colour icons (OS 2/3 standard palette: 0 grey, 1 black,
+# 2 white, 3 blue) - look the same on every Workbench, whatever its palette
+
+def std_drawer(opened=False):
+    """a drawer in the style of the Workbench default drawer icon;
+    opened: the drawer pulled out (selected image)"""
+    d, F, H = 5, 37, 14                  # depth, front width-1, front height-1
+    w, h = F + d + 1, d + H + 1 + 4
+    c = [[0] * w for _ in range(h)]
+    for y in range(d + 1):               # top face
+        for x in range(d - y, F + d - y + 1):
+            put(c, x, y, 1 if y in (0, d) or x in (d - y, F + d - y) else 2)
+    for x in range(F, F + d + 1):        # right side face, dark
+        top = d - (x - F)
+        for y in range(top, top + H + 1): put(c, x, y, 1)
+    fy = d + (4 if opened else 0)
+    if opened:                           # dark opening, the drawer in front
+        _rect(c, 0, d, F, fy, 1)
+    _rect(c, 0, fy, F, fy + H, 1)        # front panel
+    _rect(c, 1, fy + 1, F - 1, fy + H - 1, 0)
+    _rect(c, 1, fy + 1, F - 1, fy + 1, 2)
+    _rect(c, 1, fy + 1, 1, fy + H - 1, 2)
+    hx = F // 2
+    _rect(c, hx - 7, fy + 5, hx + 7, fy + 8, 1)    # handle
+    _rect(c, hx - 6, fy + 6, hx + 6, fy + 7, 3)
+    _rect(c, hx - 7, fy + 9, hx + 7, fy + 9, 2)
+    return c
+
+
+def std_document():
+    """a page with a folded corner and lines of text, like the Workbench
+    default project icon"""
+    w, h, f = 30, 34, 8
+    c = [[0] * w for _ in range(h)]
+    cx = w - 1 - f                       # where the fold starts
+    for y in range(h):
+        for x in range(w):
+            if x > cx + y: continue                      # cut-off corner
+            edge = x in (0, w - 1) or y in (0, h - 1) or x == cx + y
+            put(c, x, y, 1 if edge else 2)
+    for y in range(f + 1):               # the folded-over flap
+        for x in range(cx, cx + y + 1):
+            put(c, x, y, 1 if x == cx or y == f or x == cx + y else 0)
+    _rect(c, 4, 5, 15, 6, 3)             # heading
+    for k, y in enumerate(range(12, h - 4, 3)):         # text lines
+        _rect(c, 4, y, w - 5 - (7 if k % 3 == 2 else 0), y, 1)
+    return c

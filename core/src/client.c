@@ -319,7 +319,7 @@ int amx_logout(AmxClient *c)
 {
     static const char *files[] = { "login.json", "account", "keys_uploaded", "olm_sessions",
                                    "megolm_sessions", "megolm_out.json", "since", "rooms.json",
-                                   "direct.json", "backup.json", "store.json", "history_cache.json", "pushrules.json", NULL };
+                                   "direct.json", "backup.json", "store.json", "history_cache.json", "history_cache2.json", "pushrules.json", NULL };
     cJSON *body = cJSON_CreateObject(), *r = amx__api_ok(c, "POST", "/logout", body);
     int i;
     cJSON_Delete(body);

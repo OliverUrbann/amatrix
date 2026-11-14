@@ -48,6 +48,16 @@ async def peer(ctx):
         "msgtype": "m.text", "body": "**fett**", "format": "org.matrix.custom.html",
         "formatted_body": "<strong>fett</strong>", "m.mentions": {"user_ids": [ctx.target]}},
         ignore_unverified_devices=True)
+    # a reply whose relation is only in the clear part of the encrypted event
+    # (as some clients send it): inner content without m.relates_to
+    import uuid
+    from nio.api import Api
+    from nio.responses import RoomSendResponse
+    enc = p.c.olm.group_encrypt(room, {"type": "m.room.message",
+                                       "content": {"msgtype": "m.text", "body": "aussen"}})
+    enc["m.relates_to"] = {"m.in_reply_to": {"event_id": orig}}
+    method, path, data = Api.room_send(p.c.access_token, room, "m.room.encrypted", enc, str(uuid.uuid4()))
+    await p.c._send(RoomSendResponse, method, path, data, (room,))
     await p.send(room, "fertig")
     # the client writes in the thread
     ok = await p.wait(lambda: p.got(room, ctx.target, "Thread-Antwort"), 180 * ctx.scale)

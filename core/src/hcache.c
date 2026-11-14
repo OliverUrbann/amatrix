@@ -4,7 +4,8 @@
  * (passphrase) the file is encrypted like everything else. */
 #include "amx_internal.h"
 
-#define HC_FILE "history_cache.json"
+#define HC_FILE "history_cache2.json"   /* 2: replies of encrypted messages fixed */
+#define HC_OLD "history_cache.json"
 #define HC_PER_ROOM 40                 /* messages kept per room */
 #define HC_ROOMS 60                    /* rooms kept (the most recently active) */
 
@@ -12,6 +13,12 @@ static void hc_load(AmxClient *c)
 {
     char *t;
     if (c->hc) return;
+    {                                   /* an older cache may lack replies: away with it */
+        char *p = amx__malloc(strlen(c->store) + sizeof HC_OLD + 2);
+        sprintf(p, "%s/%s", c->store, HC_OLD);
+        remove(p);
+        free(p);
+    }
     t = amx__read_store(c, HC_FILE);
     c->hc = t ? cJSON_Parse(t) : NULL;
     free(t);

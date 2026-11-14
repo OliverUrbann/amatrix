@@ -494,7 +494,10 @@ static void emit_message(AmxClient *c, const char *room_id, const cJSON *ev, con
         return;                                         /* other types: later features */
     } else {
         const cJSON *rel = cJSON_GetObjectItemCaseSensitive(content, "m.relates_to");
-        const char *rt = amx__jstr(rel, "rel_type");
+        const char *rt;
+        if (!rel)       /* encrypted: some clients put the relation (reply, edit, thread) only outside */
+            rel = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(ev, "content"), "m.relates_to");
+        rt = amx__jstr(rel, "rel_type");
         memset(&e, 0, sizeof e);
         if (rt && !strcmp(rt, "m.replace") && amx__jstr(rel, "event_id")) {      /* an edit */
             const cJSON *nc = cJSON_GetObjectItemCaseSensitive(content, "m.new_content");
