@@ -5,8 +5,8 @@ palette (3 bitplanes), with a second image for the selected state.
     make-icon.py OUT.info [STACK] [new]
 
 "new": the AppIcon for unread messages (a pink badge on the bubble);
-"drawer": a drawer icon; "text": a document icon for ReadMe/guide files -
-both in the classic 4-colour style of the Workbench default icons.
+"drawer", "text", "guide": the drawer, readme and AmigaGuide icons - MagicWB
+template icons (templates/*.info) with the small Amatrix logo drawn in.
 The picture is drawn in icon_art.py.
 
 After the classic planar images an OS 3.5 colour icon follows (IFF FORM
@@ -106,16 +106,97 @@ def build(art1, art2, wbtype=3, stack=65536, tool=None, drawer=False, classic=Fa
     return disk + dd + img1 + img2 + dt + (b"" if classic else colour_icon(art1, art2))
 
 
+def parse_info(data):
+    """a classic .info: header fields and the images as rows of pens"""
+    g = struct.unpack(">IhhhhHHHIIIIIHI", data[4:48])
+    typ, _, deftool, tooltypes, _, _, drawerdata, _, stack = struct.unpack(">BBIIiiIII", data[48:78])
+    off = 78
+    dd = b""
+    if drawerdata:
+        dd = data[off:off + 56]; off += 56
+    images = []
+    for has in (g[8], g[9]):
+        if not has: continue
+        _, _, w, h, d = struct.unpack(">hhhhh", data[off:off + 10])
+        bpr = (w + 15) // 16 * 2
+        raw = data[off + 20:off + 20 + bpr * h * d]
+        pix = [[0] * w for _ in range(h)]
+        for b in range(d):
+            for y in range(h):
+                row = raw[(b * h + y) * bpr:(b * h + y + 1) * bpr]
+                for x in range(w):
+                    if row[x // 8] & (0x80 >> (x % 8)): pix[y][x] |= 1 << b
+        images.append(pix)
+        off += 20 + bpr * h * d
+    rest = data[off:]
+    if deftool:                                       # skip the template's default tool
+        n = struct.unpack(">I", rest[:4])[0]; rest = rest[4 + n:]
+    return dict(dd=dd, images=images, tooltypes=rest if tooltypes else b"")
+
+
+def blit(pix, art, x0, y0):
+    for y, row in enumerate(art):
+        for x, pen in enumerate(row):
+            if pen and 0 <= y0 + y < len(pix) and 0 <= x0 + x < len(pix[0]): pix[y0 + y][x0 + x] = pen
+
+
+def from_template(name, wbtype, tool, decorate):
+    """a MagicWB template icon (templates/NAME.info) with our logo drawn in;
+    its tool types (the artist's credit) are kept"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    t = parse_info(open(os.path.join(here, "templates", name + ".info"), "rb").read())
+    a1, a2 = t["images"]
+    decorate(a1, False); decorate(a2, True)
+    w, h, img1 = image(a1)
+    _, _, img2 = image(a2)
+    gadget = struct.pack(">IhhhhHHHIIIIIHI", 0, 0, 0, w, h + 1, 0x0006, 0x0003, 0x0001, 1, 1, 0, 0, 0, 0, 1)
+    disk = struct.pack(">HH", 0xE310, 1) + gadget + struct.pack(
+        ">BBIIiiIII", wbtype, 0, 1 if tool else 0, 1 if t["tooltypes"] else 0,
+        -0x80000000, -0x80000000, 1 if t["dd"] else 0, 0, 4096)
+    dt = b""
+    if tool:
+        s = tool.encode("latin-1") + b"\0"
+        dt = struct.pack(">I", len(s)) + s
+    return disk + t["dd"] + img1 + img2 + dt + t["tooltypes"] + colour_icon(a1, a2)
+
+
+def pink_shift(a1, a2):
+    """how far the selected image of a template is moved (by its pink pixels)"""
+    def first(a):
+        for y, row in enumerate(a):
+            for x, pen in enumerate(row):
+                if pen == 7: return x, y
+        return 0, 0
+    (x1, y1), (x2, y2) = first(a1), first(a2)
+    return x2 - x1, y2 - y1
+
+
+def deco_drawer(pix, sel):
+    blit(pix, icon_art.mini_logo(both=False), 30 + (-3 if sel else 0), 5 + (2 if sel else 0))
+
+
+def deco_guide(pix, sel):
+    blit(pix, icon_art.mini_logo(), 7 + sel, 5 + sel)
+
+
+def deco_text(pix, sel):
+    blit(pix, icon_art.mini_logo(), 5 + sel, 5 + sel)
+    for k, y in enumerate(range(8, 24, 3)):           # lines of text beside it
+        for x in range(34 + sel, 49 + sel - (5 if k % 3 == 2 else 0)):
+            pix[y + sel][x] = 1
+            pix[y + sel + 1][x] = 2
+
+
 def main():
     out = sys.argv[1]
     stack = int(sys.argv[2]) if len(sys.argv) > 2 else 65536
     kind = sys.argv[3] if len(sys.argv) > 3 else ""
     if kind == "drawer":
-        data = build(icon_art.std_drawer(False), icon_art.std_drawer(True), 2, 4096, drawer=True,
-                     classic=True)
+        data = from_template("Drawer", 2, None, deco_drawer)
     elif kind == "text":
-        data = build(icon_art.std_document(), None, 4, 4096, tool="SYS:Utilities/MultiView",
-                     classic=True)
+        data = from_template("Plate", 4, "SYS:Utilities/MultiView", deco_text)
+    elif kind == "guide":
+        data = from_template("Guide", 4, "SYS:Utilities/MultiView", deco_guide)
     else:
         badge = kind == "new"
         data = build(icon_art.draw(badge=badge), icon_art.selected(badge=badge), 3, stack)

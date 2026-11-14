@@ -73,7 +73,9 @@ Credits and licences
 Amatrix uses libolm (Apache-2.0), cJSON (MIT), stb_image (public domain),
 the AmiSSL SDK (Apache-2.0) and the MUI SDK (not included).  Their texts
 are in the source tree (third_party/).  Matrix is an open standard of the
-Matrix.org Foundation; Element is a trademark of Element.
+Matrix.org Foundation; Element is a trademark of Element.  The drawer,
+readme and guide icons are based on MagicWB icons by Martin Huttenloher
+and Mario Cattaneo.
 
 Source code, bug reports, how to add a language:
 https://github.com/OliverUrbann/Amatrix
@@ -167,6 +169,8 @@ Amatrix benutzt libolm (Apache-2.0), cJSON (MIT), stb_image (Public
 Domain), das AmiSSL-SDK (Apache-2.0) und das MUI-SDK (nicht enthalten).
 Die Texte liegen im Quellbaum (third_party/).  Matrix ist ein offener
 Standard der Matrix.org Foundation; Element ist eine Marke von Element.
+Die Icons für Schublade, Readme und Guide beruhen auf MagicWB-Icons von
+Martin Huttenloher und Mario Cattaneo.
 
 Quellcode, Fehlermeldungen, Sprache hinzufügen:
 https://github.com/OliverUrbann/Amatrix

@@ -21,7 +21,7 @@ iconv -f utf-8 -t latin1 "$here/Amatrix.readme.txt" > "$tmp/Amatrix/Amatrix.read
 python3 "$here/make-icon.py" "$tmp/Amatrix/Amatrix.readme.info" 4096 text     # text icon, opens in MultiView
 python3 "$here/mkguide.py" en "$tmp/Amatrix/Amatrix.guide" >/dev/null           # AmigaGuide manual (en, de)
 python3 "$here/mkguide.py" de "$tmp/Amatrix/Amatrix.de.guide" >/dev/null
-for g in Amatrix.guide Amatrix.de.guide; do python3 "$here/make-icon.py" "$tmp/Amatrix/$g.info" 4096 text; done
+for g in Amatrix.guide Amatrix.de.guide; do python3 "$here/make-icon.py" "$tmp/Amatrix/$g.info" 4096 guide; done
 python3 "$here/make-icon.py" "$tmp/Amatrix.info" 4096 drawer                  # the drawer itself
 # Aminet: Short <= 40 characters, lines <= 78
 short=$(sed -n 's/^Short: *//p' "$here/Amatrix.readme.txt")
