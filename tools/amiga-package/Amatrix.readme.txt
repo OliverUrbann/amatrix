@@ -45,7 +45,7 @@ Features
 
 Requirements
 ------------
-- 68020 or better (Vampire: perfect)
+- 68020 or better
 - MUI 5 (muimaster.library V20) with NList.mcc and BetterString.mcc
   (both are in the MUI 5 "contrib" package)
 - AmiSSL 5 and a running TCP/IP stack (Roadshow, AmiTCP, ...)
@@ -57,15 +57,98 @@ Installation
 Copy the drawer "Amatrix" wherever you like.  Nothing else is needed; the
 program, its icon and the language catalogs are all inside the drawer.
 
-Start
------
-Double click "Amatrix".  On the first start a window asks for
-  Server:    e.g. https://matrix.org
-  User:      e.g. alice
-  Password:  is not stored
-After that Amatrix logs in by itself on the next start (the login and the
-keys are kept in the drawer "Amatrix-xxxxxxxx" next to the program - please
-do not give this drawer to anybody).
+First start
+-----------
+Double click "Amatrix".  Three things happen the first time: you log in,
+you should protect the stored data with a password, and you can verify the
+new device so that old encrypted messages become readable.
+
+1. Logging in
+
+The login window asks for
+  Server:    the address of your Matrix homeserver including https://,
+             e.g. https://matrix.org - the same address other Matrix
+             clients ask for as "homeserver"
+  User:      your user name, e.g. alice
+  Password:  the password of your Matrix account
+Amatrix uses the password once to log in and does not store it.  What it
+keeps instead is the login of this device (an access token) and the keys
+this device made for the encryption.  In your account's session list (in
+Element: Settings > Sessions) Amatrix shows up as a device of its own.
+The very first login takes a little longer, because the device has to
+create its encryption keys.  The status line then reads "Online - @alice:
+matrix.org", and the room list fills.  From the second start on Amatrix
+logs in by itself.  Accounts that can only be used through single sign-on
+(a "Continue with ..." button instead of a password) are not supported.
+
+2. Why you should set a password for the Amatrix data
+
+All of this is kept in a drawer named "Amatrix-xxxxxxxx" next to the
+program: the login, the private encryption keys of this device, the keys
+of your rooms and the latest messages of every room.  Whoever gets a copy
+of that drawer can read your encrypted rooms as you.  Without a password
+the files in it are plain.  With one they are encrypted (AES-256-GCM, the
+key is derived from your password); then a copy of the drawer is useless
+without it.
+
+Set it in the menu Account, "Password for Amatrix data ...".  It is not
+your Matrix password and the server never sees it; you make it up, at
+least 4 characters, and type it twice.  From then on Amatrix asks for it
+at every start (a small window "Password for the Amatrix data needed"),
+before it logs in.  The same menu item can remove the protection again.  It
+is worth doing whenever other people can reach your Amiga or its disk,
+when the drawer lies on a network drive, or when it ends up in backups.
+
+There is no way to get a forgotten password back.  Then log out (or
+delete the drawer), start Amatrix again and log in anew; the old keys are
+gone, but your account is not affected, and with the security key (next
+section) the old messages become readable again.  Not covered by the
+password: pictures you open are copied to T:Amatrix for the viewer, and
+the small avatar pictures are kept as they are.
+
+3. Verifying this device - different from other clients
+
+A new device is "unverified" until your account vouches for it: other
+people's clients show a warning shield for its messages, and Amatrix
+cannot read messages that were sent before it existed, because it does not
+have their keys.  Element and most other clients verify a new device by
+comparing emojis (or scanning a QR code) with another device.  Amatrix
+does not do that.  It verifies in a different way: you type in your
+security key.
+
+Where you get it: it is the key of your "secure backup" (also called
+recovery key or security key).  In Element it is shown once when you set
+the backup up, a long string in groups of four characters starting with
+"EsTc" (Element: Settings > Security & Privacy > Secure Backup, in newer
+versions Settings > Encryption).  If you set a security phrase instead of
+a key, you can type that phrase.  If you have not set up a secure backup
+yet, do it in Element first - Amatrix cannot create one.
+
+Then choose the menu Account, "Enter security key ...", type the key (or
+the phrase) and press Enter.  Amatrix opens your account's secret storage
+with it and does two things:
+  - it signs this device with your account's cross-signing key.  From
+    then on this device counts as verified: the warning disappears in
+    Element and everywhere else, and the status line says "(verified)";
+  - it fetches the key of your key backup (and keeps it in the drawer, so
+    protected by the password of section 2).  Whenever you open a room,
+    Amatrix now loads the old room keys from the backup and decrypts the
+    older messages.  Before that they read "(encrypted, no key on this
+    device)".
+The key is checked against the server's secret storage, so a wrong key is
+refused ("Wrong key or passphrase").  A security phrase takes a few
+minutes on the Amiga to check; the key itself is fast.  The messages
+"There is no key backup on the server" and "Verifying was not possible
+(cross-signing not set up?)" tell you that the account has no backup or no
+cross-signing yet; set it up in Element and try again.  You only need to
+do this once per login.  The window Account > Sessions shows which of
+your devices are verified.
+
+If another client sends Amatrix a verification request (the emoji
+comparison), Amatrix does not answer it; cancel it there and use the
+security key instead.  Treat the key like a password: type it in, do not
+keep it in a file on the Amiga - Amatrix does not store it, only the
+backup key derived from it.
 
 Language
 --------
@@ -80,30 +163,15 @@ The translations other than German and English are machine-assisted and
 not reviewed by native speakers yet - corrections are welcome.  More
 languages: a translation is one text file, see the source on GitHub.
 
-The menus
----------
-Amatrix:        About Amatrix, Iconify, Log out, Quit
-Room:           New chat, New room, Join room, Browse space, Members and
-                settings, Mute, Favourite, Low priority, Search messages,
-                Create poll, Export chat, Leave room
-                (acts on the room selected in the list, or on the active
-                chat window)
-Message:        Quote, Forward, Copy, Copy link to message, Pin,
-                Edit history, Report
-                (acts on the message selected in the chat window)
-Person:         Direct message, Show profile, Mention, Copy user ID,
-                Ignore / Stop ignoring, Remove from room, Ban from room
-                (acts on the sender of the selected message, not on your
-                own; removing and banning only in rooms, and the server
-                decides whether you may)
-Account:        My profile, Sessions, Password and account, Enter security
-                key, Password for Amatrix data
-Settings:       Settings, MUI settings
-What is not possible right now (no message selected, no room chosen) is
-greyed out.
-
 Using it
 --------
+The menu bar has six menus: Amatrix (about, iconify, log out, quit), Room,
+Message, Person, Account and Settings.  Room items act on the room that is
+selected in the list (or on the active chat window), Message items on the
+message selected in a chat window, Person items on the sender of that
+message (never on yourself).  Whatever does not apply right now is greyed
+out.  What the items do:
+
 - List:       Chats and rooms with a picture; below it the last message
               (or topic, members, invitation), the time on the right;
               (n) = unread messages; a double click opens the chat or,
@@ -113,24 +181,38 @@ Using it
               of one space.  Favourites (star) are on top, low priority
               rooms at the bottom (menu "Favourite on/off", Amiga-F, and
               "Low priority on/off").
-- New chat:   direct chat with a user (@name:server, or just "name")
-- New room:   name, encrypted, in the directory; can also create a space
-- Menu "Join room ...": search public rooms or enter #alias:server; with
+- New chat (Amiga-N): a private chat with one person.  Enter their Matrix
+              ID (@name:server) or, if they are on your server, just the
+              name.  The chat is end-to-end encrypted.  The other person
+              gets an invitation and sees your messages once they accept;
+              a chat that already exists is opened instead of making a
+              second one.
+- New room (Amiga-A): a room for several people.  You give it a name and
+              choose: "Encrypted" (end-to-end encryption, cannot be turned
+              off again later), "In the directory" (the room is listed in
+              the public room directory so anybody can find and join it),
+              "As a space" (a collection of rooms instead of a chat room).
+- Menu "Join room ..." (Amiga-R): search the public rooms of your server
+              or enter #alias:server to join a room you know; with
               "Preview" you read the history without joining (if the room
-              allows it)
-- Menu "Enter security key ...": type the security key from Element
-              (EsTc ...) or the security passphrase.  Afterwards this
-              device is verified (no warning in Element), and old messages
-              are decrypted from the key backup when you open a room.  A
-              passphrase takes some minutes on the Amiga, the key is fast.
-- Menu "Password for Amatrix data ...": protects the login, keys and
-              sessions in the drawer "Amatrix-xxxxxxxx" with a password
-              (AES-256).  Amatrix asks for it at start.  Forgotten = the
-              data is useless (then log out and log in again).
-- Menu "Log out": logs this device out and deletes its keys
-- Menu "My profile ..." (Amiga-O): display name and profile picture
-- Menu "Sessions ..." (Amiga-G): your logged-in devices, whether they are
-              verified, rename them, log others out (needs the password)
+              allows it).
+- Menu "Enter security key ...": verifies this device and makes old
+              messages readable, see "First start", section 3.
+- Menu "Password for Amatrix data ...": encrypts the drawer
+              "Amatrix-xxxxxxxx" with a password of your choice, see
+              "First start", section 2.
+- Menu "Log out": logs this device out of your account (it disappears from
+              the session list) and deletes the drawer's login and keys.
+              Your account and its messages are not touched.  Logging in
+              again creates a new device; the security key makes the old
+              messages readable again.
+- Menu "My profile ..." (Amiga-O): change your display name and profile
+              picture (PNG, JPEG or GIF).  Everybody who shares a room
+              with you sees them.
+- Menu "Sessions ..." (Amiga-G): all devices logged in to your account,
+              with their last activity and whether they are verified.
+              You can rename them, and log out others (after typing your
+              Matrix password), e.g. a lost phone.
 - Menu "Search messages ..." (Amiga-D): in all rooms or the selected one.
               The server searches unencrypted rooms, for encrypted rooms
               only the history stored on the Amiga is searched.  A double
@@ -256,8 +338,9 @@ Notifications, iconify, settings
   is not running there are none.  They appear for new messages when the
   window of the room is not in front or Amatrix is iconified.  A double
   click on the notification opens the chat.
-- Menu Room/Mute (Amiga-M) for the chosen room: no notifications, the list
-  says "(muted)".
+- Menu Room/Mute (Amiga-M) for the chosen room: no notifications from that
+  room (useful for busy rooms); the list says "(muted)".  The menu item
+  again turns notifications back on.
 - Menu "Iconify" (Amiga-I) or the iconify symbol in the window: Amatrix
   becomes an AppIcon on the Workbench.  With unread messages it gets a
   pink exclamation mark (Icons/Amatrix-neu); the window title shows the
@@ -304,7 +387,7 @@ und Räume mit Bildern, pro Raum ein Chatfenster.
 
 Voraussetzungen
 ---------------
-- 68020 oder besser (Vampire: bestens)
+- 68020 oder besser
 - MUI 5 (muimaster.library V20) mit NList.mcc und BetterString.mcc
   (beide im MUI-5-Paket "contrib" enthalten)
 - AmiSSL 5 und ein laufender TCP/IP-Stack (Roadshow, AmiTCP, ...)
@@ -314,15 +397,108 @@ Installation
 Die Schublade "Amatrix" an einen beliebigen Ort kopieren.  Mehr ist nicht
 nötig; Programm, Icon und Sprachkataloge liegen alle darin.
 
-Start
------
-Doppelklick auf "Amatrix".  Beim ersten Start fragt ein Fenster nach
-  Server:    z.B. https://matrix.org
-  Benutzer:  z.B. alice
-  Passwort:  wird nicht gespeichert
-Danach meldet sich Amatrix beim nächsten Start von selbst an (die
-Anmeldung und die Schlüssel liegen in der Schublade "Amatrix-xxxxxxxx"
-neben dem Programm - diese Schublade bitte nicht weitergeben).
+Erster Start
+------------
+Doppelklick auf "Amatrix".  Beim ersten Mal geht es um drei Dinge: sich
+anmelden, die gespeicherten Daten mit einem Passwort schützen und das neue
+Gerät verifizieren, damit alte verschlüsselte Nachrichten lesbar werden.
+
+1. Anmelden
+
+Das Anmeldefenster fragt nach
+  Server:    der Adresse deines Matrix-Servers mit https://, z.B.
+             https://matrix.org - dieselbe Adresse, die andere
+             Matrix-Clients als "Homeserver" verlangen
+  Benutzer:  dein Benutzername, z.B. alice
+  Passwort:  das Passwort deines Matrix-Kontos
+Amatrix benutzt das Passwort einmal zum Anmelden und speichert es nicht.
+Gespeichert wird stattdessen die Anmeldung dieses Geräts (ein Zugriffs-
+token) und die Schlüssel, die dieses Gerät für die Verschlüsselung
+erzeugt hat.  In der Sitzungsliste deines Kontos (in Element: Einstel-
+lungen > Sitzungen) erscheint Amatrix als eigenes Gerät.  Die allererste
+Anmeldung dauert etwas länger, weil das Gerät seine Schlüssel erzeugen
+muss.  Danach steht in der Statuszeile "Online - @alice:matrix.org" und
+die Raumliste füllt sich.  Ab dem zweiten Start meldet sich Amatrix von
+selbst an.  Konten, die nur über Single Sign-on benutzbar sind (ein
+Knopf "Weiter mit ..." statt eines Passworts), werden nicht unterstützt.
+
+2. Warum man ein Passwort für die Amatrix-Daten vergeben sollte
+
+Alles Gespeicherte liegt in einer Schublade "Amatrix-xxxxxxxx" neben dem
+Programm: die Anmeldung, die privaten Schlüssel dieses Geräts, die
+Schlüssel deiner Räume und die letzten Nachrichten jedes Raums.  Wer eine
+Kopie dieser Schublade bekommt, kann deine verschlüsselten Räume als du
+lesen.  Ohne Passwort liegen die Dateien darin im Klartext.  Mit
+Passwort sind sie verschlüsselt (AES-256-GCM, der Schlüssel wird aus
+deinem Passwort abgeleitet); eine Kopie der Schublade nützt dann ohne
+das Passwort nichts.
+
+Eingestellt wird es im Menü Konto, "Passwort für Amatrix-Daten ...".  Es
+ist nicht dein Matrix-Passwort, und der Server sieht es nie; du denkst es
+dir aus (mindestens 4 Zeichen) und gibst es zweimal ein.  Ab dann fragt
+Amatrix bei jedem Start danach (ein kleines Fenster "Passwort für die
+Amatrix-Daten nötig"), noch bevor es sich anmeldet.  Derselbe
+Menüpunkt kann den Schutz wieder entfernen.  Es lohnt sich, sobald andere
+Zugriff auf den Amiga oder seine Platte haben, wenn die Schublade auf
+einem Netzlaufwerk liegt oder in Sicherungen landet.
+
+Ein vergessenes Passwort lässt sich nicht zurückholen.  Dann abmelden
+(oder die Schublade löschen), Amatrix neu starten und neu anmelden; die
+alten Schlüssel sind weg, dein Konto aber nicht betroffen, und mit dem
+Sicherheitsschlüssel (nächster Abschnitt) werden alte Nachrichten wieder
+lesbar.  Nicht vom Passwort erfasst: Bilder, die du öffnest, werden für
+den Betrachter nach T:Amatrix kopiert, und die kleinen Profilbilder
+bleiben unverändert.
+
+3. Dieses Gerät verifizieren - anders als in anderen Clients
+
+Ein neues Gerät gilt als "nicht verifiziert", bis dein Konto für es
+bürgt: Clients anderer Leute zeigen bei seinen Nachrichten ein
+Warnschild, und Amatrix kann Nachrichten, die vor seiner Einrichtung
+gesendet wurden, nicht lesen, weil ihm deren Schlüssel fehlen.  Element
+und die meisten anderen Clients verifizieren ein neues Gerät durch einen
+Emoji-Vergleich (oder QR-Code) mit einem anderen Gerät.  Amatrix macht
+das nicht.  Es verifiziert auf einem anderen Weg: du tippst deinen
+Sicherheitsschlüssel ein.
+
+Woher: Es ist der Schlüssel deiner "sicheren Sicherung" (auch
+Wiederherstellungsschlüssel oder Sicherheitsschlüssel genannt).  In
+Element wird er einmal angezeigt, wenn du die Sicherung einrichtest, eine
+lange Zeichenfolge in Vierergruppen, die mit "EsTc" beginnt (Element:
+Einstellungen > Sicherheit & Datenschutz > Sichere Sicherung, in neueren
+Versionen Einstellungen > Verschlüsselung).  Hast du statt eines
+Schlüssels eine Sicherheitsphrase festgelegt, tippst du diese.  Hast du
+noch keine sichere Sicherung, richte sie zuerst in Element ein - Amatrix
+kann keine anlegen.
+
+Dann im Menü Konto "Sicherheitsschlüssel eingeben ..." wählen, den
+Schlüssel (oder die Phrase) tippen und Return drücken.  Amatrix öffnet
+damit den geheimen Speicher deines Kontos und tut zwei Dinge:
+  - es signiert dieses Gerät mit dem Cross-Signing-Schlüssel deines
+    Kontos.  Ab dann gilt das Gerät als verifiziert: die Warnung ver-
+    schwindet in Element und überall sonst, und die Statuszeile zeigt
+    "(verifiziert)";
+  - es holt den Schlüssel deiner Schlüsselsicherung (und behält ihn in
+    der Schublade, geschützt durch das Passwort aus Abschnitt 2).  Wenn
+    du einen Raum öffnest, lädt Amatrix jetzt die alten Raumschlüssel aus
+    der Sicherung und entschlüsselt die älteren Nachrichten.  Vorher
+    stehen dort "(verschlüsselt, kein Schlüssel auf diesem Gerät)".
+Der Schlüssel wird gegen den geheimen Speicher des Servers geprüft; ein
+falscher wird abgelehnt ("Falscher Schlüssel bzw. falsche Passphrase").
+Eine Sicherheitsphrase braucht auf dem Amiga einige Minuten zum Prüfen,
+der Schlüssel selbst geht schnell.  Die Meldungen "Auf dem Server gibt es
+keine Schlüsselsicherung" und "Verifizieren war nicht möglich
+(Cross-Signing nicht eingerichtet?)" sagen dir, dass das Konto noch keine
+Sicherung bzw. kein Cross-Signing hat; richte es in Element ein und
+versuche es noch einmal.  Das ist nur einmal pro Anmeldung nötig.  Das
+Fenster Konto > Sitzungen zeigt, welche deiner Geräte verifiziert sind.
+
+Schickt dir ein anderer Client eine Verifizierungsanfrage (den
+Emoji-Vergleich), beantwortet Amatrix sie nicht; brich sie dort ab und
+nimm stattdessen den Sicherheitsschlüssel.  Behandle den Schlüssel wie ein
+Passwort: eintippen, nicht in einer Datei auf dem Amiga aufbewahren -
+Amatrix speichert ihn nicht, nur den daraus abgeleiteten Sicherungs-
+schlüssel.
 
 Sprache
 -------
@@ -338,32 +514,16 @@ Die Übersetzungen außer Deutsch und Englisch sind maschinell erstellt und
 noch nicht von Muttersprachlern geprüft - Korrekturen willkommen.  Weitere
 Sprachen: eine Übersetzung ist eine Textdatei, siehe Quellcode auf GitHub.
 
-Die Menüs
----------
-Amatrix:        Über Amatrix, Ikonifizieren, Abmelden, Beenden
-Raum:           Neuer Chat, Neuer Raum, Raum betreten, Space durchstöbern,
-                Mitglieder und Einstellungen, Stummschalten, Favorit,
-                Niedrige Priorität, Nachrichten suchen, Umfrage erstellen,
-                Chat exportieren, Raum verlassen
-                (wirkt auf den Raum, der in der Liste markiert ist, bzw.
-                auf das aktive Chatfenster)
-Nachricht:      Zitieren, Weiterleiten, Kopieren, Link kopieren, Anpinnen,
-                Bearbeitungsverlauf, Melden
-                (wirkt auf die im Chatfenster markierte Nachricht)
-Person:         Direktnachricht, Profil anzeigen, Erwähnen, Benutzer-ID
-                kopieren, Ignorieren / Nicht mehr ignorieren, Aus dem Raum
-                werfen, Im Raum sperren
-                (wirkt auf den Absender der markierten Nachricht, nicht auf
-                die eigenen; Rauswerfen und Sperren nur in Räumen, und der
-                Server entscheidet, ob du das darfst)
-Konto:          Eigenes Profil, Sitzungen, Passwort und Konto,
-                Sicherheitsschlüssel eingeben, Passwort für Amatrix-Daten
-Einstellungen:  Einstellungen, MUI-Einstellungen
-Was gerade nicht geht (keine Nachricht markiert, kein Raum gewählt), ist
-grau.
-
 Bedienung
 ---------
+Die Menüleiste hat sechs Menüs: Amatrix (Info, Ikonifizieren, Abmelden,
+Beenden), Raum, Nachricht, Person, Konto und Einstellungen.  Punkte im
+Menü Raum wirken auf den Raum, der in der Liste markiert ist (bzw. auf das
+aktive Chatfenster), Punkte im Menü Nachricht auf die im Chatfenster
+markierte Nachricht, Punkte im Menü Person auf den Absender dieser
+Nachricht (nie auf dich selbst).  Was gerade nicht geht, ist grau.  Was
+die Punkte tun:
+
 - Liste:      Chats und Räume mit Bild; darunter die letzte Nachricht
               (bzw. Thema, Mitglieder, Einladung), rechts die Uhrzeit;
               (n) = ungelesene Nachrichten; Doppelklick öffnet den Chat
@@ -373,23 +533,41 @@ Bedienung
               Räume eines Space.  Favoriten (Stern) stehen oben, Räume mit
               niedriger Priorität unten (Menü "Favorit an/aus", Amiga-F,
               und "Niedrige Priorität an/aus").
-- Neuer Chat: Direktchat mit einem Nutzer (@name:server oder nur "name")
-- Neuer Raum: Name, verschlüsselt, im Verzeichnis
-- Menü "Raum betreten ...": öffentliche Räume suchen oder #alias:server
-- Menü "Sicherheitsschlüssel eingeben ...": den Sicherheitsschlüssel aus
-              Element (EsTc ...) oder die Sicherheits-Passphrase eintippen.
-              Danach ist dieses Gerät verifiziert (keine Warnung in Element),
-              und alte Nachrichten werden beim Öffnen eines Raums aus der
-              Schlüsselsicherung entschlüsselt.  Eine Passphrase braucht auf
-              dem Amiga einige Minuten, der Schlüssel geht schnell.
-- Menü "Passwort für Amatrix-Daten ...": schützt Anmeldung, Schlüssel und
-              Sitzungen in der Schublade "Amatrix-xxxxxxxx" mit einem
-              Passwort (AES-256).  Amatrix fragt dann beim Start danach.
-              Vergessen = Daten unbrauchbar (dann abmelden/neu anmelden).
-- Menü "Abmelden": meldet dieses Gerät ab und löscht seine Schlüssel
-- Menü "Eigenes Profil ..." (Amiga-O): Anzeigename und Profilbild
-- Menü "Sitzungen ..." (Amiga-G): deine angemeldeten Geräte, ob sie
-              verifiziert sind, umbenennen, andere abmelden (mit Passwort)
+- Neuer Chat (Amiga-N): ein privater Chat mit einer Person.  Gib ihre
+              Matrix-ID (@name:server) ein oder, wenn sie auf deinem
+              Server ist, nur den Namen.  Der Chat ist Ende-zu-Ende-
+              verschlüsselt.  Die Person bekommt eine Einladung und sieht
+              deine Nachrichten, sobald sie annimmt; gibt es den Chat
+              schon, wird er geöffnet statt einen zweiten anzulegen.
+- Neuer Raum (Amiga-A): ein Raum für mehrere Leute.  Du gibst einen Namen
+              an und wählst: "Verschlüsselt" (Ende-zu-Ende-Verschlüsselung,
+              lässt sich später nicht wieder abschalten), "Im Verzeichnis"
+              (der Raum steht im öffentlichen Raumverzeichnis, jeder kann
+              ihn finden und betreten), "Als Space" (eine Sammlung von
+              Räumen statt eines Chatraums).
+- Menü "Raum betreten ..." (Amiga-R): die öffentlichen Räume deines
+              Servers durchsuchen oder #alias:server eingeben, um einem
+              bekannten Raum beizutreten; mit "Vorschau" liest man den
+              Verlauf, ohne beizutreten (wenn der Raum das erlaubt).
+- Menü "Sicherheitsschlüssel eingeben ...": verifiziert dieses Gerät und
+              macht alte Nachrichten lesbar, siehe "Erster Start",
+              Abschnitt 3.
+- Menü "Passwort für Amatrix-Daten ...": verschlüsselt die Schublade
+              "Amatrix-xxxxxxxx" mit einem Passwort deiner Wahl, siehe
+              "Erster Start", Abschnitt 2.
+- Menü "Abmelden": meldet dieses Gerät von deinem Konto ab (es
+              verschwindet aus der Sitzungsliste) und löscht Anmeldung und
+              Schlüssel der Schublade.  Dein Konto und seine Nachrichten
+              bleiben unberührt.  Beim nächsten Anmelden entsteht ein
+              neues Gerät; mit dem Sicherheitsschlüssel sind die alten
+              Nachrichten wieder lesbar.
+- Menü "Eigenes Profil ..." (Amiga-O): Anzeigename und Profilbild (PNG,
+              JPEG oder GIF) ändern.  Alle, die einen Raum mit dir teilen,
+              sehen sie.
+- Menü "Sitzungen ..." (Amiga-G): alle an deinem Konto angemeldeten Geräte
+              mit letzter Aktivität und Verifizierungsstatus.  Du kannst
+              sie umbenennen und andere abmelden (nach Eingabe deines
+              Matrix-Passworts), z.B. ein verlorenes Handy.
 - Menü "Nachrichten suchen ..." (Amiga-D): in allen Räumen oder dem
               markierten.  Unverschlüsselte Räume durchsucht der Server,
               verschlüsselte nur der auf dem Amiga gespeicherte Verlauf.
@@ -527,7 +705,8 @@ Benachrichtigungen, Ikonifizieren, Einstellungen
   das Fenster des Raums nicht vorne ist oder Amatrix ikonifiziert ist.  Ein
   Doppelklick auf die Benachrichtigung öffnet den Chat.
 - Menü Raum/Stummschalten (Amiga-M) für den gewählten Raum: keine
-  Benachrichtigungen, in der Liste steht "(stumm)".
+  Benachrichtigungen aus diesem Raum (praktisch bei lebhaften Räumen), in
+  der Liste steht "(stumm)".  Derselbe Menüpunkt schaltet sie wieder ein.
 - Menü "Ikonifizieren" (Amiga-I) oder das Ikonifizieren-Symbol im Fenster:
   Amatrix wird ein AppIcon auf der Workbench.  Bei ungelesenen Nachrichten
   bekommt es ein rosa Ausrufezeichen (Icons/Amatrix-neu); der Fenstertitel
