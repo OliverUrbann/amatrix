@@ -277,15 +277,8 @@ out.  What the items do:
               ARexx: REACT <room> heart (thumbsup, thumbsdown, heart,
               smile, joy, confused, eyes, tada, rocket).
 
-ARexx port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE,
-STATUS, CHATLINES, UNREADABLE, OLDER, FIRSTLINE, UNREAD, ROOMLINE,
-RECOVERY, UNLOCK, STOREPASS, CHATSTATUS, CLOSECHAT, REACT, REACTIONS,
-PICKER, LEAVE, LASTLINE, MEDIA, SAVEMEDIA, OPENMEDIA, LINKS, OPENLINK,
-REPLY, EDITLAST, DELETELAST, TEXTS, OPENTHREAD, THREADSAY, MUTE, SENDFILE,
-COPY, CLIP, TYPE, TYPING, READ, ROOMINFO, MEMBERS, INFOSTATE, INFOSET,
-INFOMEMBER, PROFILE, PROFILESTATE, PREVIEWS, SETOPTION, SESSIONS,
-SESSIONLIST, SESSIONSET, CHATCACHED, FILTER, SPACE, ROOMS, FAVOURITE, FIND,
-HITS, QUIT; plus MUI's own such as HIDE and SHOW).
+ARexx port: AMATRIX.1 - all commands are described in "ARexx reference"
+below.
 
 Warning: after you enter the security key, the drawer "Amatrix-xxxxxxxx"
 also holds the key to the key backup.  Best protect it with a password
@@ -351,6 +344,317 @@ Notifications, iconify, settings
   read receipts, store history locally, pictures in the room list, start
   iconified (also with the argument HIDE).
 - Menu "MUI settings ...": font, colours etc. for Amatrix.
+
+ARexx reference
+===============
+
+Amatrix has an ARexx port named AMATRIX.1.  It lets scripts do what you do
+with the mouse, and read back what the windows show.  Every command runs
+the same code as the matching menu item, button or key.
+
+Example (rexx, e.g. from Shell: rx hello.rexx):
+
+    /* hello.rexx */
+    OPTIONS RESULTS
+    ADDRESS AMATRIX.1
+    'STATUS'              /* "Online - @me:matrix.org|rooms=3|invites=0" */
+    SAY RESULT
+    'SAY Test hello from ARexx'    /* sends it to the room Test */
+    'LASTLINE Test'
+    SAY RESULT
+
+Conventions
+- Without OPTIONS RESULTS the result strings are not delivered.
+- Return codes: 0 done; 5 not found (no such room, window not open, no
+  message to act on); 10 not possible now (not logged in, invitation not
+  accepted yet, no browser, ...).  The commands that only read a value
+  return 0 and put it into RESULT.
+- ROOM is the name of the room as shown in the room list (upper and lower
+  case do not matter) or its Matrix room ID (!abc:server).  A ROOM/F
+  argument takes the rest of the line, so room names with spaces need no
+  quotes; where more arguments follow (ROOM/A), put the name in quotes.
+  The window of a directory preview is addressed with the room name
+  "Vorschau" where a command says so.
+- Lists in results are separated by "|".  Text colours and styles of the
+  chat window (escape sequences) are shown as "^" where text is returned.
+- Texts are ISO-8859-1.  [ ] marks an optional keyword; /S is a switch.
+- The names of commands are not abbreviated.  Besides these commands MUI
+  adds its own, e.g. HIDE and SHOW (iconify/restore) and QUIT.
+
+--- Status, room list ----------------------------------------------------
+
+STATUS
+    RESULT: the status line of the main window, then "rooms=N" (rooms in
+    the list) and "invites=N" (open invitations), separated by "|".
+ROOMS
+    RESULT: the room list as shown (filter and space selection applied),
+    names separated by "|"; a "*" after a name marks a favourite.
+ROOMLINE ROOM/F
+    RESULT: the second line of the room's list entry (last message, draft,
+    "(3)" unread count with "@" for mentions, "(muted)", "(replaced)").
+UNREAD ROOM/F
+    RESULT: number of unread messages of the room; -1 if there is no such
+    room.
+FILTER TEXT/F
+    Types TEXT into the filter field above the room list; no text clears
+    it.
+SPACE NAME/F
+    Chooses the space in the selection above the room list; no name
+    selects "All rooms".  RC 5 if you are not in a space of that name.
+FAVOURITE ROOM/A,OFF/S
+    Makes ROOM a favourite (star); with OFF takes it back.
+MUTE ROOM/A,OFF/S
+    Mutes ROOM (no notifications); OFF switches them back on.  This is a
+    setting on the server and holds for all your devices.
+NOTIFYLEVEL ROOM/A,LEVEL/N
+    Sets the notification level of ROOM (0 default, 1 all messages, 2 only
+    mentions and keywords, 3 off) and returns the level in RESULT.  Without
+    LEVEL it only returns it.
+KEYWORD WORD/A,OFF/S
+    Adds WORD to the notification keywords (treated like a mention); OFF
+    removes it.
+KEYWORDS
+    RESULT: the keywords.
+
+--- Chats and rooms --------------------------------------------------
+
+NEWCHAT USER/A
+    Starts an encrypted direct chat with USER (@name:server or just name);
+    opens the existing one if there is one.  RC 10 if not logged in.
+NEWROOM NAME/A
+    Creates an encrypted room NAME (not listed in the directory).
+ACCEPT ROOM/F
+    Accepts the invitation to ROOM.  RC 5 if there is none.
+INVITE ROOM/A,USER/A
+    Invites USER to ROOM, as the toolbar button does.
+LEAVE ROOM/F
+    Leaves ROOM for good, without the safety question.
+OPENCHAT ROOM/F
+    Opens the chat window of ROOM and brings it to the front (also leaves
+    iconify).  RC 10 if it is an invitation that is not accepted yet.
+CLOSECHAT ROOM/F
+    Closes the chat window, as the close gadget does.
+CHATSTATUS ROOM/F
+    RESULT: the busy/status text of the chat window ("Loading older
+    messages ...", "Sending ..." or empty).
+CHATLINES ROOM/F
+    RESULT: number of lines in the chat window (a wrapped message has
+    several); -1 if no window is open.
+CHATCACHED ROOM/F
+    RESULT: how many of the shown messages came from the local history
+    cache rather than from the server.
+OLDER ROOM/F
+    Loads 20 older messages, as the arrow button does.  RC 10 if the button
+    is greyed out (nothing older).
+REPLACED ROOM/F
+    RESULT: the name of the room that replaced ROOM after a room upgrade,
+    "(no bar)" if the window does not show the bar yet, "" if not replaced.
+GOREPLACEMENT ROOM/F
+    Clicks on the bar "This room was replaced" and goes to the new room.
+
+--- Writing -------------------------------------------------------------
+
+SAY ROOM/A,TEXT/A/F
+    Sends TEXT to ROOM as if typed into the input field and Return was
+    pressed (so Markdown, :emoji: and /commands work); opens the window if
+    needed.
+TYPE ROOM/A,TEXT/F
+    Puts TEXT into the input field without sending it; no text empties the
+    field.
+INPUT ROOM/F
+    RESULT: the text in the input field.
+SENDINPUT ROOM/F
+    Sends the input field's text, as Return does.
+DRAFT ROOM/F
+    RESULT: the saved draft of the room ("" if none).
+REPLY ROOM/A,TEXT/F
+    Answers the newest message of somebody else in ROOM with TEXT.
+EDITLAST ROOM/A,TEXT/F
+    Replaces your newest message in ROOM by TEXT (an edit).
+EDITUP ROOM/F
+    Like cursor up in an empty input field: loads your newest message for
+    editing.
+DELETELAST ROOM/F
+    Deletes your newest message in ROOM for everyone, without the question.
+SENDFILE ROOM/A,FILE/A,THREAD/S
+    Sends the picture or file FILE to ROOM (as if chosen in the file
+    requester); THREAD: into the open thread window of ROOM.
+POLL ROOM/A,QUESTION/A,ANSWERS/A,MULTI/S,HIDE/S
+    Creates a poll.  ANSWERS is one string with the answers separated by
+    "|".  MULTI allows several choices, HIDE shows the result only at the
+    end.
+VOTE ROOM/A,N/N/A
+    Votes for answer N (0, 1, ...) of the newest poll in ROOM; N = 255 ends
+    the poll (your own).
+REACT ROOM/A,NAME/A
+    Reacts to the newest message of somebody else in ROOM with NAME:
+    thumbsup, thumbsdown, heart, smile, joy, confused, eyes, tada or
+    rocket.  The same again takes the reaction back.  RC 10 for an unknown
+    NAME or if there is no such message.
+OPENTHREAD ROOM/F
+    Opens the thread window of the newest message that has a thread.
+    RC 10 if there is none.
+THREADSAY ROOM/A,TEXT/F
+    Like SAY, but in the open thread window of ROOM.
+SUGGEST ROOM/F
+    RESULT: the completion suggestions currently shown for a started @name
+    or :emoji: in the input field.
+COMPLETE ROOM/A,N/N/A
+    Picks suggestion N (0, 1, ...) of the list.
+
+--- Reading what a chat window shows --------------------------------------
+
+LASTLINE ROOM/F
+    RESULT: the text of the newest line.  The room "Vorschau" addresses a
+    directory preview window.
+FIRSTLINE ROOM/F
+    RESULT: the text of the oldest message line (no date separator).
+TEXTS ROOM/A,N/N,THREAD/S
+    RESULT: the last N lines (default 10), separated by "|".  THREAD reads
+    the thread window instead.
+VISIBLE ROOM/F
+    RESULT: "m|f|text": m is the line number of the "new messages" marker
+    (-1 if none), f the number of the first line that is visible, then
+    its text.
+ATBOTTOM ROOM/F
+    RESULT: 1 if the newest line is visible, otherwise 0.
+TYPING ROOM/F
+    RESULT: who is typing, as shown in the toolbar.
+READ ROOM/F
+    RESULT: how many of your messages in ROOM carry the check mark (read).
+READERS ROOM/F
+    RESULT: the "read by ..." lines of the window, separated by "|".
+UNREADABLE ROOM/F
+    RESULT: number of messages that could not be decrypted yet.
+REACTIONS ROOM/F
+    RESULT: the reaction lines as "name count" pairs ("heart 2*": a star
+    marks your own reaction), the lines separated by " | ".
+PREVIEWS ROOM/F
+    RESULT: the link preview lines, separated by "|".
+POLLROWS ROOM/F
+    RESULT: the answer lines of all polls ("<X>" marks your choice).
+PINBAR ROOM/F
+    RESULT: the text of the pinned-messages bar ("" if hidden).
+MEDIA ROOM/F
+    RESULT: the attachments as "name:state:strips", separated by "|"; state
+    1 loading, 2 shown, 3 no preview.
+LINKS ROOM/F
+    RESULT: the links of the window, separated by blanks.
+
+--- Working on a message -----------------------------------------------
+
+MARK ROOM/A,TEXT/F
+    Marks (selects) the newest message of ROOM that contains TEXT.  RC 5 if
+    there is none.  MARK is the way to choose the message that ACTION, COPY
+    and the Message and Person menus work on.
+ACTION ROOM/A,WHAT/A,TO/F
+    Does a menu action on the marked message.  WHAT is one of
+        pin         pins it, or unpins it if it is pinned
+        quote       starts a reply with the quote in the input field
+        copylink    copies the link to the message
+        edithist    opens the edit history (see EDITHIST)
+        mention     puts an @mention of its sender into the input field
+        copyid      copies the sender's user ID
+        report      reports it to the server admins, TO is the reason
+        forward     forwards it to the room named in TO
+    RC 5 if no message is marked or WHAT is unknown.
+EDITHIST
+    RESULT: the rows of the open edit history window, separated by "|".
+COPY ROOM/F
+    Copies the text of the marked message (else the newest) to the
+    clipboard.
+CLIP
+    RESULT: the text on the clipboard.
+SAVEMEDIA ROOM/A,N/N/A,PATH/A
+    Saves attachment N (0, 1, ... as in MEDIA) to PATH.
+OPENMEDIA ROOM/A,N/N/A
+    Opens attachment N with the default viewer.
+OPENLINK ROOM/A,N/N/A
+    Opens link N of LINKS in the browser; RC 10 if no browser was found.
+
+--- Room settings, members, export -------------------------------------
+
+ROOMINFO ROOM/F
+    Opens the "Members and settings" window of ROOM.
+INFOSTATE
+    RESULT: what that window shows: "name|topic|join|history|encrypted|
+    status" (join: invite, public or knock; history: shared, invited,
+    joined or world_readable; encrypted: 1 or 0).
+INFOSET WHAT/A,VALUE/F
+    Changes a setting in that window and saves it.  WHAT is name, topic,
+    join or history, VALUE the new text or one of the values above.
+MEMBERS
+    RESULT: the members listed in the window as "name:role", separated by
+    "|"; a banned or invited member has " gesperrt" or " eingeladen"
+    appended.
+INFOMEMBER N/N/A,ACTION/A,LEVEL/N
+    Selects member N (0, 1, ...) in that window and does ACTION: kick, ban,
+    unban or role (LEVEL 0 member, 1 moderator, 2 admin), without
+    questions.  The server decides whether you are allowed to.
+EXPORT ROOM/A,PATH/A,ALL/S
+    Writes the chat to the file PATH (.html: as a web page, otherwise
+    text).  ALL loads the whole history first, otherwise only what is
+    loaded is exported.
+
+--- Account, settings -------------------------------------------------
+
+RECOVERY KEY/F
+    Enters the security key or passphrase (Account menu, see "First
+    start").
+UNLOCK PASS/F
+    Types the password for the Amatrix data into the unlock window shown at
+    start.  RC 5 if that window is not open.
+STOREPASS PASS/F
+    Sets the password for the Amatrix data; no text removes the
+    protection.
+PROFILE NAME/K,PICTURE/K
+    Opens the profile window; NAME sets the display name, PICTURE the
+    profile picture (path of a PNG, JPEG or GIF).
+PROFILESTATE
+    RESULT: "name|picture|status" of the profile window (picture 1 or 0).
+SESSIONS
+    Opens the sessions window.
+SESSIONLIST
+    RESULT: the devices as "name:id:state", state current, verified or
+    unverified, separated by "|".
+SESSIONSET N/N/A,NAME/K,PASSWORD/K
+    Renames device N (0, 1, ... as in SESSIONLIST) with NAME, and/or logs
+    it out with PASSWORD (your Matrix password).  RC 10 for this device.
+PASSWORD OLD/A,NEW/A
+    Changes the Matrix password, as the account window does.
+ACCOUNTSTATE
+    RESULT: the status line of that window.
+SETOPTION NAME/A,VALUE/N/A
+    Sets an option of the settings window to VALUE (0 or 1), without
+    saving it: linkprev, linkprev_enc (link preview, also in encrypted
+    rooms), typing, previews, avatars, joins, 24h, compact.  RC 5 for an
+    unknown NAME.
+MENUON TITLE/F
+    RESULT: 1 if the menu item whose title starts with TITLE can be chosen
+    now, otherwise 0 (greyed out).  RC 5 if there is no such item.
+
+--- Search, directory, spaces -------------------------------------
+
+FIND TERM/F
+    Opens the search window and searches TERM in all rooms.
+HITS
+    RESULT: the hits as "room:sender:text", separated by "|".
+OPENPREVIEW ROOM/A
+    Opens a preview window for a room you have not joined (room ID or
+    #alias:server), as from the directory.
+SUMMARY ROOM/A
+    Asks the directory for the info line of ROOM (see PUBINFO).
+PUBINFO
+    RESULT: that info line (members, whether the history is readable).
+SPACEWIN NAME/F
+    Opens the window of the space NAME.  RC 5 if it is not a space.
+SPACELIST
+    RESULT: the rooms of that window as "name:state" (space, joined or -),
+    separated by "|".
+SPACEADD ROOM/A,OFF/S
+    Adds ROOM to the space of that window; OFF takes it out.
+PICKER ROOM/F
+    Opens the reaction choice of the chat window.
 
 Known bugs
 ----------
@@ -649,15 +953,8 @@ die Punkte tun:
               sie zurück.  ARexx: REACT <Raum> heart (thumbsup, thumbsdown,
               heart, smile, joy, confused, eyes, tada, rocket).
 
-ARexx-Port: AMATRIX.1 (OPENCHAT, SAY, ACCEPT, NEWCHAT, NEWROOM, INVITE,
-STATUS, CHATLINES, UNREADABLE, OLDER,
-FIRSTLINE, UNREAD, ROOMLINE, RECOVERY, UNLOCK, STOREPASS, CHATSTATUS,
-CLOSECHAT, REACT, REACTIONS, PICKER, LEAVE, LASTLINE, MEDIA, SAVEMEDIA,
-OPENMEDIA, LINKS, OPENLINK, REPLY, EDITLAST, DELETELAST, TEXTS, OPENTHREAD,
-THREADSAY, MUTE, SENDFILE, COPY, CLIP, TYPE, TYPING, READ, ROOMINFO,
-MEMBERS, INFOSTATE, INFOSET, INFOMEMBER, PROFILE, PROFILESTATE, PREVIEWS,
-SETOPTION, SESSIONS, SESSIONLIST, SESSIONSET, CHATCACHED, FILTER, SPACE,
-ROOMS, FAVOURITE, FIND, HITS, QUIT; dazu MUIs eigene wie HIDE und SHOW).
+ARexx-Port: AMATRIX.1 - alle Befehle stehen in der "ARexx reference" im
+englischen Teil dieser Datei (die Befehlsnamen sind ohnehin englisch).
 
 Achtung: Die Schublade "Amatrix-xxxxxxxx" enthält nach dem Sicherheits-
 schlüssel auch den Schlüssel zur Schlüsselsicherung.  Am besten mit einem
