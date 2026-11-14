@@ -22,7 +22,7 @@ python3 "$here/make-icon.py" "$tmp/Amatrix.info" 4096 drawer                  # 
 # Aminet: Short <= 40 characters, lines <= 78
 short=$(sed -n 's/^Short: *//p' "$here/Amatrix.readme.txt")
 [ ${#short} -le 40 ] || { echo "Short is ${#short} characters (max 40)"; exit 1; }
-awk 'length>78{print FILENAME": line "NR" too long"; bad=1} END{exit bad}' "$here/Amatrix.readme.txt" 
+awk 'length>78{print FILENAME": line "NR" too long"; bad=1} END{exit bad}' "$tmp/Amatrix/Amatrix.readme"
 out="$top/build/amiga/Amatrix.lha"
 rm -f "$out" "$top/build/amiga/amatrix-gui.lha"
 (cd "$tmp" && /opt/amiga/bin/lha aq --system-kanji-code=latin1 --archive-kanji-code=latin1 "$out" Amatrix Amatrix.info >/dev/null)
