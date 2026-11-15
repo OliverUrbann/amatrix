@@ -350,6 +350,13 @@ Known bugs
   scrolling.  For the strips a preview is made of, NList now and then does
   not draw the bottom row.  The picture itself is fine; after a complete
   redraw it is right.
+- MorphOS (reported; possibly MorphOS-specific problems, since Amatrix has
+  been tested only with MUI 5 on OS 3 so far, and MorphOS has its own
+  MUI):
+  - The room list in the main window shows its entries without any text.
+    The rows can be selected, but the names cannot be seen.
+  - The space choice above the room list shows the last space twice and
+    leaves out another one.
 
 Credits and licences
 --------------------

@@ -66,8 +66,13 @@ security key), every menu and button, all functions and the complete ARexx
 reference.  It is in the drawer; Amatrix.de.guide is the German version.
 
 Known bugs
-Thin horizontal lines sometimes appear in picture previews, mostly while
-scrolling (NList does not draw the bottom row of a strip now and then).
+- Thin horizontal lines sometimes appear in picture previews, mostly
+  while scrolling (NList does not draw the bottom row of a strip now and
+  then).
+- MorphOS (reported, possibly MorphOS-specific, since Amatrix has been
+  tested only with MUI 5 on OS 3 so far): the room list in the main
+  window shows its entries without any text; the space choice above it
+  shows the last space twice and leaves out another one.
 
 Credits and licences
 Amatrix uses libolm (Apache-2.0), cJSON (MIT), stb_image (public domain),
@@ -177,9 +182,13 @@ Funktionen und die vollstaendige ARexx-Referenz (englisch).  Es liegt in
 der Schublade; Amatrix.guide ist die englische Fassung.
 
 Bekannte Fehler
-In Bildvorschauen erscheinen manchmal duenne waagerechte Linien, meist beim
-Scrollen (NList zeichnet die unterste Zeile eines Streifens hin und
-wieder nicht).
+- In Bildvorschauen erscheinen manchmal duenne waagerechte Linien, meist
+  beim Scrollen (NList zeichnet die unterste Zeile eines Streifens hin und
+  wieder nicht).
+- MorphOS (gemeldet, moeglicherweise MorphOS-spezifisch, da Amatrix
+  bisher nur mit MUI 5 unter OS 3 getestet ist): Die Raumliste im
+  Hauptfenster zeigt ihre Eintraege ohne Text; die Space-Auswahl darueber
+  zeigt den letzten Space doppelt und laesst einen anderen weg.
 
 Credits und Lizenzen
 Amatrix benutzt libolm (Apache-2.0), cJSON (MIT), stb_image (Public

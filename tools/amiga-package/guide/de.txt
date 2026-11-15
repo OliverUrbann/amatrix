@@ -380,6 +380,13 @@ Bekannte Fehler
   allem beim Scrollen.  NList zeichnet bei den Streifen, aus denen die
   Vorschau besteht, ab und zu die unterste Zeile nicht.  Das Bild selbst
   ist in Ordnung; nach einem vollständigen Neuzeichnen ist es richtig.
+- MorphOS (gemeldet; möglicherweise MorphOS-spezifische Probleme, da
+  Amatrix bisher nur mit MUI 5 unter OS 3 getestet ist und MorphOS ein
+  eigenes MUI hat):
+  - Die Raumliste im Hauptfenster zeigt ihre Einträge ohne Text.  Die
+    Zeilen lassen sich auswählen, die Namen sind aber nicht zu sehen.
+  - Die Space-Auswahl über der Raumliste zeigt den letzten Space doppelt
+    und lässt einen anderen weg.
 
 Quellcode und Fehlermeldungen: https://github.com/OliverUrbann/Amatrix
 
