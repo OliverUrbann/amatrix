@@ -7,36 +7,6 @@ Architecture: m68k-amigaos >= 3.0.0
 Requires:     MUI 5 (NList, BetterString), AmiSSL 5, TCP/IP stack, 68020+
 Distribution: Aminet
 
-Changelog / Änderungen
-======================
-
-0.2 (15.11.2026)
-- Fixed: login failed with "HTTP 400 M_NOT_JSON Body is not a valid JSON
-  document" (or "Content not JSON") when the password contains an umlaut
-  or another non-ASCII character (ä, ö, ü, ß, §, ...).  Amatrix sent the
-  password in the Amiga character set instead of UTF-8.  The same for
-  signing out other sessions in the sessions window.
-- Fixed: a reply showed "(an older message)" instead of the quote when
-  it was loaded before the message it answers.  Replies from clients
-  that put the relation outside the encryption are now recognised.
-- Fixed: picture lines in the chat read "[_Picture ...: name]".
-- New drawer, program, readme and guide icons.
-
-- Behoben: Die Anmeldung scheiterte mit "HTTP 400 M_NOT_JSON Body is not
-  a valid JSON document" (bzw. "Content not JSON"), wenn das Passwort
-  einen Umlaut oder ein anderes Nicht-ASCII-Zeichen enthält (ä, ö, ü, ß,
-  §, ...).  Amatrix schickte das Passwort im Amiga-Zeichensatz statt in
-  UTF-8.  Ebenso beim Abmelden anderer Sitzungen im Sitzungsfenster.
-- Behoben: Eine Antwort zeigte "(eine ältere Nachricht)" statt des
-  Zitats, wenn sie vor der beantworteten Nachricht geladen wurde.
-  Antworten von Clients, die die Beziehung außerhalb der Verschlüsselung
-  senden, werden jetzt erkannt.
-- Behoben: Bildzeilen im Chat lauteten "[_Bild ...: name]".
-- Neue Icons für Schublade, Programm, Readme und Guide.
-
-0.1 (14.11.2026)
-- First release / Erste Version.
-
 === English ===
 
 Amatrix is a native Matrix client for classic AmigaOS, written in C for
@@ -123,6 +93,23 @@ keys and passwords.  Findings are very welcome as an issue.
 Licence: MIT, Copyright (c) 2026 Oliver Urbann.  Free to use, copy, modify
 and distribute; provided as is, without warranty.  The full text is in the
 source repository (LICENSE).
+
+Changelog
+
+0.2 (15.11.2026)
+- Fixed: login failed with "HTTP 400 M_NOT_JSON Body is not a valid JSON
+  document" (or "Content not JSON") when the password contains an umlaut
+  or another non-ASCII character (ä, ö, ü, ß, §, ...).  Amatrix sent the
+  password in the Amiga character set instead of UTF-8.  The same for
+  signing out other sessions in the sessions window.
+- Fixed: a reply showed "(an older message)" instead of the quote when
+  it was loaded before the message it answers.  Replies from clients
+  that put the relation outside the encryption are now recognised.
+- Fixed: picture lines in the chat read "[_Picture ...: name]".
+- New drawer, program, readme and guide icons.
+
+0.1 (14.11.2026)
+- First release.
 
 === Deutsch ===
 
@@ -219,3 +206,21 @@ Passwörtern umgeht.  Ergebnisse sind als Issue sehr willkommen.
 Lizenz: MIT, Copyright (c) 2026 Oliver Urbann.  Frei nutz-, kopier-, änder-
 und weitergebbar; ohne Gewährleistung.  Der volle Text liegt im
 Quellcode-Repository (LICENSE).
+
+Änderungen
+
+0.2 (15.11.2026)
+- Behoben: Die Anmeldung scheiterte mit "HTTP 400 M_NOT_JSON Body is not
+  a valid JSON document" (bzw. "Content not JSON"), wenn das Passwort
+  einen Umlaut oder ein anderes Nicht-ASCII-Zeichen enthält (ä, ö, ü, ß,
+  §, ...).  Amatrix schickte das Passwort im Amiga-Zeichensatz statt in
+  UTF-8.  Ebenso beim Abmelden anderer Sitzungen im Sitzungsfenster.
+- Behoben: Eine Antwort zeigte "(eine ältere Nachricht)" statt des
+  Zitats, wenn sie vor der beantworteten Nachricht geladen wurde.
+  Antworten von Clients, die die Beziehung außerhalb der Verschlüsselung
+  senden, werden jetzt erkannt.
+- Behoben: Bildzeilen im Chat lauteten "[_Bild ...: name]".
+- Neue Icons für Schublade, Programm, Readme und Guide.
+
+0.1 (14.11.2026)
+- Erste Version.
