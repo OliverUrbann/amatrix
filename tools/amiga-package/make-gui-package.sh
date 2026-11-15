@@ -1,8 +1,8 @@
 #!/bin/bash
 # Builds the Aminet upload pair build/amiga/Amatrix.lha + Amatrix.readme:
 # the MUI client Amatrix with its icons, the language catalogs and
-# Amatrix.readme (English + German, Aminet header), the AmigaGuide manuals
-# Amatrix.guide / Amatrix.de.guide (from guide/*.txt), ISO-8859-1.
+# Amatrix.readme (English + German, Aminet header, pure ASCII), the AmigaGuide
+# manuals Amatrix.guide / Amatrix.de.guide (from guide/*.txt, ISO-8859-1).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 top=$here/../..
@@ -17,7 +17,10 @@ for c in "$top"/build/amiga/catalogs/*/amatrix.catalog; do          # languages 
     mkdir -p "$tmp/Amatrix/Catalogs/$l"; cp "$c" "$tmp/Amatrix/Catalogs/$l/"
 done
 python3 "$here/make-icon.py" "$tmp/Amatrix/Icons/Amatrix-neu.info" 65536 new   # AppIcon: unread
-iconv -f utf-8 -t latin1 "$here/Amatrix.readme.txt" > "$tmp/Amatrix/Amatrix.readme"
+if LC_ALL=C grep -n '[^ -~]' "$here/Amatrix.readme.txt"; then   # pure ASCII: readable in every editor and on the web
+    echo "Amatrix.readme.txt: only ASCII please (ae, oe, ue, ss)" >&2; exit 1
+fi
+cp "$here/Amatrix.readme.txt" "$tmp/Amatrix/Amatrix.readme"
 python3 "$here/make-icon.py" "$tmp/Amatrix/Amatrix.readme.info" 4096 text     # text icon, opens in MultiView
 python3 "$here/mkguide.py" en "$tmp/Amatrix/Amatrix.guide" >/dev/null           # AmigaGuide manual (en, de)
 python3 "$here/mkguide.py" de "$tmp/Amatrix/Amatrix.de.guide" >/dev/null

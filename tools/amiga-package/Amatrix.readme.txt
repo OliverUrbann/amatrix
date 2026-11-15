@@ -99,9 +99,9 @@ Changelog
 0.2 (15.11.2026)
 - Fixed: login failed with "HTTP 400 M_NOT_JSON Body is not a valid JSON
   document" (or "Content not JSON") when the password contains an umlaut
-  or another non-ASCII character (ä, ö, ü, ß, §, ...).  Amatrix sent the
-  password in the Amiga character set instead of UTF-8.  The same for
-  signing out other sessions in the sessions window.
+  or another non-ASCII character (German umlauts, sharp s, ...).
+  Amatrix sent the password in the Amiga character set instead of
+  UTF-8.  The same for signing out other sessions in the sessions window.
 - Fixed: a reply showed "(an older message)" instead of the quote when
   it was loaded before the message it answers.  Replies from clients
   that put the relation outside the encryption are now recognised.
@@ -113,40 +113,40 @@ Changelog
 
 === Deutsch ===
 
-Amatrix ist ein nativer Matrix-Client für das klassische AmigaOS, in C
-für 68020 und besser geschrieben.  Er spricht direkt mit dem Matrix-
-Server: keine Brücke, kein Proxy.  Matrix ist ein offenes Chat-Protokoll
+Amatrix ist ein nativer Matrix-Client fuer das klassische AmigaOS, in C
+fuer 68020 und besser geschrieben.  Er spricht direkt mit dem Matrix-
+Server: keine Bruecke, kein Proxy.  Matrix ist ein offenes Chat-Protokoll
 (matrix.org); Amatrix verbindet sich mit dem Matrix-Netzwerk und chattet
-mit Element, FluffyChat und den anderen Clients.  Die Oberfläche ist MUI:
-links die Liste der Chats und Räume mit Bildern, pro Raum ein Chatfenster.
+mit Element, FluffyChat und den anderen Clients.  Die Oberflaeche ist MUI:
+links die Liste der Chats und Raeume mit Bildern, pro Raum ein Chatfenster.
 
 Merkmale
 
-- Ende-zu-Ende-Verschlüsselung (Olm/Megolm) in beide Richtungen,
-  Schlüssel-Backup und Sicherheitsschlüssel, damit verschlüsselter Verlauf
+- Ende-zu-Ende-Verschluesselung (Olm/Megolm) in beide Richtungen,
+  Schluessel-Backup und Sicherheitsschluessel, damit verschluesselter Verlauf
   lesbar ist (libolm, portiert)
-- Direktchats, Räume, Spaces, Einladungen, Raum-Einstellungen, Mitglieder
+- Direktchats, Raeume, Spaces, Einladungen, Raum-Einstellungen, Mitglieder
   mit Rollen, Entfernen/Sperren, Anklopfen, Raum-Upgrades
-- Antworten, Bearbeiten, Löschen, Threads, Reaktionen, angeheftete
+- Antworten, Bearbeiten, Loeschen, Threads, Reaktionen, angeheftete
   Nachrichten, Umfragen, formatierte Nachrichten (fett, kursiv, Listen,
   Code), Markdown beim Tippen
 - Bilder, Dateien, Sprachnachrichten: Vorschau im Chat, Senden mit dem
   Dateirequester oder per Drag-and-drop von Workbench-Icons ins Fenster
 - Link-Vorschauen, Standorte, Emojis als kleine Bilder, Tippanzeige und
-  Lesebestätigungen ("gelesen von ...")
-- Suche in allen Räumen, Chat als Text oder HTML exportieren, Entwürfe,
+  Lesebestaetigungen ("gelesen von ...")
+- Suche in allen Raeumen, Chat als Text oder HTML exportieren, Entwuerfe,
   Verlauf lokal gespeichert und beim Start sofort sichtbar
-- Benachrichtigungen über Herald, AppIcon mit Ungelesen-Markierung beim
+- Benachrichtigungen ueber Herald, AppIcon mit Ungelesen-Markierung beim
   Ikonifizieren
-- Passwort für die gespeicherten Daten (AES-256), mehrere Sitzungen,
+- Passwort fuer die gespeicherten Daten (AES-256), mehrere Sitzungen,
   eigenes Profil
-- Vollständiger ARexx-Port (AMATRIX.1)
+- Vollstaendiger ARexx-Port (AMATRIX.1)
 - Sprachen (locale.library-Kataloge): Englisch (eingebaut), Deutsch,
   Francais, Espanol, Italiano, Nederlands, Svenska.  Amatrix folgt den
   Locale-Einstellungen; der Tooltype bzw. das Argument LANGUAGE=english
-  (oder deutsch, ...) erzwingt eine.  Die Übersetzungen außer Deutsch und
-  Englisch sind maschinell unterstützt und noch nicht von Muttersprachlern
-  geprüft.  Eine neue Sprache braucht nur eine Übersetzungsdatei (siehe
+  (oder deutsch, ...) erzwingt eine.  Die Uebersetzungen ausser Deutsch und
+  Englisch sind maschinell unterstuetzt und noch nicht von Muttersprachlern
+  geprueft.  Eine neue Sprache braucht nur eine Uebersetzungsdatei (siehe
   Quellcode).
 
 Voraussetzungen
@@ -154,30 +154,30 @@ Voraussetzungen
 - MUI 5 (muimaster.library V20) mit NList.mcc und BetterString.mcc
   (beide im MUI-5-Paket "contrib" enthalten)
 - AmiSSL 5 und ein laufender TCP/IP-Stack (Roadshow, AmiTCP, ...)
-- Optional: Herald (Aminet util/cdity/Herald) für Benachrichtigungen,
-  openurl.library zum Öffnen von Links, opusdec für Sprachnachrichten
+- Optional: Herald (Aminet util/cdity/Herald) fuer Benachrichtigungen,
+  openurl.library zum Oeffnen von Links, opusdec fuer Sprachnachrichten
 
 Ein Konto zum Anmelden
-Nötig ist ein Matrix-Konto mit Benutzername und PASSWORT auf einem Server,
-der Passwort-Anmeldung erlaubt (matrix.org tut das).  Konten, die nur über
+Noetig ist ein Matrix-Konto mit Benutzername und PASSWORT auf einem Server,
+der Passwort-Anmeldung erlaubt (matrix.org tut das).  Konten, die nur ueber
 Single Sign-on ("Weiter mit Google/GitHub/...") oder die neuere Browser-
-Anmeldung funktionieren, können sich nicht anmelden.  Hat dein Konto noch
+Anmeldung funktionieren, koennen sich nicht anmelden.  Hat dein Konto noch
 kein Passwort, vergib zuerst in Element eines (Einstellungen > Konto >
-Passwort ändern).
+Passwort aendern).
 
 Installation
 Die Schublade "Amatrix" an einen beliebigen Ort kopieren und "Amatrix"
 doppelklicken.  Programm, Icon und Sprachkataloge liegen alle darin.
 
 Dokumentation
-Amatrix.de.guide (AmigaGuide, mit MultiView öffnen) ist das Handbuch:
-erster Start (Anmeldung, Passwort für die gespeicherten Daten, Gerät mit
-dem Sicherheitsschlüssel verifizieren), jedes Menü und jeder Knopf, alle
-Funktionen und die vollständige ARexx-Referenz (englisch).  Es liegt in
+Amatrix.de.guide (AmigaGuide, mit MultiView oeffnen) ist das Handbuch:
+erster Start (Anmeldung, Passwort fuer die gespeicherten Daten, Geraet mit
+dem Sicherheitsschluessel verifizieren), jedes Menue und jeder Knopf, alle
+Funktionen und die vollstaendige ARexx-Referenz (englisch).  Es liegt in
 der Schublade; Amatrix.guide ist die englische Fassung.
 
 Bekannte Fehler
-In Bildvorschauen erscheinen manchmal dünne waagerechte Linien, meist beim
+In Bildvorschauen erscheinen manchmal duenne waagerechte Linien, meist beim
 Scrollen (NList zeichnet die unterste Zeile eines Streifens hin und
 wieder nicht).
 
@@ -186,41 +186,42 @@ Amatrix benutzt libolm (Apache-2.0), cJSON (MIT), stb_image (Public
 Domain), das AmiSSL-SDK (Apache-2.0) und das MUI-SDK (nicht enthalten).
 Die Texte liegen im Quellbaum (third_party/).  Matrix ist ein offener
 Standard der Matrix.org Foundation; Element ist eine Marke von Element.
-Die Icons für Schublade, Readme und Guide beruhen auf MagicWB-Icons von
+Die Icons fuer Schublade, Readme und Guide beruhen auf MagicWB-Icons von
 Martin Huttenloher und Mario Cattaneo.
 
-Quellcode, Fehlermeldungen, Sprache hinzufügen:
+Quellcode, Fehlermeldungen, Sprache hinzufuegen:
 https://github.com/OliverUrbann/Amatrix
 
 Fehlermeldungen und Ideen sind willkommen - bitte ein Issue auf GitHub
-eröffnen (Version, was du getan hast und was du erwartet hast, helfen sehr).
+eroeffnen (Version, was du getan hast und was du erwartet hast, helfen sehr).
 
-Sicherheit: Amatrix verarbeitet deine Anmeldung und deine Schlüssel, du
-sollst seine Sicherheit also nicht auf Treu und Glauben annehmen müssen.
-Der komplette Quellcode ist unter der obigen Adresse öffentlich; dieses
-Archiv wird daraus gebaut.  Wenn du dich selbst überzeugen willst, lies den
-Code oder lass ihn von einer KI deiner Wahl prüfen und frag sie, was
-Amatrix speichert, was es wohin sendet und wie es mit Schlüsseln und
-Passwörtern umgeht.  Ergebnisse sind als Issue sehr willkommen.
+Sicherheit: Amatrix verarbeitet deine Anmeldung und deine Schluessel, du
+sollst seine Sicherheit also nicht auf Treu und Glauben annehmen muessen.
+Der komplette Quellcode ist unter der obigen Adresse oeffentlich; dieses
+Archiv wird daraus gebaut.  Wenn du dich selbst ueberzeugen willst, lies den
+Code oder lass ihn von einer KI deiner Wahl pruefen und frag sie, was
+Amatrix speichert, was es wohin sendet und wie es mit Schluesseln und
+Passwoertern umgeht.  Ergebnisse sind als Issue sehr willkommen.
 
-Lizenz: MIT, Copyright (c) 2026 Oliver Urbann.  Frei nutz-, kopier-, änder-
-und weitergebbar; ohne Gewährleistung.  Der volle Text liegt im
+Lizenz: MIT, Copyright (c) 2026 Oliver Urbann.  Frei nutz-, kopier-, aender-
+und weitergebbar; ohne Gewaehrleistung.  Der volle Text liegt im
 Quellcode-Repository (LICENSE).
 
-Änderungen
+Aenderungen
 
 0.2 (15.11.2026)
 - Behoben: Die Anmeldung scheiterte mit "HTTP 400 M_NOT_JSON Body is not
   a valid JSON document" (bzw. "Content not JSON"), wenn das Passwort
-  einen Umlaut oder ein anderes Nicht-ASCII-Zeichen enthält (ä, ö, ü, ß,
-  §, ...).  Amatrix schickte das Passwort im Amiga-Zeichensatz statt in
-  UTF-8.  Ebenso beim Abmelden anderer Sitzungen im Sitzungsfenster.
-- Behoben: Eine Antwort zeigte "(eine ältere Nachricht)" statt des
+  einen Umlaut oder ein anderes Nicht-ASCII-Zeichen enthaelt (Umlaute,
+  Eszett, Paragraphzeichen ...).  Amatrix schickte das Passwort im
+  Amiga-Zeichensatz statt in UTF-8.  Ebenso beim Abmelden anderer
+  Sitzungen im Sitzungsfenster.
+- Behoben: Eine Antwort zeigte "(eine aeltere Nachricht)" statt des
   Zitats, wenn sie vor der beantworteten Nachricht geladen wurde.
-  Antworten von Clients, die die Beziehung außerhalb der Verschlüsselung
+  Antworten von Clients, die die Beziehung ausserhalb der Verschluesselung
   senden, werden jetzt erkannt.
 - Behoben: Bildzeilen im Chat lauteten "[_Bild ...: name]".
-- Neue Icons für Schublade, Programm, Readme und Guide.
+- Neue Icons fuer Schublade, Programm, Readme und Guide.
 
 0.1 (14.11.2026)
 - Erste Version.
