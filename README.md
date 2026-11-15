@@ -98,6 +98,10 @@ The runner starts its own private Synapse, registers fresh users and runs
 each feature's C test against an independent E2EE client.  Details in
 [tests/README.md](tests/README.md).
 
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## Bug reports and security
 
 Bug reports and ideas are welcome as [GitHub issues](https://github.com/OliverUrbann/Amatrix/issues).
