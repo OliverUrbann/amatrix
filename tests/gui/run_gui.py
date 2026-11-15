@@ -1586,7 +1586,8 @@ async def main():
             print("MUI missing in the emulator: run tests/emu/setup-emu-mui.sh")
             return 2
         shutil.copy(srv.ca_pem, os.path.join(sysdir, "AmiSSL", "Certs", srv.ca_hash_name()))
-        me, other, bob = srv.register("amiga"), srv.register("peer"), srv.register("bob")
+        # our password with an umlaut: typed in ISO-8859-1, the server wants UTF-8
+        me, other, bob = srv.register("amiga", suffix="\u00e4"), srv.register("peer"), srv.register("bob")
         extra = tempfile.mkdtemp(prefix="amx-gui-")
         shutil.copy(os.path.join(TOP, "build", "amiga", "gui", "Amatrix"), os.path.join(extra, "Amatrix"))
         os.makedirs(os.path.join(extra, "Catalogs", "deutsch"), exist_ok=True)

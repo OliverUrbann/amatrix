@@ -191,11 +191,11 @@ url_preview_ip_range_whitelist: ["127.0.0.1/32"]
         raise RuntimeError(f"{what} did not start")
 
     # ---------------------------------------------------------------- users
-    def register(self, prefix, admin=False):
-        """Registers a fresh user (unique per call): <prefix><n>, password <localpart>-pw."""
+    def register(self, prefix, admin=False, suffix=""):
+        """Registers a fresh user (unique per call): <prefix><n>, password <localpart>-pw<suffix>."""
         self._n += 1
         localpart = f"{prefix}{self._n}"
-        password = f"{localpart}-pw"
+        password = f"{localpart}-pw{suffix}"
         url = f"{self.http_url}/_synapse/admin/v1/register"
         nonce = json.load(urllib.request.urlopen(url))["nonce"]
         mac = hmac.new(self.secret.encode(), digestmod=hashlib.sha1)

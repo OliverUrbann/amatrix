@@ -2845,6 +2845,23 @@ static void sess_rename(void)
     amx_async_devices(A, TAG_DEVICES);
 }
 
+/* an async call with a typed text that the server wants in UTF-8 (the
+   string gadgets give ISO-8859-1: an "ä" there is not valid JSON) */
+static void device_delete_local(const char *id, const char *pw)
+{
+    char *u = amx_from_local(pw ? pw : "");
+    amx_async_device_delete(A, id, u ? u : "", TAG_DEVCHANGE);
+    if (u) { memset(u, 0, strlen(u)); free(u); }
+}
+
+static void login_local(const char *user, const char *pw)
+{
+    char *uu = amx_from_local(user ? user : ""), *up = amx_from_local(pw ? pw : "");
+    amx_async_login(A, uu ? uu : "", up ? up : "", TAG_LOGIN);
+    if (up) { memset(up, 0, strlen(up)); free(up); }
+    free(uu);
+}
+
 static void sess_delete(void)
 {
     AmxDevice *d = sess_selected();
@@ -2855,7 +2872,7 @@ static void sess_delete(void)
     if (MUI_Request(app, win_sess, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_LOG_OUT_CANCEL),
                     (STRPTR)tr(MSG_LOG_OUT_THE_SESSION_IT),
                     (ULONG)(name ? name : "")) == 1) {
-        amx_async_device_delete(A, d->device_id, pw, TAG_DEVCHANGE);
+        device_delete_local(d->device_id, pw);
         sess_busy++;
         sess_set_status(tr(MSG_LOGGING_OUT));
         amx_async_devices(A, TAG_DEVICES);
@@ -5776,7 +5793,7 @@ static void do_login(const char *server, const char *user, const char *password)
         }
     }
     set_status(tr(MSG_LOGGING_IN_AS), user, NULL);
-    amx_async_login(A, user, password ? password : "", TAG_LOGIN);
+    login_local(user, password);
 }
 
 static void unlock_go(const char *typed)
@@ -6277,7 +6294,7 @@ static void handle_result(const AmxMsg *m)
         }
         set(win_unlock, MUIA_Window_Open, FALSE);
         set_status(tr(MSG_LOGGING_IN_AS), cfg_user, NULL);
-        amx_async_login(A, cfg_user, pending_password ? pending_password : "", TAG_LOGIN);
+        login_local(cfg_user, pending_password);
         if (pending_password) { memset(pending_password, 0, strlen(pending_password)); free(pending_password); }
         pending_password = NULL;
         break;
@@ -7873,7 +7890,7 @@ HOOKPROTONH(rx_sessset_func, LONG, Object *obj, ULONG *arg)
     if (arg[1]) { set(str_sname, MUIA_String_Contents, (char *)arg[1]); sess_rename(); }
     if (arg[2]) {
         if (d->current) return 10;
-        amx_async_device_delete(A, d->device_id, (char *)arg[2], TAG_DEVCHANGE);
+        device_delete_local(d->device_id, (char *)arg[2]);
         sess_busy++;
         amx_async_devices(A, TAG_DEVICES);
     }
