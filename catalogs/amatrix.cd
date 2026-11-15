@@ -1368,7 +1368,7 @@ MSG_ABOUT_AMATRIX_2 (453//)
 About Amatrix
 ;
 MSG_AMATRIX_0_1_MATRIX_WITH (454//)
-\33cAmatrix 0.1\n\nMatrix with end-to-end encryption\nfor the Amiga.\n\n%s
+\33cAmatrix 0.2\n\nMatrix with end-to-end encryption\nfor the Amiga.\n\n%s
 ;
 MSG_NOT_LOGGED_IN (455//)
 not logged in

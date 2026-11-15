@@ -1820,8 +1820,8 @@ MSG_ABOUT_AMATRIX_2
 ; About Amatrix
 ;
 MSG_AMATRIX_0_1_MATRIX_WITH
-\33cAmatrix 0.1\n\nMatrix mit Ende-zu-Ende-Verschlüsselung\nfür den Amiga.\n\n%s
-; \33cAmatrix 0.1\n\nMatrix with end-to-end encryption\nfor the Amiga.\n\n%s
+\33cAmatrix 0.2\n\nMatrix mit Ende-zu-Ende-Verschlüsselung\nfür den Amiga.\n\n%s
+; \33cAmatrix 0.2\n\nMatrix with end-to-end encryption\nfor the Amiga.\n\n%s
 ;
 MSG_NOT_LOGGED_IN
 nicht angemeldet

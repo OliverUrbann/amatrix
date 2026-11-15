@@ -2,7 +2,7 @@ Short:        Matrix chat client, E2E encrypted (MUI)
 Uploader:     oliver.urbann@gmail.com (Oliver Urbann)
 Author:       Oliver Urbann
 Type:         comm/misc
-Version:      0.1
+Version:      0.2
 Architecture: m68k-amigaos >= 3.0.0
 Requires:     MUI 5 (NList, BetterString), AmiSSL 5, TCP/IP stack, 68020+
 Distribution: Aminet
@@ -192,4 +192,16 @@ Quellcode-Repository (LICENSE).
 
 History / Verlauf
 
+0.2  Login with a password that contains umlauts or other non-ASCII
+     characters works (the server answered "M_NOT_JSON" or "Content not
+     JSON"); the same for signing out other sessions.  Replies loaded
+     before their original show the quote; replies whose relation is
+     outside the encryption are recognised.  Picture lines without the
+     stray underscore.  New icons.
+     Anmeldung mit Umlauten oder anderen Sonderzeichen im Passwort
+     funktioniert (der Server meldete "M_NOT_JSON" bzw. "Content not
+     JSON"), ebenso das Abmelden anderer Sitzungen.  Antworten, die vor
+     ihrem Original geladen werden, zeigen das Zitat; Antworten mit der
+     Beziehung außerhalb der Verschlüsselung werden erkannt.  Bildzeilen
+     ohne den überflüssigen Unterstrich.  Neue Icons.
 0.1  First release / Erste Version.

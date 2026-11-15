@@ -1367,8 +1367,8 @@ MSG_ABOUT_AMATRIX_2
 Informazioni su Amatrix
 ; About Amatrix
 MSG_AMATRIX_0_1_MATRIX_WITH
-\33cAmatrix 0.1\n\nMatrix con crittografia end-to-end\nper Amiga.\n\n%s
-; \33cAmatrix 0.1\n\nMatrix with end-to-end encryption\nfor the Amiga.\n\n%s
+\33cAmatrix 0.2\n\nMatrix con crittografia end-to-end\nper Amiga.\n\n%s
+; \33cAmatrix 0.2\n\nMatrix with end-to-end encryption\nfor the Amiga.\n\n%s
 MSG_NOT_LOGGED_IN
 non connesso
 ; not logged in

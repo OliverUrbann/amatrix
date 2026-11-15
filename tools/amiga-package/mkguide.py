@@ -9,10 +9,10 @@ command line at column 0 (NAME TEMPLATE) starts a command node."""
 import re, sys, os
 here = os.path.dirname(os.path.abspath(__file__))
 lang, out = sys.argv[1], sys.argv[2]
-T = {'en': dict(title='Amatrix 0.1 - Matrix client for AmigaOS', contents='Contents',
+T = {'en': dict(title='Amatrix 0.2 - Matrix client for AmigaOS', contents='Contents',
                 ax='ARexx reference', idx='Command index', tmpl='TEMPLATE', cmds='Commands',
                 sub='Sections'),
-     'de': dict(title='Amatrix 0.1 - Matrix-Client für AmigaOS', contents='Inhalt',
+     'de': dict(title='Amatrix 0.2 - Matrix-Client für AmigaOS', contents='Inhalt',
                 ax='ARexx reference', idx='Befehlsindex', tmpl='TEMPLATE', cmds='Befehle',
                 sub='Abschnitte')}[lang]
 AXNOTE = {'en': '', 'de': 'Diese Referenz ist englisch.\n\n'}[lang]
@@ -104,7 +104,7 @@ def body_text(lines):
 byid = {n['id']: n for n in nodes}
 o = []
 o.append('@database "Amatrix.guide"')
-o.append('@$VER: Amatrix.guide 0.1 (14.11.2026)')
+o.append('@$VER: Amatrix.guide 0.2 (15.11.2026)')
 o.append('@author "Oliver Urbann"')
 o.append('@(c) "Copyright (c) 2026 Oliver Urbann, MIT licence"')
 o.append('@index ax_idx')

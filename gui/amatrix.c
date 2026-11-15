@@ -92,7 +92,7 @@ static void open_catalog(const char *lang)
 
 struct Library *MUIMasterBase;
 unsigned long __stack = 64 * 1024;
-static const char version[] __attribute__((used)) = "$VER: Amatrix 0.1 (03.11.2026)";
+static const char version[] __attribute__((used)) = "$VER: Amatrix 0.2 (15.11.2026)";
 
 #define AV 24                     /* avatar size in the room list */
 #define N_PLACEHOLDER 8
