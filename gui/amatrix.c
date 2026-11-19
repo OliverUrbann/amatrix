@@ -47,11 +47,14 @@
 #include <libraries/asl.h>
 #include <dos/dostags.h>
 #include <utility/tagitem.h>
+#ifdef __amigaos3__
 #include "openurl_inline.h"
+#endif
 #include "richtext.h"
 #include "cJSON.h"
 #include "markdown.h"
 #include <SDI_hook.h>
+#include "os_compat.h"
 #include "mui_util.h"
 #include "amatrix_async.h"
 #include <proto/locale.h>
@@ -61,7 +64,7 @@
 /* ---- languages: English is built in, others come from
  * Catalogs/<language>/amatrix.catalog (made from catalogs/<language>.ct
  * by tools/catalog.py) */
-struct LocaleBase *LocaleBase;
+LOCALEBASE_T *LocaleBase;
 static struct Catalog *catalog;
 
 /* in static tables: the ID, turned into the text by tr_tables() at startup */
@@ -84,13 +87,14 @@ static void close_catalog(void)
 /* lang NULL: the languages from the Locale prefs */
 static void open_catalog(const char *lang)
 {
-    if (!LocaleBase && !(LocaleBase = (struct LocaleBase *)OpenLibrary((STRPTR)"locale.library", 38))) return;
+    if (!LocaleBase && !(LocaleBase = (LOCALEBASE_T *)OpenLibrary((STRPTR)"locale.library", 38))) return;
     if (catalog) CloseCatalog(catalog);
     catalog = OpenCatalog(NULL, (STRPTR)"amatrix.catalog", OC_BuiltInLanguage, (ULONG)"english", OC_Version, 1,
                           lang ? OC_Language : TAG_IGNORE, (ULONG)lang, TAG_DONE);
 }
 
 struct Library *MUIMasterBase;
+MUI_IFACE_DEFINE;
 unsigned long __stack = 64 * 1024;
 static const char version[] __attribute__((used)) = "$VER: Amatrix 0.2 (15.11.2026)";
 
@@ -4538,10 +4542,13 @@ static char *linkify(ChatWin *w, char *text)
 /* the browser (openurl.library); quiet: no requester (ARexx) */
 static int open_link(ChatWin *w, int li, int quiet)
 {
+#ifdef __amigaos3__
     struct Library *OpenURLBase;
+#endif
     ULONG ok = 0;
     if (li < 0 || li >= w->n_links) return 0;
     amx_log("open link %s", w->links[li]);
+#ifdef __amigaos3__
     if ((OpenURLBase = OpenLibrary("openurl.library", 0)) != NULL) {
         struct TagItem tags[] = { { 0x81480000UL + 4, TRUE },      /* URL_Launch */
                                   { 0x81480000UL + 1, TRUE },      /* URL_Show */
@@ -4550,6 +4557,14 @@ static int open_link(ChatWin *w, int li, int quiet)
         ok = URL_OpenA((STRPTR)w->links[li], tags);
         CloseLibrary(OpenURLBase);
     }
+#else
+    /* no 68k library calls on PowerPC: the OpenURL command of the same package */
+    {
+        char cmd[1100];
+        snprintf(cmd, sizeof cmd, "OpenURL \"%s\"", w->links[li]);
+        ok = SystemTags((STRPTR)cmd, SYS_Input, 0, SYS_Output, 0, TAG_DONE) == 0;
+    }
+#endif
     if (!ok && !quiet)
         MUI_Request(app, w->win, 0, (STRPTR)"Amatrix", (STRPTR)tr(MSG_OK),
                     (STRPTR)tr(MSG_THE_LINK_COULD_NOT_BE),
@@ -9214,6 +9229,7 @@ int main(int argc, char **argv)
         close_catalog();
         return 20;
     }
+    MUI_IFACE_GET();
     if (!NameFromLock(GetProgramDir(), (STRPTR)prog_dir, sizeof prog_dir - 2)) strcpy(prog_dir, "PROGDIR:");
     if (prog_dir[strlen(prog_dir) - 1] != ':') strcat(prog_dir, "/");
     load_prefs();
@@ -9228,7 +9244,7 @@ int main(int argc, char **argv)
     if (argc > 0) rda = ReadArgs((STRPTR)"SERVER/K,USER/K,PASSWORD/K,DEBUG/S,HIDE/S,LANGUAGE/K", args, NULL);
     if (args[5]) open_catalog((const char *)args[5]);
     else if (argc == 0 && dob_app && IconBase) {            /* from Workbench: tooltype LANGUAGE= */
-        STRPTR l = FindToolType((CONST_STRPTR *)dob_app->do_ToolTypes, (STRPTR)"LANGUAGE");
+        STRPTR l = FindToolType((void *)dob_app->do_ToolTypes, (STRPTR)"LANGUAGE");
         if (l && *l) open_catalog((const char *)l);
     }
     tr_tables();

@@ -32,6 +32,18 @@ static int amissl_open;
 #endif
 
 struct Library *SocketBase = NULL;
+
+/* AmigaOS 4 calls libraries through interfaces: ISocket comes from libauto,
+ * the AmiSSL ones are fetched here */
+#if defined(AMX_AMISSL) && defined(__amigaos4__)
+struct AmiSSLMasterIFace *IAmiSSLMaster;
+struct AmiSSLIFace *IAmiSSL;
+#define MASTER_IFACE_GET() (IAmiSSLMaster = (struct AmiSSLMasterIFace *)GetInterface(AmiSSLMasterBase, "main", 1, NULL))
+#define AMISSL_OS_TAGS     AmiSSL_ISocket, (ULONG)ISocket, AmiSSL_GetIAmiSSL, (ULONG)&IAmiSSL
+#else
+#define MASTER_IFACE_GET() ((void)0)
+#define AMISSL_OS_TAGS     AmiSSL_SocketBase, (ULONG)SocketBase
+#endif
 static ULONG wake_mask;
 static int intr_on;
 
@@ -59,11 +71,12 @@ int net_init(void)
         fprintf(AMX_ERR, "net: cannot open amisslmaster.library (AmiSSL 5 installed?)\n");
         return -1;
     }
+    MASTER_IFACE_GET();
     if (OpenAmiSSLTags(AMISSL_CURRENT_VERSION,
                        AmiSSL_UsesOpenSSLStructs, FALSE,
                        AmiSSL_GetAmiSSLBase, (ULONG)&AmiSSLBase,
                        AmiSSL_GetAmiSSLExtBase, (ULONG)&AmiSSLExtBase,
-                       AmiSSL_SocketBase, (ULONG)SocketBase,
+                       AMISSL_OS_TAGS,
                        AmiSSL_ErrNoPtr, (ULONG)&errno,
                        TAG_DONE) != 0) {
         fprintf(AMX_ERR, "net: OpenAmiSSLTags failed (AmiSSL too old?)\n");

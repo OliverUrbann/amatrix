@@ -9,6 +9,9 @@
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <dos/dos.h>
+#ifdef __amigaos4__
+#include <dos/obsolete.h>   /* Seek, DeleteFile, ACCESS_READ */
+#endif
 #include <proto/exec.h>
 #include <proto/dos.h>
 

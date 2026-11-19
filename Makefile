@@ -29,6 +29,31 @@ ifeq ($(TARGET),amiga)
   PLATFORM := platform_amiga.c
   LIBS     := -L$(AMISSL)/lib/AmigaOS3 -lamisslstubs -lstdc++ -lm
   STRIP    := m68k-amigaos-strip
+  GUILIBS  := -lamiga
+else ifeq ($(TARGET),os4)
+  export PATH := /opt/ppc-amigaos/bin:$(PATH)
+  CC   := ppc-amigaos-gcc
+  CXX  := ppc-amigaos-g++
+  AR   := ppc-amigaos-ar
+  ARCH := -O2 -mcrt=newlib -athread=native -D__USE_INLINE__ -Ilibolm-amiga/compat
+  CFLAGS   := $(ARCH) -std=gnu99 -Wall -DAMX_AMISSL -I$(AMISSL)/include
+  CXXFLAGS := $(ARCH) -std=c++11
+  PLATFORM := platform_amiga.c
+  LIBS     := -L$(AMISSL)/lib/AmigaOS4 -lamisslstubs -lauto -lstdc++ -lm
+  STRIP    := ppc-amigaos-strip
+  GUILIBS  :=
+else ifeq ($(TARGET),mos)
+  export PATH := /gg/bin:$(PATH)
+  CC   := ppc-morphos-gcc
+  CXX  := ppc-morphos-g++
+  AR   := ppc-morphos-ar
+  ARCH := -O2 -noixemul -D__MORPHOS__
+  CFLAGS   := $(ARCH) -std=gnu99 -Wall
+  CXXFLAGS := $(ARCH) -std=c++11
+  PLATFORM := platform_amiga.c
+  LIBS     := -lssl -lcrypto -lpthread -latomic -lstdc++ -lm
+  STRIP    := true            # ppc-morphos-strip corrupts the MorphOS ELF
+  GUILIBS  :=
 else
   CC   ?= cc
   CXX  ?= c++
@@ -137,10 +162,10 @@ $(MUI_INC)/libraries/mui.h:
 
 $(B)/gui/Amatrix: $(GUI_SRC) gui/mui_util.h gui/amatrix_strings.h $(MUI_INC)/libraries/mui.h $(B)/libamatrix.a $(B)/libolm.a
 	@mkdir -p $(dir $@)
-	$(CC) $(GUI_CFLAGS) $(GUI_SRC) $(B)/libamatrix.a $(B)/libolm.a $(LIBS) -lamiga -o $@
+	$(CC) $(GUI_CFLAGS) $(GUI_SRC) $(B)/libamatrix.a $(B)/libolm.a $(LIBS) $(GUILIBS) -o $@
 	$(STRIP) $@
 
 $(B)/gui/muicheck: gui/muicheck.c gui/mui_util.c gui/mui_util.h $(MUI_INC)/libraries/mui.h
 	@mkdir -p $(dir $@)
-	$(CC) $(GUI_CFLAGS) gui/muicheck.c gui/mui_util.c -lamiga -o $@
+	$(CC) $(GUI_CFLAGS) gui/muicheck.c gui/mui_util.c $(GUILIBS) -o $@
 	$(STRIP) $@
