@@ -33,6 +33,7 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <proto/intuition.h>
+#include <proto/graphics.h>
 #include <proto/muimaster.h>
 #include <proto/wb.h>
 #include <proto/icon.h>
@@ -8118,9 +8119,21 @@ static int menu_item_enabled(const char *title)
     return -1;
 }
 
+/* width of a text in the screen font (0 if unknown) */
+static LONG text_px(const char *t)
+{
+    struct Screen *scr = LockPubScreen(NULL);
+    LONG w = scr ? TextLength(&scr->RastPort, (STRPTR)t, strlen(t)) : 0;
+    if (scr) UnlockPubScreen(NULL, scr);
+    return w;
+}
+
 static Object *build_app(void)
 {
     Object *b_chat, *b_room, *b_login, *b_go_chat, *b_go_room, *b_search, *b_join, *b_invite;
+    /* string gadgets want only one character: open the login window wide
+     * enough for a server address (it stays resizable, MUI keeps the size) */
+    LONG login_w = text_px("Password:  https://matrix.example.org") + 48;
     Object *a = ApplicationObject,
         MUIA_Application_Title, "Amatrix",
         MUIA_Application_Version, version,
@@ -8169,6 +8182,7 @@ static Object *build_app(void)
         SubWindow, win_login = WindowObject,
             MUIA_Window_Title, tr(MSG_AMATRIX_LOG_IN),
             MUIA_Window_ID, MAKE_ID('A','M','X','L'),
+            MUIA_Window_Width, login_w > 48 ? login_w : MUIV_Window_Width_Default,
             WindowContents, VGroup,
                 Child, ColGroup(2),
                     Child, Label2(tr(MSG_SERVER)),
