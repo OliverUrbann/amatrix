@@ -40,7 +40,7 @@ else ifeq ($(TARGET),os4)
   CXXFLAGS := $(ARCH) -std=c++11
   PLATFORM := platform_amiga.c
   LIBS     := -L$(AMISSL)/lib/AmigaOS4 -lamisslstubs -lauto -lstdc++ -lm
-  STRIP    := ppc-amigaos-strip
+  STRIP    := true            # keep symbols: the Grim Reaper / crash log names the functions
   GUILIBS  :=
 else ifeq ($(TARGET),mos)
   export PATH := /gg/bin:$(PATH)
@@ -48,7 +48,7 @@ else ifeq ($(TARGET),mos)
   CXX  := ppc-morphos-g++
   AR   := ppc-morphos-ar
   ARCH := -O2 -noixemul -D__MORPHOS__
-  CFLAGS   := $(ARCH) -std=gnu99 -Wall
+  CFLAGS   := $(ARCH) -std=gnu99 -Wall -DAMX_OPENSSL
   CXXFLAGS := $(ARCH) -std=c++11
   PLATFORM := platform_amiga.c
   LIBS     := -lssl -lcrypto -lpthread -latomic -lstdc++ -lm
@@ -114,6 +114,12 @@ $(B)/tools/amxdiag: tools/amxdiag.c $(B)/libamatrix.a $(B)/libolm.a
 	$(STRIP) $@
 
 $(B)/tools/amx-cli: tools/amx-cli.c $(B)/libamatrix.a $(B)/libolm.a
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(INC) $< $(B)/libamatrix.a $(B)/libolm.a $(LIBS) -o $@
+	$(STRIP) $@
+
+# test runner inside the emulated AmigaOS 4 / MorphOS (tests/emu/remote.py)
+$(B)/tools/amxrun: tests/emu/amxrun.c $(B)/libamatrix.a $(B)/libolm.a
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(INC) $< $(B)/libamatrix.a $(B)/libolm.a $(LIBS) -o $@
 	$(STRIP) $@

@@ -8,6 +8,7 @@ vodozemac/Olm crypto as Element) on the other.
 tests/run.py                         # all features, Linux build
 tests/run.py --target asan           # Linux with AddressSanitizer/UBSan
 tests/run.py --target amiga          # the Amiga build, inside FS-UAE
+tests/run.py --target os4            # the AmigaOS 4 build, inside FS-UAE + QEMU-UAE
 tests/run.py e2ee_send rooms -v      # selected features, live output
 AMX_VERBOSE=1 tests/run.py ...       # core logging in the test programs (2 = HTTP too)
 ```
@@ -31,7 +32,7 @@ or rooms.  Logs: `build/<target>/test-logs/<feature>.log`.
 | `features/<name>/test.c` | our client under test, via the public API `amatrix.h` |
 | `features/<name>/peer.py` | `async def peer(ctx)`: the other side; `TIMEOUT`, `EXTRA_ARGS` |
 | `server/` | private Synapse + TLS proxy |
-| `emu/` | setting up the FS-UAE environment (AmiSSL) |
+| `emu/` | setting up the FS-UAE environment (AmiSSL); `amxrun.c` + `remote.py`: the OS 4 runner |
 
 A test program is called as `test SERVER USER PASSWORD PEER_USER STORE [EXTRA...]`
 and talks to its peer only through Matrix (invites, rooms, messages).  Both
@@ -71,6 +72,13 @@ front of the GUI (redirect the program's output).
 - `--target amiga`: the m68k-amigaos toolchain in `/opt/amiga` and the
   FS-UAE test environment (`TESTENV`, default `~/amiga/testenv/amiga-testenv`) with AmiSSL installed by `emu/setup-emu-amissl.sh`.
   Kickstart/Workbench are not part of the repository.
+- `--target os4`: the ppc-amigaos toolchain in `/opt/ppc-amigaos` and the
+  AmigaOS 4.1 FE environment (`OS4ENV`, an `os41fe.hdf` with AmiSSL 5.27 installed
+  by `emu/setup-os4-amissl.sh`).  The OS 4 system stays up for the whole run:
+  `amxrun` in the emulator fetches the test programs and certificates from
+  `remote.py` over the emulated network (the host is `10.0.2.2` there) and
+  posts their output back.  A hanging test leaves a screenshot and the
+  kernel crash log (`DumpDebugBuffer`) in `build/os4/test-logs/`.
 
 ## Lessons learned (keep in mind when writing peers)
 

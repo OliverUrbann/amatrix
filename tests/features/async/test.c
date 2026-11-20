@@ -194,10 +194,10 @@ int main(int argc, char **argv)
 
     /* the peer needs a moment to see the invitation; keep the process busy */
     for (t0 = time(NULL); time(NULL) < t0 + 10 * slow; ) { pump(); wait_msgs(200); }
+    for (i = 0; i < n_results; i++) amx_async_msg_free(results[i]);   /* before amx_async_free */
     t0 = time(NULL);
     amx_async_free(A);
     MXT_OK(time(NULL) - t0 < 8 * slow, "stopped after %lds", (long)(time(NULL) - t0));
-    for (i = 0; i < n_results; i++) amx_async_msg_free(results[i]);
     free(room);
     free(room2);
     return mxt_done();

@@ -95,13 +95,15 @@ typedef struct {
 AmxAsync *amx_async_new(const char *homeserver, const char *store_dir);
 
 /* Stops the network process (interrupting a sync) and frees everything,
- * including undelivered messages. */
+ * including undelivered messages.  Free the messages you still hold first:
+ * each one goes back to the network process, which owns its memory. */
 void amx_async_free(AmxAsync *a);
 
 unsigned long amx_async_sigmask(AmxAsync *a);   /* AmigaOS: signals for Wait() */
 int amx_async_fd(AmxAsync *a);                  /* POSIX: readable = messages */
 
-/* Next message or NULL (never blocks).  Free with amx_async_msg_free(). */
+/* Next message or NULL (never blocks).  Free with amx_async_msg_free(),
+ * before amx_async_free(). */
 AmxMsg *amx_async_get(AmxAsync *a);
 void amx_async_msg_free(AmxMsg *m);
 

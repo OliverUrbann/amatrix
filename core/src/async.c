@@ -6,6 +6,9 @@
  * events as Exec messages to the GUI's port.  The command port's signal is
  * also the bsdsocket break mask during the /sync long poll, so a command
  * wakes it up (recv() returns EINTR).
+ * Each process frees only what it allocated (on AmigaOS 4 newlib keeps a heap
+ * per process): a command goes back to the GUI once done (ReplyMsg), a message
+ * back to the network process once the GUI has read it.
  *
  * POSIX (tests): a pthread, two mutex-protected queues and two pipes.
  */
@@ -29,6 +32,15 @@
 #endif
 
 #define CMD_QUIT 1000
+
+#ifdef __amigaos__
+static void worker_entry(void);
+static struct Process *new_proc(void)
+{
+    return CreateNewProcTags(NP_Entry, (ULONG)worker_entry, NP_Name, (ULONG)"Amatrix network",
+                             NP_StackSize, 256 * 1024, NP_Priority, -1, TAG_DONE);
+}
+#endif
 
 typedef struct Cmd {
 #ifdef __amigaos__
@@ -63,6 +75,8 @@ struct AmxAsync {
 #ifdef __amigaos__
     struct MsgPort *guiport;      /* created by the GUI task */
     struct MsgPort *cmdport;      /* created by the network process */
+    struct MsgPort *cmdback;      /* GUI: commands done, to be freed */
+    struct MsgPort *outback;      /* network process: messages read, to be freed */
     struct Process *proc;
     Cmd *quit;                    /* replied (under Forbid) when the process ends */
 #else
@@ -79,11 +93,27 @@ struct AmxAsync {
 
 #define OUT_OF(m) ((Out *)((char *)(m) - offsetof(Out, m)))
 
+static void free_cmd(Cmd *c);
+static void free_out(Out *o);
+
 #ifdef __amigaos__
 static void put_cmd(AmxAsync *a, Cmd *c)
 {
     c->msg.mn_Length = sizeof *c;
+    if (!c->msg.mn_ReplyPort) c->msg.mn_ReplyPort = a->cmdback;
     PutMsg(a->cmdport, &c->msg);
+}
+/* back to the side that allocated it */
+static void done_cmd(Cmd *c) { ReplyMsg(&c->msg); }
+static void reclaim_cmds(AmxAsync *a)
+{
+    struct Message *m;
+    while ((m = GetMsg(a->cmdback)) != NULL) free_cmd((Cmd *)m);
+}
+static void reclaim_outs(AmxAsync *a)
+{
+    struct Message *m;
+    while ((m = GetMsg(a->outback)) != NULL) free_out((Out *)m);
 }
 static Cmd *get_cmd(AmxAsync *a) { return (Cmd *)GetMsg(a->cmdport); }
 static void wait_cmd(AmxAsync *a) { WaitPort(a->cmdport); }
@@ -101,10 +131,17 @@ static void wait_cmd_timeout(AmxAsync *a, int seconds)
 static void put_out(AmxAsync *a, Out *o)
 {
     o->msg.mn_Length = sizeof *o;
+    o->msg.mn_ReplyPort = a->outback;
     PutMsg(a->guiport, &o->msg);
 }
 static Out *get_out(AmxAsync *a) { return (Out *)GetMsg(a->guiport); }
+static void read_out(Out *o) { ReplyMsg(&o->msg); }
 #else
+/* threads share one heap */
+static void done_cmd(Cmd *c) { free_cmd(c); }
+static void reclaim_cmds(AmxAsync *a) { (void)a; }
+static void reclaim_outs(AmxAsync *a) { (void)a; }
+static void read_out(Out *o) { free_out(o); }
 static void put_cmd(AmxAsync *a, Cmd *c)
 {
     char b = 1;
@@ -186,10 +223,13 @@ static const char *own(Out *o, const char *s)
 
 void amx_async_msg_free(AmxMsg *m)
 {
-    Out *o;
+    if (m) read_out(OUT_OF(m));
+}
+
+static void free_out(Out *o)
+{
+    AmxMsg *m = &o->m;
     int i;
-    if (!m) return;
-    o = OUT_OF(m);
     for (i = 0; i < o->n_own; i++) free(o->own[i]);
     if (m->rooms) amx_free_rooms(m->rooms, m->n);
     if (m->pub) amx_free_public_rooms(m->pub, m->n);
@@ -820,6 +860,7 @@ static void worker(AmxAsync *a)
 
     for (;;) {
         clear_wake(a);
+        reclaim_outs(a);
         while ((c = get_cmd(a)) != NULL) {
             if (c->cmd == CMD_QUIT) {
 #ifdef __amigaos__
@@ -830,7 +871,7 @@ static void worker(AmxAsync *a)
                 goto out;
             }
             exec_cmd(a, c);
-            free_cmd(c);
+            done_cmd(c);
         }
         if (!a->logged_in || !a->c) { wait_cmd(a); first = 1; continue; }
 
@@ -858,6 +899,8 @@ out:
     if (a->c) amx_client_free(a->c);
     a->c = NULL;
     amx_cleanup();
+    free(a->rooms_sig);
+    a->rooms_sig = NULL;
 }
 
 /* --------------------------------------------------------------- start/stop */
@@ -875,9 +918,20 @@ static void worker_entry(void)
     sm = (struct StartMsg *)GetMsg(&me->pr_MsgPort);
     a = sm->a;
     a->cmdport = CreateMsgPort();
+    a->outback = CreateMsgPort();
+    if (!a->outback && a->cmdport) { DeleteMsgPort(a->cmdport); a->cmdport = NULL; }
     ReplyMsg(&sm->msg);
     if (!a->cmdport) return;
     worker(a);
+    /* the GUI waits for the quit reply: take back what it has not read yet */
+    {
+        Out *o;
+        Cmd *c;
+        while ((c = get_cmd(a)) != NULL) done_cmd(c);     /* sent after the quit */
+        while ((o = get_out(a)) != NULL) free_out(o);
+        reclaim_outs(a);
+    }
+    DeleteMsgPort(a->outback);
     /* reply under Forbid(): the GUI may only unload us after we are gone */
     Forbid();
     DeleteMsgPort(a->cmdport);
@@ -899,12 +953,9 @@ AmxAsync *amx_async_new(const char *homeserver, const char *store_dir)
         struct StartMsg sm;
         struct MsgPort *reply = CreateMsgPort();
         a->guiport = CreateMsgPort();
-        if (!reply || !a->guiport) goto fail;
-        a->proc = CreateNewProcTags(NP_Entry, (ULONG)worker_entry,
-                                    NP_Name, (ULONG)"Amatrix network",
-                                    NP_StackSize, 256 * 1024,
-                                    NP_Priority, -1,
-                                    TAG_DONE);
+        a->cmdback = CreateMsgPort();
+        if (!reply || !a->guiport || !a->cmdback) goto fail;
+        a->proc = new_proc();
         if (!a->proc) { DeleteMsgPort(reply); goto fail; }
         memset(&sm, 0, sizeof sm);
         sm.msg.mn_ReplyPort = reply;
@@ -919,6 +970,7 @@ AmxAsync *amx_async_new(const char *homeserver, const char *store_dir)
     return a;
 fail:
     if (a->guiport) DeleteMsgPort(a->guiport);
+    if (a->cmdback) DeleteMsgPort(a->cmdback);
 #else
     if (pipe(a->gui_pipe) || pipe(a->wake_pipe)) goto fail;
     fcntl(a->gui_pipe[0], F_SETFL, O_NONBLOCK);
@@ -937,7 +989,6 @@ fail:
 
 void amx_async_free(AmxAsync *a)
 {
-    AmxMsg *m;
     if (!a) return;
 #ifdef __amigaos__
     {
@@ -953,9 +1004,11 @@ void amx_async_free(AmxAsync *a)
         free(q);
         if (reply) DeleteMsgPort(reply);
     }
-    while ((m = amx_async_get(a)) != NULL) amx_async_msg_free(m);
+    reclaim_cmds(a);
+    DeleteMsgPort(a->cmdback);
     DeleteMsgPort(a->guiport);
 #else
+    AmxMsg *m;
     if (a->running) {
         Cmd *q = calloc(1, sizeof *q);
         q->cmd = CMD_QUIT;
@@ -968,7 +1021,6 @@ void amx_async_free(AmxAsync *a)
     close(a->wake_pipe[0]); close(a->wake_pipe[1]);
     pthread_mutex_destroy(&a->mx);
 #endif
-    free(a->rooms_sig);
     free(a->hs); free(a->store); free(a);
 }
 
@@ -994,7 +1046,9 @@ int amx_async_fd(AmxAsync *a)
 
 AmxMsg *amx_async_get(AmxAsync *a)
 {
-    Out *o = get_out(a);
+    Out *o;
+    reclaim_cmds(a);
+    o = get_out(a);
     return o ? &o->m : NULL;
 }
 

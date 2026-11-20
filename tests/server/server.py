@@ -134,7 +134,7 @@ url_preview_ip_range_whitelist: ["127.0.0.1/32"]
         subprocess.run(["openssl", "req", "-newkey", "rsa:2048", "-nodes", "-keyout", "srv.key",
                         "-out", "srv.csr", "-subj", "/CN=localhost"], **q)
         open(os.path.join(d, "ext.cnf"), "w").write(
-            "subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:FALSE\n"
+            "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:10.0.2.2\nbasicConstraints=CA:FALSE\n"
             "keyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n")
         subprocess.run(["openssl", "x509", "-req", "-in", "srv.csr", "-CA", "ca.pem", "-CAkey", "ca.key",
                         "-CAcreateserial", "-out", "srv.pem", "-days", "30", "-extfile", "ext.cnf"], **q)
@@ -145,7 +145,7 @@ url_preview_ip_range_whitelist: ["127.0.0.1/32"]
         self._wait_tcp(self.tls_port, 20, "TLS proxy")
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "bad.key",
                         "-out", "bad.pem", "-days", "30", "-subj", "/CN=localhost",
-                        "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"], **q)
+                        "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:10.0.2.2"], **q)
         self.procs.append(subprocess.Popen(
             [py, os.path.join(HERE, "tlsproxy.py"), os.path.join(d, "bad.pem"), os.path.join(d, "bad.key"),
              str(self.bad_tls_port), str(self.port)], stdout=log, stderr=subprocess.STDOUT))

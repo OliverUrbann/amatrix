@@ -22,19 +22,26 @@
 #include <amissl/amissl.h>
 #include <proto/amisslmaster.h>
 #include <proto/amissl.h>
+struct Library *AmiSSLMasterBase = NULL, *AmiSSLBase = NULL, *AmiSSLExtBase = NULL;
+#endif
+#ifdef AMX_TLS                  /* AmiSSL, or OpenSSL linked in (MorphOS) */
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/x509v3.h>
-struct Library *AmiSSLMasterBase = NULL, *AmiSSLBase = NULL, *AmiSSLExtBase = NULL;
 static SSL_CTX *ctx;
-static int amissl_open;
+static int tls_open;
 #endif
 
 struct Library *SocketBase = NULL;
 
-/* AmigaOS 4 calls libraries through interfaces: ISocket comes from libauto,
- * the AmiSSL ones are fetched here */
+/* AmigaOS 4 calls libraries through interfaces, fetched here after opening
+ * (libauto's ISocket stays empty: we open bsdsocket.library ourselves) */
+#ifdef __amigaos4__
+#define SOCKET_IFACE_GET() (ISocket = (struct SocketIFace *)GetInterface(SocketBase, "main", 1, NULL))
+#else
+#define SOCKET_IFACE_GET() ((void)0)
+#endif
 #if defined(AMX_AMISSL) && defined(__amigaos4__)
 struct AmiSSLMasterIFace *IAmiSSLMaster;
 struct AmiSSLIFace *IAmiSSL;
@@ -53,18 +60,22 @@ int net_wake_pending(void) { return wake_mask && (SetSignal(0, 0) & wake_mask); 
 
 struct net_conn {
     long fd;
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
     SSL *ssl;
 #endif
 };
 
 int net_init(void)
 {
+#ifdef AMX_AMISSL
+    LONG rc;
+#endif
     SocketBase = OpenLibrary((STRPTR)"bsdsocket.library", 4);
     if (!SocketBase) {
         fprintf(AMX_ERR, "net: cannot open bsdsocket.library (TCP/IP stack running?)\n");
         return -1;
     }
+    SOCKET_IFACE_GET();
 #ifdef AMX_AMISSL
     AmiSSLMasterBase = OpenLibrary((STRPTR)"amisslmaster.library", AMISSLMASTER_MIN_VERSION);
     if (!AmiSSLMasterBase) {
@@ -72,17 +83,19 @@ int net_init(void)
         return -1;
     }
     MASTER_IFACE_GET();
-    if (OpenAmiSSLTags(AMISSL_CURRENT_VERSION,
+    if ((rc = OpenAmiSSLTags(AMISSL_CURRENT_VERSION,
                        AmiSSL_UsesOpenSSLStructs, FALSE,
                        AmiSSL_GetAmiSSLBase, (ULONG)&AmiSSLBase,
                        AmiSSL_GetAmiSSLExtBase, (ULONG)&AmiSSLExtBase,
                        AMISSL_OS_TAGS,
                        AmiSSL_ErrNoPtr, (ULONG)&errno,
-                       TAG_DONE) != 0) {
-        fprintf(AMX_ERR, "net: OpenAmiSSLTags failed (AmiSSL too old?)\n");
+                       TAG_DONE)) != 0) {
+        fprintf(AMX_ERR, "net: OpenAmiSSLTags failed (%ld, AmiSSL too old?)\n", (long)rc);
         return -1;
     }
-    amissl_open = 1;
+#endif
+#ifdef AMX_TLS
+    tls_open = 1;
     ctx = SSL_CTX_new(TLS_client_method());
     if (!ctx) { fprintf(AMX_ERR, "net: SSL_CTX_new failed\n"); return -1; }
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
@@ -94,31 +107,37 @@ int net_init(void)
 
 void net_cleanup(void)
 {
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
     if (ctx) { SSL_CTX_free(ctx); ctx = NULL; }
-    if (amissl_open) { CloseAmiSSL(); amissl_open = 0; }
+#endif
+#ifdef AMX_AMISSL
+    if (tls_open) CloseAmiSSL();
     if (AmiSSLMasterBase) { CloseLibrary(AmiSSLMasterBase); AmiSSLMasterBase = NULL; }
+#endif
+#ifdef AMX_TLS
+    tls_open = 0;
 #endif
     if (SocketBase) { CloseLibrary(SocketBase); SocketBase = NULL; }
 }
 
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
 /* amxdiag: bsdsocket only, no AmiSSL */
 int net_init_socket_only(void)
 {
     SocketBase = OpenLibrary((STRPTR)"bsdsocket.library", 4);
+    if (SocketBase) SOCKET_IFACE_GET();
     return SocketBase ? 0 : -1;
 }
 
 /* used by platform_amiga.c for key material */
 int net_random(void *buf, size_t n)
 {
-    if (!amissl_open) return -1;
+    if (!tls_open) return -1;
     return RAND_bytes(buf, (int)n) == 1 ? 0 : -1;
 }
 void net_random_seed(const void *buf, size_t n)
 {
-    if (amissl_open) RAND_add(buf, (int)n, 0.0);
+    if (tls_open) RAND_add(buf, (int)n, 0.0);
 }
 #endif
 
@@ -129,7 +148,7 @@ net_conn *net_connect(const char *host, int port, int tls, char *err, size_t err
     net_conn *c;
     long fd;
 
-#ifndef AMX_AMISSL
+#ifndef AMX_TLS
     if (tls) { snprintf(err, errlen, "https needs the AmiSSL build"); return NULL; }
 #endif
     he = gethostbyname((STRPTR)host);
@@ -147,7 +166,7 @@ net_conn *net_connect(const char *host, int port, int tls, char *err, size_t err
     }
     c = calloc(1, sizeof *c);
     c->fd = fd;
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
     if (tls) {
         long vr;
         c->ssl = SSL_new(ctx);
@@ -175,7 +194,7 @@ int net_write(net_conn *c, const void *buf, size_t len)
     const char *p = buf;
     while (len) {
         long n;
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
         if (c->ssl) n = SSL_write(c->ssl, p, (int)len); else
 #endif
         n = send(c->fd, (APTR)p, len, 0);
@@ -192,7 +211,7 @@ static long read_intr(net_conn *c, void *buf, size_t len)
     long one = 1, n;
     IoctlSocket(c->fd, FIONBIO, (char *)&one);
     for (;;) {
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
         if (!(c->ssl && SSL_pending(c->ssl)))
 #endif
         {
@@ -205,7 +224,7 @@ static long read_intr(net_conn *c, void *buf, size_t len)
             if (r == 0 && (sig & wake_mask)) return -2;
             if (r < 0) return -1;
         }
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
         if (c->ssl) {
             n = SSL_read(c->ssl, buf, (int)len);
             if (n > 0) return n;
@@ -227,7 +246,7 @@ long net_read(net_conn *c, void *buf, size_t len)
 {
     long n;
     if (intr_on) return read_intr(c, buf, len);
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
     if (c->ssl) {
         n = SSL_read(c->ssl, buf, (int)len);
         if (n <= 0) {
@@ -246,7 +265,7 @@ long net_read(net_conn *c, void *buf, size_t len)
 void net_close(net_conn *c)
 {
     if (!c) return;
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
     if (c->ssl) { SSL_shutdown(c->ssl); SSL_free(c->ssl); }
 #endif
     CloseSocket(c->fd);

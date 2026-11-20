@@ -100,6 +100,70 @@ async def run_amiga(binary, args, srv, timeout, log):
     return text, rc
 
 
+REMOTE = {}          # target -> (Remote, VM): the emulated OS 4 / MorphOS, up for the whole run
+
+
+async def run_remote(target, binary, args, srv, timeout, log):
+    remote = REMOTE[target][0]
+    q = lambda a: '"' + a.replace('"', "") + '"'
+    with open(binary, "rb") as f:
+        exe = f.read()
+    with open(srv.ca_pem, "rb") as f:
+        ca = f.read()
+    await remote.run("Delete RAM:amx-store ALL QUIET FORCE", timeout=60)
+    text = await remote.run(f"RAM:test {' '.join(q(a) for a in args)}",
+                            files={"RAM:test": exe, f"AmiSSL:Certs/{srv.ca_hash_name()}": ca}, timeout=timeout)
+    if "timed out" in text and "# rc=" not in text:      # hangs or crashed: what does the system say?
+        vm = REMOTE[target][1]
+        shot = os.path.join(TOP, "build", target, "test-logs", f"{os.path.basename(binary)}.png")
+        vm.screenshot(shot)
+        dbg = os.path.join(TOP, "build", target, "test-logs", f"{os.path.basename(binary)}.debug.txt")
+        with open(dbg, "w", encoding="latin-1") as f:
+            f.write(await remote.sh("DumpDebugBuffer"))
+        part = await remote.sh("Type RAM:amxrun.out")          # how far the program got
+        tasks = await remote.sh("Status FULL")
+        with open(dbg, "a", encoding="latin-1") as f:
+            f.write("\n--- Status FULL ---\n" + tasks)
+        text += "# output so far:\n" + "".join("#   " + l + "\n" for l in part.splitlines())
+        text += f"\n# screenshot {shot}\n# debug buffer {dbg}\n"
+        # a crashed program leaves the system stuck (Grim Reaper): start it afresh
+        remote.close()
+        await asyncio.get_running_loop().run_in_executor(None, vm.stop)
+        REMOTE.pop(target)
+        await start_remote(target)
+    text = f"# emulator: {target}\n" + text
+    for line in text.splitlines():
+        log(line)
+    rc = 0
+    for line in text.splitlines():
+        if line.startswith("# rc="):
+            rc = int(line[5:] or 0)
+    return text, rc
+
+
+async def start_remote(target):
+    sys.path.insert(0, os.path.join(HERE, "emu"))
+    from remote import Remote, Os4Vm
+    remote = Remote()
+    vm = Os4Vm(remote.port)
+    print(f"starting the emulated {target} ...", flush=True)
+    await asyncio.get_running_loop().run_in_executor(None, vm.start)
+    if not await remote.wait_ready(400):
+        vm.screenshot(os.path.join(TOP, "build", target, "emu-start.png"))
+        vm.stop()
+        raise RuntimeError(f"amxrun in the emulated {target} did not report (screenshot build/{target}/emu-start.png)")
+    REMOTE[target] = (remote, vm)
+
+
+def stop_remote():
+    for remote, vm in REMOTE.values():
+        remote.quit()
+        time.sleep(3)
+        vm.stop()
+        remote.close()
+    REMOTE.clear()
+
+
 # -------------------------------------------------------------------- main
 
 async def run_feature(feature, target, srv, logdir, verbose):
@@ -112,7 +176,8 @@ async def run_feature(feature, target, srv, logdir, verbose):
             print(f"  [{feature}] {line}", flush=True)
 
     mod = load_peer(feature)
-    scale = 3 if target == "amiga" else 1
+    emulated = target in ("amiga", "os4", "mos")
+    scale = int(os.environ.get("AMX_SCALE", 3)) if emulated else 1     # whole number: peers use it in range()
     timeout = getattr(mod, "TIMEOUT", 240) * scale
     me, other = srv.register("amiga"), srv.register("peer")
     workdir = tempfile.mkdtemp(prefix=f"amx-{feature}-")
@@ -120,14 +185,19 @@ async def run_feature(feature, target, srv, logdir, verbose):
     ctx = Context(srv.http_url, other, me, workdir, log)
     ctx.scale = scale
     ctx.server = srv
-    extra = [a.format(untrusted=srv.untrusted_url) for a in getattr(mod, "EXTRA_ARGS", [])]
+    https, untrusted = srv.https_url, srv.untrusted_url
+    if target in REMOTE:                          # the host as the emulated system sees it
+        https, untrusted = (u.replace("localhost", "10.0.2.2") for u in (https, untrusted))
+    extra = [a.format(untrusted=untrusted) for a in getattr(mod, "EXTRA_ARGS", [])]
     binary = os.path.join(TOP, "build", target, "tests", feature)
-    store = "RAM:amx-store" if target == "amiga" else os.path.join(workdir, "store")
-    args = [srv.https_url, me.localpart, me.password, other.user_id, store] + extra
+    store = "RAM:amx-store" if emulated else os.path.join(workdir, "store")
+    args = [https, me.localpart, me.password, other.user_id, store] + extra
     log(f"# {feature}: client {me.user_id}, peer {other.user_id}, target {target}")
 
     if target == "amiga":
         test = asyncio.ensure_future(run_amiga(binary, args, srv, timeout, log))
+    elif target in REMOTE:
+        test = asyncio.ensure_future(run_remote(target, binary, args, srv, timeout, log))
     else:
         env = dict(os.environ, SSL_CERT_FILE=srv.ca_pem, ASAN_OPTIONS="detect_leaks=0",
                    UBSAN_OPTIONS="print_stacktrace=0")
@@ -161,7 +231,7 @@ async def main():
     for n in ("nio", "peewee", "asyncio"):
         logging.getLogger(n).setLevel(logging.ERROR)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--target", default="native", choices=["native", "asan", "amiga"])
+    ap.add_argument("--target", default="native", choices=["native", "asan", "amiga", "os4"])
     ap.add_argument("--keep", action="store_true", help="keep the server data directory")
     ap.add_argument("-v", "--verbose", action="store_true")
     ap.add_argument("feature", nargs="*")
@@ -169,7 +239,8 @@ async def main():
     feats = a.feature or features()
 
     print(f"building ({a.target}) ...", flush=True)
-    r = subprocess.run(["make", "-j2", f"TARGET={a.target}", "tests"], cwd=TOP,
+    goals = ["tests"] + ([f"build/{a.target}/tools/amxrun"] if a.target == "os4" else [])
+    r = subprocess.run(["make", "-j2", f"TARGET={a.target}"] + goals, cwd=TOP,
                        capture_output=True, text=True)
     if r.returncode:
         print(r.stdout[-3000:], r.stderr[-3000:])
@@ -178,15 +249,20 @@ async def main():
     logdir = os.path.join(TOP, "build", a.target, "test-logs")
     os.makedirs(logdir, exist_ok=True)
     results = []
-    with TestServer(keep=a.keep) as srv:
-        for f in feats:
-            t0 = time.time()
-            print(f"{f:28s} ...", end="", flush=True)
-            ok, n, detail = await run_feature(f, a.target, srv, logdir, a.verbose)
-            print(f"\r{f:28s} {'PASS' if ok else 'FAIL'}  ({n} checks, {time.time() - t0:.0f}s)", flush=True)
-            for d in detail:
-                print(f"    {d}")
-            results.append(ok)
+    if a.target == "os4":
+        await start_remote(a.target)
+    try:
+        with TestServer(keep=a.keep) as srv:
+            for f in feats:
+                t0 = time.time()
+                print(f"{f:28s} ...", end="", flush=True)
+                ok, n, detail = await run_feature(f, a.target, srv, logdir, a.verbose)
+                print(f"\r{f:28s} {'PASS' if ok else 'FAIL'}  ({n} checks, {time.time() - t0:.0f}s)", flush=True)
+                for d in detail:
+                    print(f"    {d}")
+                results.append(ok)
+    finally:
+        stop_remote()
     print(f"\n{sum(results)}/{len(results)} features passed on {a.target}; logs in {logdir}")
     return 0 if all(results) else 1
 

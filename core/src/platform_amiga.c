@@ -16,8 +16,9 @@
 #include <proto/dos.h>
 
 #include "olm/olm.h"
+#include "net.h"                /* AMX_TLS */
 
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
 int  net_random(void *buf, size_t n);              /* net.c, AmiSSL RAND_bytes */
 void net_random_seed(const void *buf, size_t n);
 #endif
@@ -59,7 +60,7 @@ static void weak_random(void *buf, size_t n)
 
 int plat_random(void *buf, size_t n)
 {
-#ifdef AMX_AMISSL
+#ifdef AMX_TLS
     unsigned char extra[32];
     weak_random(extra, sizeof extra);
     net_random_seed(extra, sizeof extra);

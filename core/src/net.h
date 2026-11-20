@@ -15,6 +15,11 @@
 #endif
 #endif
 
+/* TLS: AmiSSL (AmigaOS 3/4) or OpenSSL linked in (MorphOS, AMX_OPENSSL) */
+#if defined(AMX_AMISSL) || defined(AMX_OPENSSL)
+#define AMX_TLS
+#endif
+
 typedef struct net_conn net_conn;
 
 int  net_init(void);                 /* once at startup; 0 = ok */
