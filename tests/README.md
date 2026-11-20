@@ -77,7 +77,10 @@ front of the GUI (redirect the program's output).
   by `emu/setup-os4-amissl.sh`).  The OS 4 system stays up for the whole run:
   `amxrun` in the emulator fetches the test programs and certificates from
   `remote.py` over the emulated network (the host is `10.0.2.2` there) and
-  posts their output back.  A hanging test leaves a screenshot and the
+  posts their output back.  Files carry a CRC32 (the emulated A2065/SLIRP
+  network now and then corrupts data; a damaged file is sent again), and a
+  test during which the emulated network dies completely is run once more
+  on a freshly started system.  A hanging test leaves a screenshot and the
   kernel crash log (`DumpDebugBuffer`) in `build/os4/test-logs/`.
 
 ## Lessons learned (keep in mind when writing peers)

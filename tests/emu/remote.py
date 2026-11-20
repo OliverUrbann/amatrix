@@ -14,7 +14,7 @@ Environments (from the Nextcloud claude-env): OS4ENV = Emulation/AmigaOS4-Linux
 (os41fe.hdf, os4.fs-uae, set up with setup-os4-linux.sh), TESTENV = the OS 3
 test environment (used to copy amxrun onto the OS 4 disk before booting).
 """
-import asyncio, os, shutil, subprocess, tempfile, threading, time
+import asyncio, os, zlib, shutil, subprocess, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -35,6 +35,8 @@ class Remote:
         self.sh_result = None
         self.sh_ev = threading.Event()
         self.last_poll = 0.0
+        self.files = {}                     # path -> data, to send again
+        self.bad = 0                        # files that arrived corrupted
         remote = self
 
         class H(BaseHTTPRequestHandler):
@@ -56,7 +58,13 @@ class Remote:
                 self.send_response(200)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
-                if self.path == "/sh":
+                if self.path == "/bad":     # corrupted on the way: once more, first
+                    path = data.decode("latin-1")
+                    remote.bad += 1
+                    print(f"[remote] {path} arrived corrupted, sending it again", flush=True)
+                    if path in remote.files:
+                        remote.put(path, remote.files[path], first=True)
+                elif self.path == "/sh":
                     remote.sh_result = data.decode("latin-1")
                     remote.sh_ev.set()
                 else:
@@ -67,9 +75,11 @@ class Remote:
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
-    def put(self, path, data):
+    def put(self, path, data, first=False):
+        job = f"PUT {path} {len(data)} {zlib.crc32(data):08x}\n".encode() + data
         with self.lock:
-            self.jobs.append(f"PUT {path} {len(data)}\n".encode() + data)
+            self.files[path] = data
+            self.jobs.insert(0, job) if first else self.jobs.append(job)
 
     async def wait_ready(self, timeout):
         """True once amxrun has asked for work."""

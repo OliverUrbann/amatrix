@@ -3,7 +3,9 @@
  *   amxrun HOST PORT
  *
  * Asks the host (tests/emu/remote.py) for jobs over plain HTTP and does them:
- *   GET /next   ->  "PUT <path> <len>\n<bytes>"   write a file
+ *   GET /next   ->  "PUT <path> <len> <crc32>\n<bytes>"   write a file
+ *                   (a wrong checksum is reported with POST /bad <path>; the
+ *                   emulated network has been seen to corrupt data)
  *                   "RUN <command line>\n"         start it; its output goes to /result when done
  *                   "SH <command line>\n"          run a short command now, output to /sh
  *                   "WAIT\n"                       nothing to do yet
@@ -65,6 +67,17 @@ static char *request(const char *method, const char *path, const char *body, lon
     *rlen = n - (p - buf);
     memmove(buf, p, *rlen + 1);
     return buf;
+}
+
+static unsigned long crc32(const unsigned char *p, long n)
+{
+    unsigned long c = 0xFFFFFFFFUL;
+    int k;
+    while (n-- > 0) {
+        c ^= *p++;
+        for (k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320UL & (0UL - (c & 1)));
+    }
+    return c ^ 0xFFFFFFFFUL;
 }
 
 static void put_file(const char *path, const char *data, long len)
@@ -163,8 +176,12 @@ int main(int argc, char **argv)
         if (!strncmp(job, "PUT ", 4)) {
             char path[256];
             long sz = 0;
-            if (sscanf(job + 4, "%255s %ld", path, &sz) == 2 && nl && sz <= len - (nl + 1 - job))
+            unsigned long crc = 0;
+            if (sscanf(job + 4, "%255s %ld %lx", path, &sz, &crc) == 3 && nl && sz <= len - (nl + 1 - job)
+                && crc32((unsigned char *)nl + 1, sz) == crc)
                 put_file(path, nl + 1, sz);
+            else
+                free(request("POST", "/bad", path, strlen(path), &n_dummy));
         } else if (!strncmp(job, "RUN ", 4))
             run(job + 4);
         else if (!strncmp(job, "SH ", 3))

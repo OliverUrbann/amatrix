@@ -124,6 +124,8 @@ async def run_remote(target, binary, args, srv, timeout, log):
         tasks = await remote.sh("Status FULL")
         with open(dbg, "a", encoding="latin-1") as f:
             f.write("\n--- Status FULL ---\n" + tasks)
+        if part == "(no answer)":                           # amxrun itself is unreachable
+            text += "# emulator network lost\n"
         text += "# output so far:\n" + "".join("#   " + l + "\n" for l in part.splitlines())
         text += f"\n# screenshot {shot}\n# debug buffer {dbg}\n"
         # a crashed program leaves the system stuck (Grim Reaper): start it afresh
@@ -221,6 +223,7 @@ async def run_feature(feature, target, srv, logdir, verbose):
     if not plan: detail.append("no TAP plan (crash?)")
     if rc: detail.append(f"rc={rc}")
     if sanitizer: detail.append("sanitizer error")
+    if "# emulator network lost" in text: detail.append("emulator network lost")
     detail += [b for b in bad] + [f"peer: {n}" for n in peer_bad]
     return passed, n_ok + sum(ok for ok, _ in ctx.results), detail
 
@@ -257,6 +260,10 @@ async def main():
                 t0 = time.time()
                 print(f"{f:28s} ...", end="", flush=True)
                 ok, n, detail = await run_feature(f, a.target, srv, logdir, a.verbose)
+                if not ok and "emulator network lost" in detail:   # the emulator, not us: once more
+                    os.replace(os.path.join(logdir, f"{f}.log"), os.path.join(logdir, f"{f}.lost.log"))
+                    print(f"\r{f:28s} ...emulator network lost, again ...", end="", flush=True)
+                    ok, n, detail = await run_feature(f, a.target, srv, logdir, a.verbose)
                 print(f"\r{f:28s} {'PASS' if ok else 'FAIL'}  ({n} checks, {time.time() - t0:.0f}s)", flush=True)
                 for d in detail:
                     print(f"    {d}")
