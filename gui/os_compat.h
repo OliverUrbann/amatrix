@@ -26,4 +26,12 @@ struct MUIMasterIFace;
 #define MUI_IFACE_GET()  ((void)0)
 #endif
 
+/* MUIA_List_Quiet: on MorphOS (MUI 4) a List switched quiet and back stays
+ * empty on screen (rows there, nothing drawn), so it is left out there */
+#ifdef __MORPHOS__
+#define LIST_QUIET(list, on) ((void)(list))
+#else
+#define LIST_QUIET(list, on) set(list, MUIA_List_Quiet, on)
+#endif
+
 #endif

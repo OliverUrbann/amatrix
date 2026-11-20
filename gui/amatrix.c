@@ -1597,7 +1597,7 @@ static void refill_rooms(const char *active)
     LONG sel = n_spaces && cyc_space ? (LONG)xget(cyc_space, MUIA_Cycle_Active) : 0, row = 0, pos = MUIV_List_Active_Off;
     const char *sp = sel > 0 && sel <= n_spaces ? space_ids[sel - 1] : NULL;
     int i;
-    set(lst_rooms, MUIA_List_Quiet, TRUE);
+    LIST_QUIET(lst_rooms, TRUE);
     DoMethod(lst_rooms, MUIM_List_Clear);
     for (i = 0; i < n_rooms; i++) {
         Room *r = &rooms[i];
@@ -1608,7 +1608,7 @@ static void refill_rooms(const char *active)
         row++;
     }
     set(lst_rooms, MUIA_List_Active, pos);
-    set(lst_rooms, MUIA_List_Quiet, FALSE);
+    LIST_QUIET(lst_rooms, FALSE);
 }
 
 /* the space choice above the list: rebuilt when the spaces change */
