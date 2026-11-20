@@ -184,8 +184,9 @@ class MosVm:
     cert_path = "RAM:amx-ca.pem"
     diag = []
 
-    def __init__(self, port, amxrun=None, display=None):
+    def __init__(self, port, amxrun=None, display=None, snapshot=True):
         self.port = port
+        self.snapshot = snapshot            # False: changes go into the image (for installing)
         self.amxrun = amxrun or os.path.join(TOP, "build", "mos", "tools", "amxrun")
         self.procs = []
         self.dir = None
@@ -205,7 +206,7 @@ class MosVm:
             ["qemu-system-ppc", "-machine", "pegasos2", "-rtc", "base=localtime", "-m", "1024",
              "-device", "ati-vga,romfile=", "-kernel", os.path.join(MOSENV, "boot.img"),
              "-drive", f"if=none,id=hd0,format=raw,file={os.path.join(MOSENV, 'morphos-hd.img')}",
-             "-device", "ide-hd,drive=hd0,bus=ide.0", "-snapshot",
+             "-device", "ide-hd,drive=hd0,bus=ide.0"] + (["-snapshot"] if self.snapshot else []) + [
              "-drive", f"if=none,id=cd1,format=raw,media=cdrom,file={os.path.join(e, 'test.iso')}",
              "-device", "ide-cd,drive=cd1,bus=ide.1",
              "-netdev", "user,id=net0", "-device", "rtl8139,netdev=net0",

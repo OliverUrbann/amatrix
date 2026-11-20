@@ -1695,13 +1695,18 @@ static void update_rooms(const AmxMsg *m)
             if (old) nl[i].read_ts = old->read_ts;
         }
     }
-    free_rooms(rooms, n_rooms);
-    rooms = nl;
-    n_rooms = m->n;
-    (void)pos;
-    update_spaces();
-    previews_joined();
-    refill_rooms(active);
+    {   /* the old table goes only after the list is refilled: until then the
+         * list still points into it (update_spaces() redraws the window) */
+        Room *old = rooms;
+        int n_old = n_rooms;
+        rooms = nl;
+        n_rooms = m->n;
+        (void)pos;
+        update_spaces();
+        previews_joined();
+        refill_rooms(active);
+        free_rooms(old, n_old);
+    }
     {
         ChatWin *cw;
         for (cw = chats; cw; cw = cw->next) update_pinbar(cw);
