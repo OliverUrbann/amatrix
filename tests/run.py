@@ -110,16 +110,20 @@ async def run_remote(target, binary, args, srv, timeout, log):
         exe = f.read()
     with open(srv.ca_pem, "rb") as f:
         ca = f.read()
+    vm = REMOTE[target][1]
     await remote.run("Delete RAM:amx-store ALL QUIET FORCE", timeout=60)
     text = await remote.run(f"RAM:test {' '.join(q(a) for a in args)}",
-                            files={"RAM:test": exe, f"AmiSSL:Certs/{srv.ca_hash_name()}": ca}, timeout=timeout)
+                            files={"RAM:test": exe, vm.cert_path or f"AmiSSL:Certs/{srv.ca_hash_name()}": ca},
+                            timeout=timeout)
     if "timed out" in text and "# rc=" not in text:      # hangs or crashed: what does the system say?
-        vm = REMOTE[target][1]
         shot = os.path.join(TOP, "build", target, "test-logs", f"{os.path.basename(binary)}.png")
         vm.screenshot(shot)
         dbg = os.path.join(TOP, "build", target, "test-logs", f"{os.path.basename(binary)}.debug.txt")
         with open(dbg, "w", encoding="latin-1") as f:
-            f.write(await remote.sh("DumpDebugBuffer"))
+            for cmd in vm.diag:
+                f.write(await remote.sh(cmd))
+            if hasattr(vm, "serial_log"):
+                f.write("\n--- serial ---\n" + vm.serial_log())
         part = await remote.sh("Type RAM:amxrun.out")          # how far the program got
         tasks = await remote.sh("Status FULL")
         with open(dbg, "a", encoding="latin-1") as f:
@@ -145,9 +149,9 @@ async def run_remote(target, binary, args, srv, timeout, log):
 
 async def start_remote(target):
     sys.path.insert(0, os.path.join(HERE, "emu"))
-    from remote import Remote, Os4Vm
+    from remote import Remote, Os4Vm, MosVm
     remote = Remote()
-    vm = Os4Vm(remote.port)
+    vm = (MosVm if target == "mos" else Os4Vm)(remote.port)
     print(f"starting the emulated {target} ...", flush=True)
     await asyncio.get_running_loop().run_in_executor(None, vm.start)
     if not await remote.wait_ready(400):
@@ -234,7 +238,7 @@ async def main():
     for n in ("nio", "peewee", "asyncio"):
         logging.getLogger(n).setLevel(logging.ERROR)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--target", default="native", choices=["native", "asan", "amiga", "os4"])
+    ap.add_argument("--target", default="native", choices=["native", "asan", "amiga", "os4", "mos"])
     ap.add_argument("--keep", action="store_true", help="keep the server data directory")
     ap.add_argument("-v", "--verbose", action="store_true")
     ap.add_argument("feature", nargs="*")
@@ -242,7 +246,7 @@ async def main():
     feats = a.feature or features()
 
     print(f"building ({a.target}) ...", flush=True)
-    goals = ["tests"] + ([f"build/{a.target}/tools/amxrun"] if a.target == "os4" else [])
+    goals = ["tests"] + ([f"build/{a.target}/tools/amxrun"] if a.target in ("os4", "mos") else [])
     r = subprocess.run(["make", "-j2", f"TARGET={a.target}"] + goals, cwd=TOP,
                        capture_output=True, text=True)
     if r.returncode:
@@ -252,7 +256,7 @@ async def main():
     logdir = os.path.join(TOP, "build", a.target, "test-logs")
     os.makedirs(logdir, exist_ok=True)
     results = []
-    if a.target == "os4":
+    if a.target in ("os4", "mos"):
         await start_remote(a.target)
     try:
         with TestServer(keep=a.keep) as srv:

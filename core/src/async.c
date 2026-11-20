@@ -33,11 +33,17 @@
 
 #define CMD_QUIT 1000
 
+#ifdef __MORPHOS__
+#define NP_NATIVE NP_CodeType, CODETYPE_PPC,    /* the entry is PowerPC code, not 68k */
+#else
+#define NP_NATIVE
+#endif
+
 #ifdef __amigaos__
 static void worker_entry(void);
 static struct Process *new_proc(void)
 {
-    return CreateNewProcTags(NP_Entry, (ULONG)worker_entry, NP_Name, (ULONG)"Amatrix network",
+    return CreateNewProcTags(NP_Entry, (ULONG)worker_entry, NP_NATIVE NP_Name, (ULONG)"Amatrix network",
                              NP_StackSize, 256 * 1024, NP_Priority, -1, TAG_DONE);
 }
 #endif

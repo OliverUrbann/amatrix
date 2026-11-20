@@ -11,7 +11,8 @@ from a small HTTP server here over the emulator's network (SLIRP: the host is
     vm.stop()
 
 Environments (from the Nextcloud claude-env): OS4ENV = Emulation/AmigaOS4-Linux
-(os41fe.hdf, os4.fs-uae, set up with setup-os4-linux.sh), TESTENV = the OS 3
+(os41fe.hdf, os4.fs-uae, set up with setup-os4-linux.sh), MOSENV =
+Emulation/MorphOS-macOS (morphos-hd.img, boot.img; QEMU pegasos2), TESTENV = the OS 3
 test environment (used to copy amxrun onto the OS 4 disk before booting).
 """
 import asyncio, os, zlib, shutil, subprocess, tempfile, threading, time
@@ -21,6 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOP = os.path.dirname(os.path.dirname(HERE))
 GUEST_HOST = "10.0.2.2"          # the host as the emulated system sees it
 OS4ENV = os.environ.get("OS4ENV", "/root/env/nc/claude-env/Emulation/AmigaOS4-Linux")
+MOSENV = os.environ.get("MOSENV", "/root/env/nc/claude-env/Emulation/MorphOS-macOS")
 TESTENV = os.environ.get("TESTENV", os.path.expanduser("~/amiga/testenv/amiga-testenv"))
 
 
@@ -119,6 +121,9 @@ class Remote:
 class Os4Vm:
     """AmigaOS 4.1 FE in FS-UAE + QEMU-UAE (headless), network over SLIRP."""
 
+    cert_path = None                        # AmiSSL:Certs/<hash>.0
+    diag = ["DumpDebugBuffer"]              # the kernel crash log
+
     def __init__(self, port, amxrun=None, display=":9"):
         self.port = port
         self.amxrun = amxrun or os.path.join(TOP, "build", "os4", "tools", "amxrun")
@@ -168,3 +173,79 @@ class Os4Vm:
             except subprocess.TimeoutExpired:
                 p.kill()
         self.procs = []
+
+
+class MosVm:
+    """MorphOS 3.21 (installed disk) in QEMU pegasos2 (headless), network over QEMU's user net.
+    The disk runs with -snapshot (stays unchanged); amxrun comes on a CD named TEST,
+    whose autorun the installed S:user-startup executes."""
+
+    # the host as amxrun reaches it, the CA file, the diagnosis commands
+    cert_path = "RAM:amx-ca.pem"
+    diag = []
+
+    def __init__(self, port, amxrun=None, display=None):
+        self.port = port
+        self.amxrun = amxrun or os.path.join(TOP, "build", "mos", "tools", "amxrun")
+        self.procs = []
+        self.dir = None
+
+    def start(self):
+        self.dir = e = tempfile.mkdtemp(prefix="amx-mos-")
+        cd = os.path.join(e, "cd")
+        os.mkdir(cd)
+        shutil.copy(self.amxrun, os.path.join(cd, "amxrun"))
+        with open(os.path.join(cd, "autorun"), "w") as f:
+            f.write("Copy TEST:amxrun RAM:amxrun QUIET\nProtect RAM:amxrun +rwed QUIET\n"
+                    f"SetEnv SSL_CERT_FILE {self.cert_path}\nWait 10\n"
+                    f"Run >NIL: <NIL: RAM:amxrun {GUEST_HOST} {self.port}\n")
+        subprocess.run(["genisoimage", "-quiet", "-R", "-J", "-V", "TEST", "-o",
+                        os.path.join(e, "test.iso"), cd], check=True)
+        self.procs.append(subprocess.Popen(
+            ["qemu-system-ppc", "-machine", "pegasos2", "-rtc", "base=localtime", "-m", "1024",
+             "-device", "ati-vga,romfile=", "-kernel", os.path.join(MOSENV, "boot.img"),
+             "-drive", f"if=none,id=hd0,format=raw,file={os.path.join(MOSENV, 'morphos-hd.img')}",
+             "-device", "ide-hd,drive=hd0,bus=ide.0", "-snapshot",
+             "-drive", f"if=none,id=cd1,format=raw,media=cdrom,file={os.path.join(e, 'test.iso')}",
+             "-device", "ide-cd,drive=cd1,bus=ide.1",
+             "-netdev", "user,id=net0", "-device", "rtl8139,netdev=net0",
+             "-device", "usb-tablet", "-device", "usb-kbd",
+             "-serial", f"file:{os.path.join(e, 'serial.log')}", "-display", "none",
+             "-monitor", f"unix:{os.path.join(e, 'mon.sock')},server,nowait"],
+            cwd=e, stdin=subprocess.DEVNULL, stdout=open(os.path.join(e, "qemu.log"), "w"),
+            stderr=subprocess.STDOUT))
+
+    def monitor(self, cmd):
+        import socket
+        try:
+            s = socket.socket(socket.AF_UNIX)
+            s.connect(os.path.join(self.dir, "mon.sock"))
+            s.sendall(cmd.encode() + b"\n")
+            time.sleep(2)
+            s.close()
+        except OSError:
+            pass
+
+    def screenshot(self, path):
+        ppm = os.path.join(self.dir, "s.ppm")
+        self.monitor(f"screendump {ppm}")
+        subprocess.run(["convert", ppm, path], capture_output=True)
+
+    def serial_log(self):
+        try:
+            with open(os.path.join(self.dir, "serial.log"), "rb") as f:
+                return f.read().decode("latin-1")
+        except OSError:
+            return ""
+
+    def stop(self):
+        self.monitor("quit")
+        for p in reversed(self.procs):
+            try:
+                p.wait(5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        self.procs = []
+        if self.dir:
+            shutil.rmtree(self.dir, ignore_errors=True)
+            self.dir = None

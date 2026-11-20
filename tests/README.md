@@ -9,6 +9,7 @@ tests/run.py                         # all features, Linux build
 tests/run.py --target asan           # Linux with AddressSanitizer/UBSan
 tests/run.py --target amiga          # the Amiga build, inside FS-UAE
 tests/run.py --target os4            # the AmigaOS 4 build, inside FS-UAE + QEMU-UAE
+tests/run.py --target mos            # the MorphOS build, inside QEMU (pegasos2)
 tests/run.py e2ee_send rooms -v      # selected features, live output
 AMX_VERBOSE=1 tests/run.py ...       # core logging in the test programs (2 = HTTP too)
 ```
@@ -77,7 +78,9 @@ front of the GUI (redirect the program's output).
   by `emu/setup-os4-amissl.sh`).  The OS 4 system stays up for the whole run:
   `amxrun` in the emulator fetches the test programs and certificates from
   `remote.py` over the emulated network (the host is `10.0.2.2` there) and
-  posts their output back.  Files carry a CRC32 (the emulated A2065/SLIRP
+  posts their output back (`--target mos`: MorphOS 3.21 in QEMU pegasos2,
+  `MOSENV` = Emulation/MorphOS-macOS, amxrun comes on a CD, the CA via
+  `SSL_CERT_FILE`).  Files carry a CRC32 (the emulated A2065/SLIRP
   network now and then corrupts data; a damaged file is sent again), and a
   test during which the emulated network dies completely is run once more
   on a freshly started system.  A hanging test leaves a screenshot and the
