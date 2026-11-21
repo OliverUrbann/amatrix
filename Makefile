@@ -41,7 +41,7 @@ else ifeq ($(TARGET),os4)
   PLATFORM := platform_amiga.c
   LIBS     := -L$(AMISSL)/lib/AmigaOS4 -lamisslstubs -lauto -lstdc++ -lm
   STRIP    := true            # keep symbols: the Grim Reaper / crash log names the functions
-  GUILIBS  :=
+  GUILIBS  := -lauto
 else ifeq ($(TARGET),mos)
   export PATH := /gg/bin:$(PATH)
   CC   := ppc-morphos-gcc

@@ -7,7 +7,9 @@
  *                   (a wrong checksum is reported with POST /bad <path>; the
  *                   emulated network has been seen to corrupt data)
  *                   "RUN <command line>\n"         start it; its output goes to /result when done
+ *                                                  (several commands: separated by a backslash-n)
  *                   "SH <command line>\n"          run a short command now, output to /sh
+ *                   "FETCH <path>\n"               send the file back (/file, or /nofile)
  *                   "WAIT\n"                       nothing to do yet
  *                   "QUIT\n"                       end
  * The host stays the only side that knows the test plan; the emulated system
@@ -122,9 +124,22 @@ static int busy;              /* a test is running (asynchronously) */
 static void run(const char *cmd)
 {
     BPTR in, out, f = Open((STRPTR)"RAM:amxrun.job", MODE_NEWFILE);
+    const char *p = cmd, *q;
+    int first = 1;
     if (!f) return;
-    FPrintf(f, (STRPTR)"%s >" OUT_FILE "\nEcho \"# rc=$RC\" >>" OUT_FILE "\nEcho done >RAM:amxrun.done\n",
-            (LONG)cmd);
+    for (;; first = 0) {                            /* "\n" (backslash n) separates commands */
+        char part[1024];
+        size_t n;
+        q = strstr(p, "\\n");
+        n = q ? (size_t)(q - p) : strlen(p);
+        if (n >= sizeof part) n = sizeof part - 1;
+        memcpy(part, p, n);
+        part[n] = 0;
+        FPrintf(f, (STRPTR)"%s >%s" OUT_FILE "\n", (LONG)part, (LONG)(first ? "" : ">"));
+        if (!q) break;
+        p = q + 2;
+    }
+    FPrintf(f, (STRPTR)"Echo \"# rc=$RC\" >>" OUT_FILE "\nEcho done >RAM:amxrun.done\n");
     Close(f);
     DeleteFile((STRPTR)"RAM:amxrun.done");
     in = Open((STRPTR)"NIL:", MODE_OLDFILE);
@@ -168,8 +183,9 @@ int main(int argc, char **argv)
     if (NET_START()) { printf("amxrun: no network\n"); return 20; }
     for (;;) {
         long len;
-        char *job = request("GET", "/next", NULL, 0, &len), *nl;
-        if (busy) check_done();
+        char *job, *nl;
+        if (busy) check_done();                     /* first: a finished test is reported at once */
+        job = request("GET", "/next", NULL, 0, &len);
         if (!job) { Delay(100); continue; }
         nl = strchr(job, '\n');
         if (nl) *nl = 0;
@@ -186,8 +202,13 @@ int main(int argc, char **argv)
             run(job + 4);
         else if (!strncmp(job, "SH ", 3))
             sh(job + 3);
+        else if (!strncmp(job, "FETCH ", 6)) {
+            BPTR l = Lock((STRPTR)job + 6, SHARED_LOCK);
+            if (l) { UnLock(l); post_file(job + 6, "/file", ""); }
+            else free(request("POST", "/nofile", "", 0, &n_dummy));
+        }
         else if (!strcmp(job, "QUIT")) { free(job); break; }
-        else Delay(50);
+        else Delay(busy ? 10 : 50);                 /* a test runs: look again soon */
         free(job);
     }
     net_cleanup();

@@ -36,6 +36,8 @@ class Remote:
         self.result_ev = threading.Event()
         self.sh_result = None
         self.sh_ev = threading.Event()
+        self.file_ev = threading.Event()
+        self.file_data = None
         self.last_poll = 0.0
         self.files = {}                     # path -> data, to send again
         self.bad = 0                        # files that arrived corrupted
@@ -66,6 +68,9 @@ class Remote:
                     print(f"[remote] {path} arrived corrupted, sending it again", flush=True)
                     if path in remote.files:
                         remote.put(path, remote.files[path], first=True)
+                elif self.path in ("/file", "/nofile"):
+                    remote.file_data = data if self.path == "/file" else None
+                    remote.file_ev.set()
                 elif self.path == "/sh":
                     remote.sh_result = data.decode("latin-1")
                     remote.sh_ev.set()
@@ -109,6 +114,14 @@ class Remote:
             self.jobs.insert(0, f"SH {cmd}\n".encode("latin-1"))
         ok = await asyncio.get_running_loop().run_in_executor(None, self.sh_ev.wait, timeout)
         return self.sh_result if ok else "(no answer)"
+
+    async def fetch(self, path, timeout=120):
+        """The bytes of a file in the emulated system (None if missing or no answer)."""
+        self.file_ev.clear()
+        with self.lock:
+            self.jobs.insert(0, f"FETCH {path}\n".encode("latin-1"))
+        ok = await asyncio.get_running_loop().run_in_executor(None, self.file_ev.wait, timeout)
+        return self.file_data if ok else None
 
     def quit(self):
         with self.lock:
@@ -154,10 +167,13 @@ class Os4Vm:
         subprocess.run([os.path.join(TESTENV, "run-hdf.sh"), os.path.join(e, "prep"), "150",
                         os.path.join(OS4ENV, "os41fe.hdf"), e], capture_output=True)
         shutil.rmtree(e, ignore_errors=True)
-        self.procs.append(subprocess.Popen(["Xvfb", self.display, "-screen", "0", "1024x768x24"],
+        self.procs.append(subprocess.Popen(["Xvfb", self.display, "-screen", "0", "1280x720x24"],
                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
         time.sleep(2)
-        self.procs.append(subprocess.Popen(["fs-uae", os.path.join(OS4ENV, "os4.fs-uae")], cwd=OS4ENV,
+        self.procs.append(subprocess.Popen(["fs-uae", os.path.join(OS4ENV, "os4.fs-uae"),
+                                            # the Workbench screen is 1280x720: shown 1:1, so
+                                            # screenshots have the real pixels
+                                            "--window_width=1280", "--window_height=720"], cwd=OS4ENV,
                                            env=dict(os.environ, DISPLAY=self.display),
                                            stdout=open(os.path.join(OS4ENV, "fsuae.out"), "w"),
                                            stderr=subprocess.STDOUT))

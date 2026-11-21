@@ -3,6 +3,7 @@
 
     tests/gui/run_gui.py [-v]
     tests/gui/run_gui.py --screenshot     # only the README screenshot -> screenshots/amatrix.png
+    tests/gui/run_gui.py --target os4     # the same in AmigaOS 4 (or mos: MorphOS)
 
 The Amiga runs Amatrix (build/amiga/gui/Amatrix) on its Workbench screen and
 a small AmigaDOS loop that executes command files the host drops into the
@@ -10,7 +11,9 @@ Extra: drawer (ARexx scripts for Amatrix's port, screenshot requests).  The
 peer (matrix-nio) chats with it from the host.  Checks are TAP lines; the
 screenshots land in build/amiga/gui-shots/.
 
-Needs MUI in the emulator: tests/emu/setup-emu-mui.sh.
+Needs MUI in the emulator: tests/emu/setup-emu-mui.sh.  OS 4 and MorphOS run
+in their emulators through amxrun (tests/emu/remote.py): Extra: is RAM:Extra
+there, kept in step with the host drawer before and after each script.
 """
 import argparse, asyncio, io, os, re, shutil, subprocess, sys, tempfile, time
 
@@ -122,6 +125,14 @@ class Amiga:
             f"{os.path.join(SHOTS, name + '.png')}")
         await p.wait()
 
+    async def pull(self):
+        """Files Amatrix wrote into Extra: are on the host (remote targets fetch them)."""
+
+    async def debug_log(self):
+        """Amatrix's DEBUG log so far."""
+        f = os.path.join(self.extra, "Amatrix.log")
+        return open(f, encoding="latin-1").read() if os.path.exists(f) else ""
+
     async def until(self, cond, secs):
         end = time.time() + secs
         while time.time() < end:
@@ -130,6 +141,103 @@ class Amiga:
                 return v
             await asyncio.sleep(1)
         return await cond()
+
+
+class RemoteAmiga(Amiga):
+    """The same for OS 4 / MorphOS: commands through amxrun, Extra: = RAM:Extra in the
+    emulated system, mirrored with the host drawer (files the host writes go there
+    before a script; what Amatrix writes comes back after it)."""
+
+    def __init__(self, extra, log, remote, vm):
+        super().__init__(extra, log)
+        self.remote, self.vm = remote, vm
+        self.sent, self.got, self.dirs = {}, {}, set()
+
+    async def push(self):
+        for root, _, files in os.walk(self.extra):
+            rd = os.path.relpath(root, self.extra).replace(os.sep, "/")
+            if rd != "." and rd not in self.dirs and files:   # amxrun does not create drawers
+                self.dirs.add(rd)
+                await self.remote.sh(f"MakeDir Extra:{rd} ALL")
+            for fn in files:
+                path = os.path.join(root, fn)
+                rel = os.path.relpath(path, self.extra).replace(os.sep, "/")
+                st = os.stat(path)
+                if rel in ("res.txt", "ok", "go") or self.sent.get(rel) == (st.st_size, st.st_mtime):
+                    continue
+                self.sent[rel] = (st.st_size, st.st_mtime)
+                self.remote.put("Extra:" + rel, open(path, "rb").read())
+        while self.remote.jobs:
+            await asyncio.sleep(0.3)
+
+    @staticmethod
+    def wanted(rel):
+        """What the tests read back: Amatrix's small files, not the program or its log."""
+        if "/" in rel:
+            return rel.startswith("Amatrix-") and rel.endswith("/login.json")
+        return not (rel in ("Amatrix", "Amatrix.log", "c.rexx") or rel.endswith(".info"))
+
+    async def debug_log(self):
+        return ((await self.remote.fetch("Extra:Amatrix.log")) or b"").decode("latin-1")
+
+    LIST = 'List Extra: ALL FILES LFORMAT "%P%N|%L|%D %T"'
+
+    async def pull(self, listing=None):
+        out = listing if listing is not None else await self.remote.sh(self.LIST, timeout=60)
+        for line in out.splitlines():
+            parts = line.rsplit("|", 2)
+            if len(parts) != 3 or not parts[0].lower().startswith("extra:"):
+                continue
+            rel = parts[0][6:].lstrip("/")
+            if not self.wanted(rel) or self.got.get(rel) == (parts[1], parts[2]):
+                continue
+            data = await self.remote.fetch("Extra:" + rel)
+            if data is None:
+                continue
+            self.got[rel] = (parts[1], parts[2])
+            dst = os.path.join(self.extra, *rel.split("/"))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            open(dst, "wb").write(data)
+            st = os.stat(dst)
+            self.sent[rel] = (st.st_size, st.st_mtime)     # not back again
+
+    async def settle(self, secs=300):
+        pass                                 # scripts run synchronously here
+
+    async def go(self, secs=60):
+        if getattr(self, "gone", False):
+            raise RuntimeError("Amatrix is gone (crashed), see gui-crash.txt")
+        await self.push()
+        # as a RUN job: if Amatrix crashes, rx waits forever, but amxrun stays usable
+        # the script and the listing for pull() in one job: each request through the
+        # emulated network costs time
+        out = await self.remote.run(f'rx Extra:c.rexx\\nEcho "@@LIST"\\n{self.LIST}', timeout=secs)
+        done = not out.startswith("not ok - test program timed out")
+        out, _, listing = out.partition("@@LIST\n")
+        with open(os.path.join(self.extra, "res.txt"), "w", encoding="latin-1") as f:
+            f.write("\n".join(l for l in out.splitlines() if not l.startswith("# rc=")) + "\n" if done else "")
+        if not done:
+            self.log(f"# amiga: rexx script not done in {secs}s")
+            self.timeouts = getattr(self, "timeouts", 0) + 1
+            await self.shot(f"timeout-{self.timeouts}")
+            # a crashed Amatrix keeps its ARexx port (the task is only suspended), so: the
+            # system's crash log now, and give up after a second command in a row hangs
+            with open(os.path.join(os.path.dirname(SHOTS), "gui-crash.txt"), "a", encoding="latin-1") as f:
+                for cmd in self.vm.diag:
+                    f.write(f"--- {cmd} (timeout {self.timeouts})\n" + await self.remote.sh(cmd, timeout=120) + "\n")
+            self.in_a_row = getattr(self, "in_a_row", 0) + 1
+            if self.in_a_row >= 2:
+                self.gone = True
+                raise RuntimeError("Amatrix is gone (crashed), see gui-crash.txt")
+            return False
+        self.in_a_row = 0
+        await self.pull(listing)
+        return True
+
+    async def shot(self, name):
+        await asyncio.sleep(2)
+        await asyncio.get_running_loop().run_in_executor(
+            None, self.vm.screenshot, os.path.join(SHOTS, name + ".png"))
 
 
 def png(w, h, rgb):
@@ -164,6 +272,7 @@ async def store_part(ctx, amiga, online, was_verified=False):
     end = time.time() + 120
     while time.time() < end and not encrypted():
         await asyncio.sleep(2)
+        await amiga.pull()
     check(encrypted(), "login.json in the drawer is encrypted")
     await amiga.rexx_raw(["address command 'Avail >Extra:avail-before.txt'"])
     await amiga.rexx("QUIT")
@@ -597,6 +706,10 @@ async def scenario(ctx, amiga, srv, me):
     inner = seq[seq.find("kr"):seq.find("kr") + 96] if "kr" in seq else ""
     check(len(inner) == 96 and inner.count("k") >= 11 and inner.count("g") <= 3,
           f"preview strips in order, all 96 rows (known: now and then 1 row missing at a strip's end) ({seq})")
+    if not (len(inner) == 96 and inner.count("k") >= 11 and inner.count("g") <= 3):
+        for l in (await amiga.debug_log()).splitlines():
+            if "line height" in l:
+                amiga.log("# " + l.strip())
     # no DefIcons/Workbench and no PNG datatype in the emulator: the text file,
     # opened with MultiView (the fallback), shows the way works
     rc, _ = await amiga.rexx("OPENMEDIA Alice 1")
@@ -609,6 +722,7 @@ async def scenario(ctx, amiga, srv, me):
     rc, _ = await amiga.rexx("SAVEMEDIA Alice 1 Extra:notiz.txt")
 
     async def saved():
+        await amiga.pull()
         return os.path.exists(target) and open(target, "rb").read() == txt
     check(await amiga.until(saved, 120), "file downloaded and decrypted (SAVEMEDIA)")
 
@@ -1254,6 +1368,7 @@ async def scenario(ctx, amiga, srv, me):
     await amiga.rexx("EXPORT Alice Extra:chat.html ALL")
 
     async def exported():
+        await amiga.pull()
         if not os.path.exists(exp):
             return False
         t = open(exp, encoding="utf-8", errors="replace").read()
@@ -1561,17 +1676,25 @@ async def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("-v", "--verbose", action="store_true")
     ap.add_argument("--screenshot", action="store_true", help="only the README screenshot (screenshots/amatrix.png)")
+    ap.add_argument("--target", choices=["amiga", "os4", "mos"], default="amiga")
     a = ap.parse_args()
+    global SHOTS
+    tgt = a.target
+    remote_os = tgt != "amiga"
+    SHOTS = os.path.join(TOP, "build", tgt, "gui-shots")
 
-    r = subprocess.run(["make", "-j4", "TARGET=amiga", "gui"], cwd=TOP, capture_output=True, text=True)
+    r = subprocess.run(["make", "-j4", f"TARGET={tgt}", "gui"] + ([f"build/{tgt}/tools/amxrun"] if remote_os else []),
+                       cwd=TOP, capture_output=True, text=True)
     if r.returncode:
         print(r.stdout[-3000:], r.stderr[-3000:])
         return 2
     ensure_venv()
     os.makedirs(SHOTS, exist_ok=True)
+    if os.path.exists(os.path.join(os.path.dirname(SHOTS), "gui-crash.txt")):
+        os.remove(os.path.join(os.path.dirname(SHOTS), "gui-crash.txt"))
     for f in os.listdir(SHOTS):
         os.remove(os.path.join(SHOTS, f))
-    logpath = os.path.join(TOP, "build", "amiga", "gui-test.log")
+    logpath = os.path.join(TOP, "build", tgt, "gui-test.log")
     logf = open(logpath, "w", encoding="utf-8")
 
     def log(line):
@@ -1582,17 +1705,19 @@ async def main():
 
     with TestServer() as srv:
         sysdir = os.path.join(TESTENV, "system")
-        if not os.path.isdir(os.path.join(sysdir, "MUI")):
+        if not remote_os and not os.path.isdir(os.path.join(sysdir, "MUI")):
             print("MUI missing in the emulator: run tests/emu/setup-emu-mui.sh")
             return 2
-        shutil.copy(srv.ca_pem, os.path.join(sysdir, "AmiSSL", "Certs", srv.ca_hash_name()))
+        if not remote_os:
+            shutil.copy(srv.ca_pem, os.path.join(sysdir, "AmiSSL", "Certs", srv.ca_hash_name()))
         # our password with an umlaut: typed in ISO-8859-1, the server wants UTF-8
         me, other, bob = srv.register("amiga", suffix="\u00e4"), srv.register("peer"), srv.register("bob")
         extra = tempfile.mkdtemp(prefix="amx-gui-")
-        shutil.copy(os.path.join(TOP, "build", "amiga", "gui", "Amatrix"), os.path.join(extra, "Amatrix"))
+        shutil.copy(os.path.join(TOP, "build", tgt, "gui", "Amatrix"), os.path.join(extra, "Amatrix"))
         os.makedirs(os.path.join(extra, "Catalogs", "deutsch"), exist_ok=True)
-        shutil.copy(os.path.join(TOP, "build", "amiga", "catalogs", "deutsch", "amatrix.catalog"),
-                    os.path.join(extra, "Catalogs", "deutsch", "amatrix.catalog"))
+        cat = next(c for c in (os.path.join(TOP, "build", t, "catalogs", "deutsch", "amatrix.catalog")
+                               for t in (tgt, "amiga", "mos")) if os.path.exists(c))   # the same on all
+        shutil.copy(cat, os.path.join(extra, "Catalogs", "deutsch", "amatrix.catalog"))
         mk = os.path.join(TOP, "tools", "amiga-package", "make-icon.py")   # icons: AppIcon when iconified
         os.makedirs(os.path.join(extra, "Icons"), exist_ok=True)
         subprocess.run([sys.executable, mk, os.path.join(extra, "Amatrix.info"), "65536"], check=False)
@@ -1602,7 +1727,7 @@ async def main():
         if not os.path.isdir(hsrc):
             subprocess.run([os.path.join(TOP, "third_party", "fetch-herald.sh")], check=False)
         herald = ""
-        if os.path.isdir(hsrc):                       # notifications: Herald in the emulator
+        if os.path.isdir(hsrc) and not remote_os:     # notifications: Herald in the emulator (OS 3)
             shutil.copytree(hsrc, os.path.join(extra, "Herald"))
             herald = "Run >NIL: Extra:Herald/Herald\nWait 3"
         script = os.path.join(extra, ".autotest")
@@ -1610,33 +1735,67 @@ async def main():
         with open(script, "w", encoding="latin-1") as f:
             f.write(LOOP.format(lang="english" if a.screenshot else "deutsch", server=srv.https_url, user=me.localpart, password=me.password, herald=herald,
                                 verbose=f"SetEnv AMX_VERBOSE {v}" if v else "UnSetEnv AMX_VERBOSE"))
-        for fn in ("gui-out.txt",):
-            if os.path.exists(os.path.join(sysdir, fn)):
-                os.remove(os.path.join(sysdir, fn))
-        emu = await asyncio.create_subprocess_exec(
-            os.path.join(TOP, "tests", "emu", "run-amiga-gui.sh"), script, "1800", extra, SHOTS,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        if remote_os:                                 # OS 4 / MorphOS: through amxrun
+            sys.path.insert(0, os.path.join(TESTS, "emu"))
+            from remote import Remote, Os4Vm, MosVm
+            remote = Remote()
+            vm = (MosVm if tgt == "mos" else Os4Vm)(remote.port)
+            vm.start()
+            if not await remote.wait_ready(600):
+                print("the emulated system did not come up")
+                vm.stop()
+                return 2
+            remote.put(vm.cert_path or f"AmiSSL:Certs/{srv.ca_hash_name()}", open(srv.ca_pem, "rb").read())
+            amiga = RemoteAmiga(extra, log, remote, vm)
+            await remote.sh("MakeDir RAM:Extra")
+            await remote.sh("Assign Extra: RAM:Extra")
+            await amiga.push()
+            await remote.sh("Protect Extra:Amatrix +rwed")
+            await remote.sh(f"SetEnv AMX_VERBOSE {v}" if v else "UnSetEnv AMX_VERBOSE")
+            server = srv.https_url.replace("localhost", "10.0.2.2")
+            await remote.sh(f"Run >NIL: Extra:Amatrix >RAM:gui-out.txt SERVER={server} USER={me.localpart} "
+                            f"PASSWORD={me.password} DEBUG LANGUAGE={'english' if a.screenshot else 'deutsch'}")
+            emu = None
+        else:
+            for fn in ("gui-out.txt",):
+                if os.path.exists(os.path.join(sysdir, fn)):
+                    os.remove(os.path.join(sysdir, fn))
+            emu = await asyncio.create_subprocess_exec(
+                os.path.join(TOP, "tests", "emu", "run-amiga-gui.sh"), script, "1800", extra, SHOTS,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+            amiga = Amiga(extra, log)
 
         from peerlib import Context
         workdir = tempfile.mkdtemp(prefix="amx-gui-peer-")
         ctx = Context(srv.http_url, other, me, workdir, log)
         ctx.scale = 3
         ctx.bob = bob
-        amiga = Amiga(extra, log)
         t0 = time.time()
         try:
-            await asyncio.wait_for((screenshot_scenario if a.screenshot else scenario)(ctx, amiga, srv, me), 1600)
+            await asyncio.wait_for((screenshot_scenario if a.screenshot else scenario)(ctx, amiga, srv, me),
+                                   4000 if remote_os else 1600)   # mirroring Extra: costs time
         except asyncio.TimeoutError:
             ctx.check(False, "scenario finished in time")
         except Exception as e:
             ctx.check(False, f"scenario raised {type(e).__name__}: {e}")
         finally:
-            rc, _ = await amiga.rexx("QUIT", secs=60)
+            if not getattr(amiga, "gone", False):
+                rc, _ = await amiga.rexx("QUIT", secs=60)
             await asyncio.sleep(8)
             open(os.path.join(extra, "stop"), "w").close()
             await ctx.close()
-        out, _ = await emu.communicate()
-        gui_out = os.path.join(sysdir, "gui-out.txt")
+        if emu:
+            out, _ = await emu.communicate()
+            gui_out = os.path.join(sysdir, "gui-out.txt")
+        else:
+            out = b""
+            gui_out = os.path.join(extra, "gui-out.txt")
+            for src, dst in (("RAM:gui-out.txt", gui_out), ("Extra:Amatrix.log", os.path.join(extra, "Amatrix.log"))):
+                data = await remote.fetch(src)
+                if data is not None:
+                    open(dst, "wb").write(data)
+            vm.stop()
+            remote.close()
         if os.path.exists(gui_out):
             for line in open(gui_out, encoding="latin-1").read().splitlines():
                 log(f"# amatrix: {line}")

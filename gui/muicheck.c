@@ -15,8 +15,10 @@
 #include <proto/utility.h>
 #include <SDI_hook.h>
 #include "mui_util.h"
+#include "os_compat.h"
 
 struct Library *MUIMasterBase;
+MUI_IFACE_DEFINE;
 unsigned long __stack = 32 * 1024;
 
 #define AV 28
@@ -57,6 +59,7 @@ int main(int argc, char **argv)
         printf("muicheck: no muimaster.library V19+\n");
         return 20;
     }
+    MUI_IFACE_GET();
     printf("muicheck: muimaster.library %d.%d\n", MUIMasterBase->lib_Version, MUIMasterBase->lib_Revision);
     for (i = 0; i < 3; i++) make_avatar(avatar[i], colors[i]);
 
