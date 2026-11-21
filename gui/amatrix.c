@@ -4750,7 +4750,11 @@ static void media_thumb(const AmxMsg *msg)
         return;
     }
     lh = (int)xget(w->list, MUIA_NList_LineHeight);
-    if (lh < 8) lh = 12;
+    if (lh < 8) {                                 /* not every NList gives it (MorphOS): from the view */
+        LONG vis = (LONG)xget(w->list, MUIA_NList_Visible);
+        lh = vis > 0 ? _mheight(w->list) / vis : 0;
+        if (lh < 8) lh = 12;
+    }
     n = (msg->height + lh - 1) / lh;
     if (!(m->obj = calloc(n, sizeof *m->obj)) || !(m->ad = calloc(n, sizeof *m->ad))) return;
     /* where: after the message's text and its earlier pictures, before its reactions */
@@ -5223,7 +5227,7 @@ HOOKPROTONH(chat_active_func, LONG, Object *obj, ULONG *param)
     set(w->delb, MUIA_Disabled, !m || !m->own || m->redacted);
     return 0;
 }
-static struct Hook chat_active_hook = { { NULL, NULL }, (HOOKFUNC)chat_active_func, NULL, NULL };
+MakeStaticHook(chat_active_hook, chat_active_func);
 
 static void start_reply(ChatWin *w, ChatMsg *m)
 {
@@ -5266,7 +5270,7 @@ HOOKPROTONH(chat_reply_func, LONG, Object *obj, ULONG *param)
     if (m && !m->redacted) start_reply(w, m);
     return 0;
 }
-static struct Hook chat_reply_hook = { { NULL, NULL }, (HOOKFUNC)chat_reply_func, NULL, NULL };
+MakeStaticHook(chat_reply_hook, chat_reply_func);
 
 HOOKPROTONH(chat_edit_func, LONG, Object *obj, ULONG *param)
 {
@@ -5277,7 +5281,7 @@ HOOKPROTONH(chat_edit_func, LONG, Object *obj, ULONG *param)
     if (m && m->own && !m->redacted) start_edit(w, m);
     return 0;
 }
-static struct Hook chat_edit_hook = { { NULL, NULL }, (HOOKFUNC)chat_edit_func, NULL, NULL };
+MakeStaticHook(chat_edit_hook, chat_edit_func);
 
 HOOKPROTONH(chat_del_func, LONG, Object *obj, ULONG *param)
 {
@@ -5287,7 +5291,7 @@ HOOKPROTONH(chat_del_func, LONG, Object *obj, ULONG *param)
     if (m && m->own && !m->redacted) delete_msg(w, m, 1);
     return 0;
 }
-static struct Hook chat_del_hook = { { NULL, NULL }, (HOOKFUNC)chat_del_func, NULL, NULL };
+MakeStaticHook(chat_del_hook, chat_del_func);
 
 HOOKPROTONH(chat_modex_func, LONG, Object *obj, ULONG *param)
 {
@@ -5297,7 +5301,7 @@ HOOKPROTONH(chat_modex_func, LONG, Object *obj, ULONG *param)
     clear_mode(w);
     return 0;
 }
-static struct Hook chat_modex_hook = { { NULL, NULL }, (HOOKFUNC)chat_modex_func, NULL, NULL };
+MakeStaticHook(chat_modex_hook, chat_modex_func);
 
 /* "Thread: n Antworten" under a message that starts a thread (room windows) */
 static void refresh_thread_line(ChatWin *w, ChatMsg *m)
@@ -6840,7 +6844,8 @@ MakeStaticHook(rx_closechat_hook, rx_closechat_func);
 /* REACT room name: our reaction (thumbsup, heart, ...) to the newest message
  * of someone else; REACTIONS room: the reaction lines, "name count[*]" */
 static const char *const emo_names[N_EMO] = { "thumbsup", "thumbsdown", "heart", "smile", "joy",
-                                               "confused", "eyes", "tada", "rocket", "unknown", "file", "link", "thread" };
+                                               "confused", "eyes", "tada", "rocket", "unknown", "file", "link", "thread",
+                                               "check", "radiooff", "radioon", "stop", "star" };
 
 HOOKPROTONH(rx_react_func, LONG, Object *obj, ULONG *arg)
 {
@@ -6851,7 +6856,7 @@ HOOKPROTONH(rx_react_func, LONG, Object *obj, ULONG *arg)
     int img = -1;
     (void)obj;
     if (!w) return 5;
-    for (i = 0; i < N_EMO; i++) if (!strcmp(emo_names[i], (char *)arg[1])) img = (int)i;
+    for (i = 0; i < N_EMO && img < 0; i++) if (emo_names[i] && !strcmp(emo_names[i], (char *)arg[1])) img = (int)i;
     if (img < 0) return 10;
     n = (LONG)xget(w->list, MUIA_NList_Entries);
     for (k = n - 1; k >= 0; k--) {
@@ -6860,6 +6865,7 @@ HOOKPROTONH(rx_react_func, LONG, Object *obj, ULONG *arg)
         if (!l || l->react || l->undec || !l->eid || l->own || !strstr(l->text, ":\33n")) continue;
         for (i = 0; i < sizeof emo_keys / sizeof emo_keys[0]; i++)
             if (emo_keys[i].img == img) break;
+        if (i == sizeof emo_keys / sizeof emo_keys[0]) return 10;     /* no reaction picture */
         react_toggle(w, l->eid, emo_keys[i].key);       /* again: takes it back */
         return 0;
     }
