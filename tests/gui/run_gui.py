@@ -167,8 +167,21 @@ class RemoteAmiga(Amiga):
                     continue
                 self.sent[rel] = (st.st_size, st.st_mtime)
                 self.remote.put("Extra:" + rel, open(path, "rb").read())
-        while self.remote.jobs:
+        t0 = time.time()
+        while self.remote.jobs:              # (amxrun takes them: not if the emulator died)
+            if not self.vm_alive() or time.time() - t0 > 600:
+                self.gone = True
+                if self.vm_alive():          # no answer any more (the emulated network died?)
+                    self.vm_died = True
+                    await self.shot("emulator-hang")
+                raise RuntimeError("the emulator is gone (crashed or hangs)")
             await asyncio.sleep(0.3)
+
+    def vm_alive(self):
+        if all(p.poll() is None for p in getattr(self.vm, "procs", [])):
+            return True
+        self.vm_died = True
+        return False
 
     @staticmethod
     def wanted(rel):
@@ -189,13 +202,13 @@ class RemoteAmiga(Amiga):
             if len(parts) != 3 or not parts[0].lower().startswith("extra:"):
                 continue
             rel = parts[0][6:].lstrip("/")
-            if not self.wanted(rel) or self.got.get(rel) == (parts[1], parts[2]):
-                continue
+            dst = os.path.join(self.extra, *rel.split("/"))
+            if not self.wanted(rel) or (self.got.get(rel) == (parts[1], parts[2]) and os.path.exists(dst)):
+                continue                             # (a test may delete its copy to wait for a new one)
             data = await self.remote.fetch("Extra:" + rel)
             if data is None:
                 continue
             self.got[rel] = (parts[1], parts[2])
-            dst = os.path.join(self.extra, *rel.split("/"))
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             open(dst, "wb").write(data)
             st = os.stat(dst)
@@ -205,8 +218,9 @@ class RemoteAmiga(Amiga):
         pass                                 # scripts run synchronously here
 
     async def go(self, secs=60):
-        if getattr(self, "gone", False):
-            raise RuntimeError("Amatrix is gone (crashed), see gui-crash.txt")
+        if getattr(self, "gone", False) or not self.vm_alive():
+            self.gone = True
+            raise RuntimeError("Amatrix or the emulator is gone (crashed), see gui-crash.txt")
         await self.push()
         # as a RUN job: if Amatrix crashes, rx waits forever, but amxrun stays usable
         # the script and the listing for pull() in one job: each request through the
@@ -1816,6 +1830,11 @@ async def main():
         else:
             print("kept", extra)
         shutil.rmtree(workdir, ignore_errors=True)
+    if remote_os and getattr(amiga, "vm_died", False) and not os.environ.get("AMX_GUI_RETRY"):
+        # QEMU-UAE has been seen to segfault (in its SLIRP network): not our fault, once more
+        print("the emulator crashed: running the GUI test once more", flush=True)
+        os.environ["AMX_GUI_RETRY"] = "1"
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     bad = [n for ok, n in ctx.results if not ok]
     print(f"GUI test: {len(ctx.results) - len(bad)}/{len(ctx.results)} checks ok in {time.time() - t0:.0f}s; "
           f"log {logpath}, screenshots {SHOTS}")

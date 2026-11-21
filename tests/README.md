@@ -58,6 +58,20 @@ ARexx host commands must be quoted strings; a nested `Execute` inside the
 running autotest script ends it; console output opens the CLI window in
 front of the GUI (redirect the program's output).
 
+```sh
+tests/gui/run_gui.py --target os4    # the same scenario in AmigaOS 4.1 FE (MUI 5 + NList installed)
+tests/gui/run_gui.py --target mos    # ... in MorphOS 3.21 (QEMU pegasos2)
+```
+
+There `Extra:` is `RAM:Extra` in the guest, mirrored by `amxrun` (see
+below): each ARexx script runs as one job together with a listing of
+`Extra:`, and the files Amatrix writes are fetched back from that.  A
+command that hangs twice in a row ends the scenario (a crashed Amatrix
+keeps its ARexx port); the system's crash log goes to
+`build/<target>/gui-crash.txt`.  If the emulator itself dies (QEMU-UAE
+has been seen to segfault), the scenario ends at once and the whole test
+runs once more.
+
 ## Adding a feature test
 
 1. `tests/features/<name>/test.c`: `#include "mxtest.h"`, `mxt_args()`,
